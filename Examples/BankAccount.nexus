@@ -1,0 +1,135 @@
+sum Options<T>
+{
+	None,
+	Some(T value)
+}
+
+sum TransactionResult
+{
+	Success(i32 balance),
+	InsufficientFunds(i32 available, i32 requested),
+	NegativeAmount(),
+	AccountClosed()
+}
+
+public class BankAccount
+{
+	private global i32 g_nbAccounts = 0;
+	private global i32 g_totalConnection = 0;
+
+	private i4 accountNumber;
+	private i32 balance;
+
+	public global Factory(i32 balance) -> Options<BankAccount>
+	{
+		if (balance < 0)
+		{
+			warnf("balance cannot be negative");
+			return Options.None;
+		}
+		return Options.Some(new BankAccount(balance));
+	}
+
+	private Constructor(i32 balance)
+	{
+		self.accountNumber = BankAccount::g_nbAccounts++;
+		self.balance = balance;
+	}
+
+
+	public Deposit(i32 amount) -> bool
+	{
+		if (amount <= 0) return false;
+		self.balance += amount;
+		return true;
+	}
+
+	public Withdraw(i32 amount) -> TransactionResult
+	{
+		if (amount < 0) return TransactionResult.NegativeAmount();
+		if (self.balance == 0) return TransactionResult.AccountClosed();
+		if (amount > self.balance)
+			return TransactionResult.InsufficientFunds(self.balance, amount);
+		self.balance -= amount;
+		return TransactionResult.Success(self.balance);
+	}
+
+	public GetBalance() -> i32
+	{
+		return self.balance;
+	}
+
+	public Clone() -> BankAccount
+	{
+		return new BankAccount(self.balance);
+	}
+}
+
+InitAccounts(Options<BankAccount>[] tab)
+{
+	for (i32 i = 0; i < tab.Length; i++)
+	{
+		tab[i] = BankAccount.Factory((Math.Random() * 20000) :: i32);
+		match (tab[i])
+		{
+			Options.Some(acc) => tab[o].Run();
+			Options.None => {}
+		}
+	}
+}
+
+Main()
+{
+	Options<BankAccount>[] tab = new Options<BankAccount>[500];
+	InitAccounts(tab);
+
+	/! ─── Withdraw example with nicer Option handling ─── !/
+	match (tab[2])
+	{
+		Options.Some(acc) =>
+		{
+			TransactionResult r = acc.Withdraw(50);
+			match(r)
+			{
+				TransactionResult.Success(newBalance) =>
+					printf("Withdrawal succeeded. New balance: {newBalance}$");
+
+				TransactionResult.InsufficientFunds(available, requested) =>
+					printf("Cannot withdraw {requested}$. Only {available}$ available.");
+
+				TransactionResult.NegativeAmount() =>
+					printf("Cannot withdraw a negative amount.");
+
+				TransactionResult.AccountClosed() =>
+					printf("Account is closed.");
+			}
+		}
+		Options.None => {}
+	}
+
+	/! ─── Deposit example ─── !/
+	match (tab[1])
+	{
+		Options.Some(acc) => acc.Deposit(30);
+		Options.None => {}
+	}
+
+	/! ─── MOVE examples using <- ─── !/
+
+	/! Move tab[1] into tab[4] (tab[1] becomes logically empty/invalid) !/
+	tab[4] <- tab[1];
+
+	/! Clone into tab[1] (old tab[4] stays alive) !/
+	match (tab[4])
+	{
+		Options.Some(acc) => tab[1] = Options.Some(acc.Clone());
+		Options.None => tab[1] = Options.None;
+	}
+
+	/! Move tab[4] into tab[0] (tab[4] becomes invalid) !/
+	tab[0] <- tab[4];
+
+	/! _ = tab[3];          ← would mean "drop / forget this value"        !/
+
+	tab[0] = BankAccount.Factory(20);
+}

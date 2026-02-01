@@ -1,0 +1,110 @@
+sum Options<T>
+{
+	None,
+	Some(T value)
+}
+
+
+private class LinkedListNode<T>
+{
+	public Options<LinkedListNode<T>> previous;
+	public Options<LinkedListNode<T>> next;
+	public T value;
+
+	public Constructor(T value)
+	{
+		self.value    = value;
+		self.previous = Options.None;
+		self.next     = Options.None;
+	}
+}
+
+public class LinkedList<T>
+{
+	private Options<LinkedListNode<T>> head;
+	private Options<LinkedListNode<T>> tail;
+	private i32 size;
+
+	public Constructor()
+	{
+		self.head = Options.None;
+		self.tail = Options.None;
+		self.size = 0;
+	}
+
+	public Add(T value) -> LinkedList<T>   /! returns self for chaining !/
+	{
+		LinkListNode<T> node = new LinkedListNode<T>(value);
+
+		match self.tail
+		{
+			Options.Some(existingTail) =>
+			{
+				existingTail.next = Options.Some(node);
+				node.previous = Options.Some(existing_tail);
+				self.tail = Options.Some(node);
+			}
+			Options.None =>
+			{
+				/* first element
+				self.head = Options.Some(node);
+				self.tail = Options.Some(node);
+			}
+		}
+
+		self.size++;
+		return self;
+	}
+
+	public GetHead() -> Options<LinkedListNode<T>>
+	{
+		return self.head;
+	}
+
+	public GetTail() -> Options<LinkedListNode<T>>
+	{
+		return self.tail;
+	}
+
+	public Get(i32 i) -> Options<LinkedListNode<T>>
+	{
+		Options<LinkedListNode<T>> tmp &= self.head;
+		for (i32 cpt = 0; cpt < i; cpt++)
+		{
+			match tmp
+			{
+				Options.Some(Head) =>
+				{
+					match tmp.next
+					{
+						Options.Some(node) => { tmp &= tmp.next; }
+						Options.None => { return Options.None; }
+					}
+				}
+				Options.None => { return Options.None; }
+			}
+		}
+
+		return tmp;
+	}
+
+	public GetSize() -> i32
+	{
+		return self.size;
+	}
+}
+
+
+Main()
+{
+	Printf(" 5 /  2 = {5/2}  \n"); /* 5 /  2 = 2.5
+	Printf(" 5 // 2 = {5//2} \n"); /* 5 // 2 = 2
+	Printf(" 5 %  2 = {5%2}  \n"); /* 5 %  2 = 1
+
+	Print(" 5 /  2 = {5/2}" ); /* 5 /  2 = {5/2}
+	Print(" 5 // 2 = {5//2}"); /* 5 // 2 = {5//2}
+	Print(" 5 %  2 = {5%2}" ); /* 5 %  2 = {5%2}
+
+	BankAccount test = new BankAccount();
+	BankAccount test2 = new BankAccount();
+}
