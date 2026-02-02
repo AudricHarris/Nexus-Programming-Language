@@ -1,40 +1,34 @@
-#include <cstdio>
-#include <cstdlib>
+#include "Tokenizing/Token.h"
+#include "Tokenizing/Lexer.h"
 #include <fstream>
 #include <iostream>
-#include <ostream>
+#include <string>
 
-// ----------------------- //
-// Steps for my compiler   //
-// ----------------------- //
-
-/*
- * 1- Read source
- * 2- Tokenize
- * 3- Parse -> AST
- * 4- Codegen -> LLVM Module
- * 5- Write object file / Executable
- */
-
-
-int main (int argc, char *argv[]) {
-	if (argc < 2)
-	{
-		std::cerr << "Incorrect usage. Correct usage is nexus <input.nx>" << std::endl;
-		return EXIT_FAILURE;
+int main(int argc, char* argv[]) {
+	if (argc < 2) {
+		std::cerr << "Usage: nexus <input.nx>\n";
+		return 1;
 	}
+
+	std::ifstream file(argv[1]);
+	if (!file.is_open()) {
+		std::cerr << "Cannot open file: " << argv[1] << "\n";
+		return 1;
+	}
+
+	std::string source((std::istreambuf_iterator<char>(file)),
+					   std::istreambuf_iterator<char>());
+
+	std::cout << "=== Tokenizing " << argv[1] << " ===\n\n";
+
+	Lexer lexer(std::move(source));
+	auto tokens = lexer.tokenize();
 	
-	std::ifstream f(argv[1]);
-	if (f.is_open())
-	{
-		printf("Nexus file Opened\n");
-		std::cout << f.rdbuf();
-	}
-	else
-	{
-		printf("File doesn't exist\n");
-		return EXIT_FAILURE;
+	printf("Tokenization is complete : \n");
+	for (const auto& tok : tokens) {
+		printf("Token   :  ");
+		std::cout << tok.toString() << "\n";
 	}
 
-	return EXIT_SUCCESS;
+	return 0;
 }
