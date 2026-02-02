@@ -13,7 +13,7 @@ private class LinkedListNode<T>
 
 	public Constructor(T value)
 	{
-		self.value    = value;
+		self.value    <- value;
 		self.previous = Options.None;
 		self.next     = Options.None;
 	}
@@ -46,7 +46,6 @@ public class LinkedList<T>
 			}
 			Options.None =>
 			{
-				/* first element
 				self.head = Options.Some(node);
 				self.tail = Options.Some(node);
 			}
@@ -107,4 +106,10 @@ Main()
 
 	BankAccount test = new BankAccount();
 	BankAccount test2 = new BankAccount();
+
+	LinkedList<BankAccount> list = new LinkedList<BankAccount>();
+	list.Add(test);
+	list.Add(test2);
+
+	while true => Printf("Testing single line loops");
 }

@@ -39,7 +39,7 @@ let hasDiagnosticRelatedInformationCapability = false;
 const KEYWORDS = [
   'sum', 'class', 'implement', 'global', 'Constructor', 'Factory',
   'if', 'else', 'for', 'while', 'return', 'match', 'new',
-  'self', 'Sequential', 'true', 'false', "public", "private", "protected", "+", "-", "#"
+  'self', 'Sequential', 'true', 'false', "public", "private", "protected"
 ];
 
 const TYPES = [
@@ -49,10 +49,9 @@ const TYPES = [
 ];
 
 const BUILTIN_FUNCTIONS = [
-  'printf', 'warnf', 'Math.Random'
+  'Printf', 'Warnf', 'Math.Random', 'Print', 'Warn'
 ];
 
-const VISIBILITY_MODIFIERS = ['+', '-', '#'];
 
 // -------------------------
 // Initialize Server
