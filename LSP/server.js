@@ -11,31 +11,26 @@ const {
 
 const { TextDocument } = require('vscode-languageserver-textdocument');
 
-// Create LSP connection
 const connection = createConnection(ProposedFeatures.all);
 
-// Manage documents
 const documents = new TextDocuments(TextDocument);
 
-// Semantic token types
 const SEMANTIC_TOKEN_TYPES = [
-  'keyword',      // 0
-  'type',         // 1
-  'function',     // 2
-  'variable',     // 3
-  'number',       // 4
-  'string',       // 5
-  'comment',      // 6
-  'operator',     // 7
-  'punctuation',  // 8
+  'keyword',
+  'type',
+  'function',
+  'variable',
+  'number',
+  'string',
+  'comment',
+  'operator',
+  'punctuation',
 ];
 
-// LSP Capabilities
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 let hasDiagnosticRelatedInformationCapability = false;
 
-// Nexus keywords and types
 const KEYWORDS = [
   'sum', 'class', 'implement', 'global', 'Constructor', 'Factory',
   'if', 'else', 'for', 'while', 'return', 'match', 'new',
@@ -219,7 +214,6 @@ connection.languages.semanticTokens.on((params) => {
   let lastLine = 0;
   let lastCol = 0;
 
-  // Helper to count lines and get final column in a substring
   const getEndPosition = (startPos, endPos) => {
     let currentLine = line;
     let currentCol = col;
@@ -234,7 +228,6 @@ connection.languages.semanticTokens.on((params) => {
     return { line: currentLine, col: currentCol };
   };
 
-  // Helper to push a token with proper delta encoding
   const pushToken = (tokenLine, tokenCol, length, tokenType) => {
     const lineDelta = tokenLine - lastLine;
     const colDelta = lineDelta === 0 ? tokenCol - lastCol : tokenCol;
@@ -246,7 +239,6 @@ connection.languages.semanticTokens.on((params) => {
   while (pos < text.length) {
     const ch = text[pos];
 
-    // Newline
     if (ch === '\n') {
       line++;
       col = 0;
@@ -254,14 +246,12 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // Whitespace
     if (/\s/.test(ch)) {
       col++;
       pos++;
       continue;
     }
 
-    // Single-line comments
     if (text.startsWith('/*', pos)) {
       const start = pos;
       const startLine = line;
@@ -273,13 +263,11 @@ connection.languages.semanticTokens.on((params) => {
       const length = end - start;
       pushToken(startLine, startCol, length, 6);
       
-      // Update position
       pos = end;
       col += length;
       continue;
     }
 
-    // Nexus-style comments (/! ... !/)
     if (text.startsWith('/!', pos)) {
       const start = pos;
       const startLine = line;
@@ -295,7 +283,6 @@ connection.languages.semanticTokens.on((params) => {
       const length = end - start;
       pushToken(startLine, startCol, length, 6);
       
-      // Update line and column based on content
       const endPos = getEndPosition(start, end);
       line = endPos.line;
       col = endPos.col;
@@ -303,7 +290,6 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // Strings
     if (ch === '"') {
       const start = pos;
       const startLine = line;
@@ -313,12 +299,11 @@ connection.languages.semanticTokens.on((params) => {
       while (end < text.length && (text[end] !== '"' || text[end - 1] === '\\')) {
         end++;
       }
-      if (end < text.length) end++; // Include closing quote
+      if (end < text.length) end++;
       
       const length = end - start;
       pushToken(startLine, startCol, length, 5);
       
-      // Update position (strings should be on single line in most cases, but handle multiline)
       const endPos = getEndPosition(start, end);
       line = endPos.line;
       col = endPos.col;
@@ -326,7 +311,6 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // Numbers
     if (/[0-9]/.test(ch)) {
       const start = pos;
       const startLine = line;
@@ -342,7 +326,6 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // Identifiers / keywords / types / functions / variables
     if (/[a-zA-Z_]/.test(ch)) {
       const start = pos;
       const startLine = line;
@@ -355,16 +338,15 @@ connection.languages.semanticTokens.on((params) => {
       const word = text.slice(start, pos);
       const length = word.length;
       
-      // Determine token type
       let tokenType;
       if (KEYWORDS.includes(word)) {
-        tokenType = 0; // keyword
+        tokenType = 0;
       } else if (TYPES.includes(word) || /^[A-Z]/.test(word)) {
-        tokenType = 1; // type
+        tokenType = 1;
       } else if (BUILTIN_FUNCTIONS.includes(word)) {
-        tokenType = 2; // function
+        tokenType = 2;
       } else {
-        tokenType = 3; // variable
+        tokenType = 3;
       }
       
       pushToken(startLine, startCol, length, tokenType);
@@ -372,7 +354,6 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // Operators
     if ("+-*/%=<>!&|".includes(ch)) {
       pushToken(line, col, 1, 7);
       col++;
@@ -380,7 +361,6 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // Punctuation
     if ("(){}[],.;:".includes(ch)) {
       pushToken(line, col, 1, 8);
       col++;
@@ -388,7 +368,6 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // Fallback for any other character
     col++;
     pos++;
   }
