@@ -3,6 +3,20 @@
 #include <fstream>
 #include <iostream>
 #include <ostream>
+
+// ----------------------- //
+// Steps for my compiler   //
+// ----------------------- //
+
+/*
+ * 1- Read source
+ * 2- Tokenize
+ * 3- Parse -> AST
+ * 4- Codegen -> LLVM Module
+ * 5- Write object file / Executable
+ */
+
+
 int main (int argc, char *argv[]) {
 	if (argc < 2)
 	{
