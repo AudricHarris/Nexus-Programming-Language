@@ -1,6 +1,5 @@
 #include "Token.h"
 #include <unordered_map>
-#include <algorithm>
 
 TokenInfo TokenTable::table[static_cast<size_t>(TokenKind::NUM_TOKENS)] = {
 	// Keywords
@@ -20,7 +19,7 @@ TokenInfo TokenTable::table[static_cast<size_t>(TokenKind::NUM_TOKENS)] = {
 	// Types
 	{"type_i32",       "i32",       0, true, true, false, false, false},
 	{"type_f64",       "f64",       0, true, true, false, false, false},
-	{"type_name",      nullptr,     0, true, true, false, false, false}, // generics/user types
+	{"type_name",      nullptr,     0, true, true, false, false, false},
 
 	{"identifier",     nullptr,     0, true, false,false,false,false},
 
@@ -40,7 +39,7 @@ TokenInfo TokenTable::table[static_cast<size_t>(TokenKind::NUM_TOKENS)] = {
 	{"op_int_div",     "//",        8, true, false,true, false,false},
 	{"op_mod",         "%",         8, true, false,true, false,false},
 	{"op_dot",         ".",        16, true, false,true, false,false},
-	{"op_and_equal",   "&=",       10, true, false,true, false,false},  // tmp &= ...
+	{"op_and_equal",   "&=",       10, true, false,true, false,false},
 
 	{"op_eq",          "==",        6, true, false,true, false,false},
 	// ... add others as needed
@@ -53,7 +52,7 @@ TokenInfo TokenTable::table[static_cast<size_t>(TokenKind::NUM_TOKENS)] = {
 	{"delim_semicolon",";",         0, true, false,false,true, false},
 	{"delim_comma",    ",",         0, true, false,false,true, false},
 	{"delim_colon",    ":",         0, true, false,false,true, false},
-	{"delim_arrow",    "=>",        0, true, false,false,true, false},  // match / while
+	{"delim_arrow",    "=>",        0, true, false,false,true, false},
 
 	{"comment",        nullptr,     0, true, false,false,false,false},
 	{"whitespace",     nullptr,     0, true, false,false,false,false},
@@ -62,10 +61,11 @@ TokenInfo TokenTable::table[static_cast<size_t>(TokenKind::NUM_TOKENS)] = {
 };
 
 const TokenInfo& TokenTable::getInfo(TokenKind kind) {
-    return table[static_cast<size_t>(kind)];
+	return table[static_cast<size_t>(kind)];
 }
 
-std::optional<TokenKind> TokenTable::getKindFromSpelling(const std::string& s) {
+std::optional<TokenKind> TokenTable::getKindFromSpelling(const std::string& s)
+{
 	static const std::unordered_map<std::string, TokenKind> keywordMap = {
 		{"private",     TokenKind::kw_private},
 		{"public",      TokenKind::kw_public},
@@ -81,7 +81,6 @@ std::optional<TokenKind> TokenTable::getKindFromSpelling(const std::string& s) {
 		{"true",        TokenKind::kw_true},
 		{"i32",         TokenKind::type_i32},
 		{"f64",         TokenKind::type_f64},
-		// add more as your language grows
 	};
 
 	auto it = keywordMap.find(s);
