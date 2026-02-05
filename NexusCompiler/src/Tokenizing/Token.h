@@ -7,6 +7,22 @@
 #include <optional>
 #include <iostream>
 
+
+/*  FUTUR TYPES ADDED (Not added yet bc I would have to do tokentable): 
+    op_neq,         // !=
+    op_le,          // <=
+    op_ge,          // >=
+    op_and,         // &&   (logical and, if you want it)
+    op_or,          // ||
+
+    kw_false,       // false
+    kw_if,
+    kw_else,
+    kw_return,
+    kw_fn,          // if free functions exist
+    kw_global,      // global keyword
+    kw_warnf,       // warnf (printf-like?)
+ * */
 enum class TokenKind : uint16_t
 {
 	kw_private,
