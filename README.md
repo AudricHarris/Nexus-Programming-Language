@@ -24,3 +24,12 @@ Examples will be found in the examples folder
 ## LSP :
 Will be found in lsp folder
 
+
+# Compiler
+
+I initially had a compiler V1 which was a basic system to understand c++
+after rereading the code I decided to redo the compiler from scratch
+You can find both compilers :
+- NexusCompilerV1
+- NexusCompilerV2
+
