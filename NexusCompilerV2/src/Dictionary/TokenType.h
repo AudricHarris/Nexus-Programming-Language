@@ -59,4 +59,29 @@
  * Method = KW_name + PUNC_lParam + (param)* + PUNC_rParam + body
  */
 
+// This is a initial version and will see updates
+enum TokenType {
+  // KeyWords
+  KW_main,
+  KW_name,
+  KW_return,
+
+  // Operations
+  OP_assign,
+  OP_increment,
+  OP_move,
+
+  // Punctuation
+  PUNC_lParam,
+  PUNC_rParam,
+  PUNC_oBody,
+  PUNC_cBody,
+  PUNC_semi,
+
+  // EXTRA
+  COMMENT,
+  EOF,
+  UNKNOWN
+};
+
 #endif
