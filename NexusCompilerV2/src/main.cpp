@@ -25,7 +25,8 @@ int main(int argc, char *argv[]) {
   try {
     std::string content = fileToString(filename);
 
-    std::cout << content << "\n";
+    std::cout << "File Content : \n\n" << content << "\n";
+    std::cout << "Tokenized Content : \n\n" << "\n";
 
   } catch (const std::exception &e) {
     std::cerr << "Error: " << e.what() << "\n";
