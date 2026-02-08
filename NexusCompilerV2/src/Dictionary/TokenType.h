@@ -9,49 +9,25 @@
  * Example test.nx :
  * Main()
  * {
- *  	i32 num = 5;
- *  	num++;
- *		/! I am testing code !/
- *		Printf("This is a test {num}");
- *		i32 num2 = num;
- *		/! num is now invalid if called compiler will scream !/
- *		return;
+ *    i32 num = 5;
+ *    num++;
+ *    /! I am testing code !/
+ *    Printf("This is a test {num}");
+ *    i32 num2 = num;
+ *    /! num is now invalid if called compiler will scream !/
+ *    return;
  * }
  *
- * Main -> KW_Main
- * (    -> PUNC_lParam
- * )    -> PUNC_rParam
- * {    -> PUNC_oBody   OBody for open body
- *
- * i32 -> TYPE_i32
- * num -> KW_name
- * =   -> OP_assign
- * 5   -> LITTERAL_int
- * ;   -> PUNC_semi
- *
- * num -> KW_name
- * ++  -> OP_increment
- * ;   -> PUNC_semi
- *
- * /! I am testing code !/ -> COMMENT
- *
- * Printf -> KW_name
- * (      -> PUNC_lParam
- * "This is a test{num}" -> LITTERAL_string
- * )      -> PUNC_rParam
- *
- * i32  -> TYPE_i32
- * num2 -> KW_name
- * =    -> OP_move
- * num  -> KW_name
- * ;    -> PUNC_semi
- *
- * /! num is now invalid if called compiler will scream !/ -> COMMENT
- *
- * return -> KW_return;
- * ;      -> PUNC_semi
- *
- * } -> PUNC_cBody
+ * BECOMES :
+ * TOK_IDENTIFIER TOK_LPAREN TOK_RPAREN
+ * TOK_LBRACE
+ *    TOK_I32 TOK_IDENTIFIER TOK_ASSIGN TOK_INT TOK_SEMI
+ *    TOK_COMMENT
+ *    TOK_IDENTIFIER TOK_LPAREN TOK_STRING TOK_RPAREN TOK_SEMI
+ *    TOK_I32 TOK_IDENTIFIER TOK_MOVE TOK_IDENTIFIER TOK_SEMI
+ *    TOK_COMMENT
+ *    TOK_RETURN TOK_SEMI
+ * TOK_RBRACE
  *
  * This manual parsing allows me to identify different types
  * Example
@@ -60,28 +36,38 @@
  */
 
 // This is a initial version and will see updates
-enum TokenType {
+enum class TokenKind {
   // KeyWords
-  KW_main,
-  KW_name,
-  KW_return,
+  TOK_IDENTIFIER,
+  TOK_RETURN,
+
+  // Litterals
+  TOK_INT,
+  TOK_STRING,
 
   // Operations
-  OP_assign,
-  OP_increment,
-  OP_move,
+  TOK_ASSIGN,
+  TOK_INCREMENT,
+  TOK_MOVE,
 
-  // Punctuation
-  PUNC_lParam,
-  PUNC_rParam,
-  PUNC_oBody,
-  PUNC_cBody,
-  PUNC_semi,
+  // Punctuation / Delimiters
+  TOK_LPAREN,
+  TOK_RPAREN,
+  TOK_LBRACE,
+  TOK_RBRACE,
+  TOK_SEMI,
 
-  // EXTRA
-  COMMENT,
-  EOF,
-  UNKNOWN
+  // SPECIAL
+  TOK_COMMENT,
+  TOK_EOF,
+  TOK_UNKNOWN,
+
+  NUM_TOKENS
+};
+
+struct TokenInfo {
+  const char *typing;
+  const char *spelling;
 };
 
 #endif
