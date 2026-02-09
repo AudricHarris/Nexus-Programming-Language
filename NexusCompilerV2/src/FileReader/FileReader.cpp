@@ -21,26 +21,38 @@ std::optional<std::string> readFile(char *name) {
 
     std::cout << "File Content : \n\n" << content << "\n";
     std::cout << "Tokenized Content : \n\n" << "\n";
-    uncommentedCode(content);
-    return content;
+
+    return uncommentedCode(content);
+
   } catch (const std::exception &e) {
     std::cerr << "Error: " << e.what() << "\n";
     return std::nullopt;
   }
 }
 
+std::string uncommentedCode(std::string code) {
+  std::string clean;
+  int n = code.length();
+  int i = 0;
 
-std::string uncommentedCode(std::string code)
-{
-  bool inComment = false;
+  while (i < n) {
+    if (i + 2 < n && code[i] == '/' && code[i + 1] == '*') {
+      i += 2;
+      while (i < n && code[i] != '\n') {
+        i++;
+      }
+    } else if (i + 2 < n && code[i] == '/' && code[i + 1] == '!') {
+      i += 2;
+      while (i + 1 < n && !(code[i] == '!' && code[i + 1] == '/')) {
+        i++;
+      }
+      if (i + 1 < n)
+        i += 2;
+    } else {
+      clean += code[i];
+      i++;
+    }
+  }
 
-  for (int i = 0; i < code.length(); i++)
-    if (code[i] != '/' && code[i+1] != '!' || code[i+1] != '*')
-      std::cout << "char :" << code[i] << "\n";
-    else
-      if ( code[++i] == '*')
-        while (i<code.length() && code[i++] != '\n') {}
-      std::cerr << "Found Next line \n";
-
-  return code;
+  return clean;
 }

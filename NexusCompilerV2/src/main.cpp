@@ -1,6 +1,8 @@
 #include "FileReader/FileReader.h"
 #include <cstdlib>
 #include <iostream>
+#include <optional>
+#include <string>
 
 int main(int argc, char *argv[]) {
   if (argc != 2) {
@@ -8,7 +10,8 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  readFile(argv[1]);
+  std::string code = readFile(argv[1]).value_or("");
+  std::cout << "Clean code : \n" << code << "\n";
 
   return EXIT_SUCCESS;
 }
