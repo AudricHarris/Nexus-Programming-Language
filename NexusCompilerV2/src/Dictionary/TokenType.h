@@ -1,6 +1,8 @@
 #ifndef TokenType
 #define TokenType
 
+#include <string>
+
 /*
  * Let's start with the basics and expand on that
  * We need the simplest program or a small program to get an idea on how to
@@ -70,4 +72,21 @@ struct TokenInfo {
   const char *spelling;
 };
 
+class Token {
+private:
+  TokenKind kind;
+  std::string word;
+  int line;
+  int column;
+
+public:
+  Token(TokenKind k, std::string w, int l, int c)
+      : kind(k), word(w), line(l), column(c) {}
+
+  // getters
+  TokenKind getKind() const { return this->kind; }
+  std::string getWord() const { return this->word; }
+  int getLine() const { return this->line; }
+  int getColumn() const { return this->column; }
+};
 #endif
