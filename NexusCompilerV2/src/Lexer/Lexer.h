@@ -39,7 +39,7 @@ private:
 
   bool isIdentifierStart(char c);
   bool isIdentifierChar(char c);
-  std::optional<Token> makeToken(TokenKind k, std::string spelling);
+  Token makeToken(TokenKind k, std::string spelling);
 
 public:
   Lexer(std::string file);

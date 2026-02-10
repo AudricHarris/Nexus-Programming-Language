@@ -85,5 +85,6 @@ public:
   std::string getWord() const { return this->word; }
   int getLine() const { return this->line; }
   int getColumn() const { return this->column; }
+  std::string toString();
 };
 #endif

@@ -49,9 +49,7 @@ bool Lexer::isIdentifierChar(char c) {
   return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
 }
 
-std::optional<Token> Lexer::makeToken(TokenKind k, std::string spelling) {
-  if (spelling.size() == 0)
-    return std::nullopt;
+Token Lexer::makeToken(TokenKind k, std::string spelling) {
   Token t(k, spelling, line, col);
   return t;
 }
@@ -63,32 +61,102 @@ std::vector<Token> Lexer::Tokenize() {
   while (this->pos < this->codeFile.length()) {
     skipWhitespace();
 
+    // Sybols
     if (this->peek() == '(') {
       this->next();
-      std::cout << "Parenthese " << '\n';
-      makeToken(TokenKind::TOK_LPAREN, "(");
+      lstTokens.push_back(makeToken(TokenKind::TOK_LPAREN, "("));
       continue;
-    } else if (this->peek() == ')') {
+    }
+    if (this->peek() == ')') {
       this->next();
-      std::cout << "Parenthese close " << '\n';
-      makeToken(TokenKind::TOK_RPAREN, ")");
+      lstTokens.push_back(makeToken(TokenKind::TOK_RPAREN, ")"));
+      continue;
+    }
+    if (this->peek() == '{') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_LBRACE, "{"));
+      continue;
+    }
+    if (this->peek() == '}') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_RBRACE, "}"));
+      continue;
+    }
+    if (this->peek() == '=') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_ASSIGN, "="));
+      continue;
+    }
+    if (this->peek() == ';') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_SEMI, ";"));
+      continue;
+    }
+    if (this->peek() == '+') {
+      this->next();
+      if (this->peeknext() == '+') {
+        this->next();
+        lstTokens.push_back(makeToken(TokenKind::TOK_INCREMENT, "++"));
+      }
+      // else
+      //  makeToken(TokenKind::TOK_, "+");
       continue;
     }
 
+    // Identifiers
     if (this->isIdentifierStart(this->peek())) {
       std::string currentWord;
       while (this->isIdentifierChar(this->peek())) {
         currentWord += this->next();
       }
       std::cout << "Identifier " << currentWord << '\n';
+      lstTokens.push_back(makeToken(TokenKind::TOK_IDENTIFIER, currentWord));
       continue;
     }
 
-    std::cerr << "Unknown symbol [" << this->peek() << "]\n";
+    if (this->peek() == '"') {
+      std::string currentWord;
+      this->next();
+      while (this->pos < this->codeFile.length() && this->peek() != '"') {
+        currentWord += this->next();
+      }
+      std::cerr << "\033[46m" << "Litteral string found : " << currentWord
+                << "\033[0m"
+                << "\n";
+      lstTokens.push_back(makeToken(TokenKind::TOK_STRING, currentWord));
+      this->next();
+      continue;
+    }
+
+    // Determine if number litteral
+    if (std::isdigit(this->peek())) {
+      std::string currentWord;
+      do {
+        currentWord += this->next();
+      } while (std::isdigit(this->peek()));
+
+      std::cerr << "\033[42m" << "Litteral Number found : " << currentWord
+                << "\033[0m"
+                << "\n";
+      lstTokens.push_back(makeToken(TokenKind::TOK_INT, currentWord));
+      continue;
+    }
+
+    // End case so \0 I assume
+    if (this->peek() == '\0') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_EOF, "<EOF>"));
+      continue;
+    }
+
+    std::cerr << "\033[31m" << "Unknown symbol [" << this->peek() << "]\033[0m"
+              << "\n";
+    lstTokens.push_back(makeToken(TokenKind::TOK_UNKNOWN, "<UNKNOWN>"));
     this->next();
   }
 
   std::cout << "Line & col " << this->line << " " << this->col << '\n';
+
   return lstTokens;
 }
 

@@ -582,6 +582,7 @@ CMakeFiles/myprogram.dir/src/Lexer/Lexer.cpp.o: /home/wearwqlf/Documents/Nexus-P
   /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/include/stddef.h
 
 CMakeFiles/myprogram.dir/src/main.cpp.o: /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/main.cpp \
+  /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/Dictionary/TokenType.h \
   /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/FileReader/FileReader.h \
   /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/Dictionary/TokenType.h \
   /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/Lexer/Lexer.h \
