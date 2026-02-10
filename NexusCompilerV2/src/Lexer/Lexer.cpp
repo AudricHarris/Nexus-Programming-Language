@@ -56,6 +56,10 @@ std::vector<Token> Lexer::Tokenize() {
       std::cout << "Parenthese " << '\n';
     }
 
+    if (this->peek() == ')')
+    {
+      std::cout << "Parenthese close " << '\n';
+    }
     currentWord += next();
   }
   return lstTokens;
