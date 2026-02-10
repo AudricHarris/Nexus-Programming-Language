@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/myprogram.dir/link.d CMakeFiles/myprogram.dir/src/Dictionary/TokenTable.cpp.o CMakeFiles/myprogram.dir/src/FileReader/FileReader.cpp.o CMakeFiles/myprogram.dir/src/Lexer/Lexer.cpp.o CMakeFiles/myprogram.dir/src/main.cpp.o -o myprogram

@@ -2,6 +2,8 @@
 #define LEXER_H
 
 #include "../Dictionary/TokenType.h"
+#include <cstddef>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -26,15 +28,18 @@
 class Lexer {
 private:
   std::string codeFile;
-  int pos = 0;
-  int line = 1;
-  int col = 1;
+  size_t pos = 0;
+  size_t line = 1;
+  size_t col = 1;
 
   char peek() const;
   char peeknext() const;
   char next();
   void skipWhitespace();
-  Token makeToken(TokenKind k, std::string spelling);
+
+  bool isIdentifierStart(char c);
+  bool isIdentifierChar(char c);
+  std::optional<Token> makeToken(TokenKind k, std::string spelling);
 
 public:
   Lexer(std::string file);

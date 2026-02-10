@@ -1,6 +1,7 @@
 #include "Lexer.h"
 #include <cctype>
 #include <iostream>
+#include <optional>
 #include <vector>
 
 // Overwriting methods from lexer
@@ -38,7 +39,19 @@ void Lexer::skipWhitespace() {
   }
 }
 
-Token Lexer::makeToken(TokenKind k, std::string spelling) {
+// Determine if it can be the start of identifier
+bool Lexer::isIdentifierStart(char c) {
+  return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+}
+
+// Determine if it can be in the content of a identifier
+bool Lexer::isIdentifierChar(char c) {
+  return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+}
+
+std::optional<Token> Lexer::makeToken(TokenKind k, std::string spelling) {
+  if (spelling.size() == 0)
+    return std::nullopt;
   Token t(k, spelling, line, col);
   return t;
 }
@@ -47,21 +60,35 @@ Token Lexer::makeToken(TokenKind k, std::string spelling) {
 std::vector<Token> Lexer::Tokenize() {
   std::vector<Token> lstTokens;
 
-  std::string currentWord;
   while (this->pos < this->codeFile.length()) {
     skipWhitespace();
 
-    if (this->peek() == '(')
-    {
+    if (this->peek() == '(') {
+      this->next();
       std::cout << "Parenthese " << '\n';
+      makeToken(TokenKind::TOK_LPAREN, "(");
+      continue;
+    } else if (this->peek() == ')') {
+      this->next();
+      std::cout << "Parenthese close " << '\n';
+      makeToken(TokenKind::TOK_RPAREN, ")");
+      continue;
     }
 
-    if (this->peek() == ')')
-    {
-      std::cout << "Parenthese close " << '\n';
+    if (this->isIdentifierStart(this->peek())) {
+      std::string currentWord;
+      while (this->isIdentifierChar(this->peek())) {
+        currentWord += this->next();
+      }
+      std::cout << "Identifier " << currentWord << '\n';
+      continue;
     }
-    currentWord += next();
+
+    std::cerr << "Unknown symbol [" << this->peek() << "]\n";
+    this->next();
   }
+
+  std::cout << "Line & col " << this->line << " " << this->col << '\n';
   return lstTokens;
 }
 
