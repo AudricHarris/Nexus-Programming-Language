@@ -47,7 +47,18 @@ Token Lexer::makeToken(TokenKind k, std::string spelling) {
 std::vector<Token> Lexer::Tokenize() {
   std::vector<Token> lstTokens;
   while (this->pos < this->codeFile.length()) {
-    // Instructions
   }
   return lstTokens;
 }
+
+/*
+ * Instructions for tokenize
+ * Step 1 ignore white space
+ * Step 2 create a string
+ * step 3 check if symbol has any importance
+ * Step 4 if it doesn't then add to string
+ * step 5 if space then stop create token from string and reset
+ * step 6 if symbol create token for string and then token for symbol
+ *
+ * Default : all words are identifier unknown types will be in parser
+ * */
