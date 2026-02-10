@@ -2,7 +2,7 @@ Main()
 {
 	i32 num = 5;
 	num++;
-	/! I am testing code !/
+	/* I am testing code
 	Printf("This is a test {num}");
 
 	i32 num2 = num;

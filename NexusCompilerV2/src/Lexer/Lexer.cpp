@@ -1,6 +1,6 @@
 #include "Lexer.h"
 #include <cctype>
-#include <optional>
+#include <iostream>
 #include <vector>
 
 // Overwriting methods from lexer
@@ -46,7 +46,17 @@ Token Lexer::makeToken(TokenKind k, std::string spelling) {
 // Public
 std::vector<Token> Lexer::Tokenize() {
   std::vector<Token> lstTokens;
+
+  std::string currentWord;
   while (this->pos < this->codeFile.length()) {
+    skipWhitespace();
+
+    if (this->peek() == '(')
+    {
+      std::cout << "Parenthese " << '\n';
+    }
+
+    currentWord += next();
   }
   return lstTokens;
 }
