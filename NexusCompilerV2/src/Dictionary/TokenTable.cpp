@@ -33,6 +33,5 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_MOVE", "<-"},           {"TOK_LPAREN", "("},
     {"TOK_RPAREN", ")"},          {"TOK_LBRACE", "{"},
     {"TOK_LBRACE", "}"},          {"TOK_SEMI", ";"},
-    {"TOK_COMMENT", nullptr},     {"TOK_EOF", "<EOF>"},
-    {"TOK_UNKNOWN", "<UNKNOWN>"},
+    {"TOK_EOF", "<EOF>"},         {"TOK_UNKNOWN", "<UNKNOWN>"},
 };

@@ -31,12 +31,13 @@ private:
   int col = 1;
 
   char peek() const;
-  char peeknext();
+  char peeknext() const;
+  char next();
   void skipWhitespace();
   Token makeToken(TokenKind k, std::string spelling);
 
 public:
-  Lexer();
+  Lexer(std::string file);
   std::vector<Token> Tokenize();
 };
 
