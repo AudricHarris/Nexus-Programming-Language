@@ -1,7 +1,6 @@
 #include "Lexer.h"
 #include <cctype>
 #include <iostream>
-#include <optional>
 #include <vector>
 
 // Overwriting methods from lexer
