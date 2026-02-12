@@ -59,7 +59,7 @@ std::string Token::toString() {
   case TokenKind::TOK_LBRACE:
     return "\nTOK_LBRACE\n";
   case TokenKind::TOK_RBRACE:
-    return "\nTOK_RBRACE\n";
+    return "TOK_RBRACE\n";
   case TokenKind::TOK_SEMI:
     return "TOK_SEMI\n";
   case TokenKind::TOK_EOF:

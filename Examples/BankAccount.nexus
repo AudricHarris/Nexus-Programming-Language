@@ -14,13 +14,13 @@ sum TransactionResult
 
 public class BankAccount
 {
-	private global i32 g_nbAccounts = 0;
-	private global i32 g_totalConnection = 0;
+	private static i32 g_nbAccounts = 0;
+	private static i32 g_totalConnection = 0;
 
 	private i4 accountNumber;
 	private i32 balance;
 
-	public global Factory(i32 balance) -> Options<BankAccount>
+	public static Factory(i32 balance) -> Options<BankAccount>
 	{
 		if (balance < 0)
 		{
@@ -34,6 +34,9 @@ public class BankAccount
 	{
 		self.accountNumber = BankAccount::g_nbAccounts++;
 		self.balance = balance;
+		if (balance < 0) return Options.None;
+
+		return Options.Some(self);
 	}
 
 
@@ -69,7 +72,7 @@ InitAccounts(Options<BankAccount>[] tab)
 {
 	for (i32 i = 0; i < tab.Length; i++)
 	{
-		tab[i] = BankAccount.Factory((Math.Random() * 20000) :: i32);
+		tab[i] = BankAccount.Factory((Math.Random() * 20000) as i32);
 		match (tab[i])
 		{
 			Options.Some(acc) => tab[o].Run();

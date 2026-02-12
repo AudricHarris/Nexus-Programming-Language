@@ -26,5 +26,7 @@ int main(int argc, char *argv[]) {
     std::cout << lst[i].toString();
   }
 
+  std::cout << "\n\nParsing Tokens : \n";
+
   return EXIT_SUCCESS;
 }

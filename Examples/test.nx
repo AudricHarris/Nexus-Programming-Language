@@ -1,6 +1,6 @@
 Main()
 {
-	i32 num = 5;
+	i32 num = 5008526;
 	num++;
 	/* I am testing code
 	Printf("This is a test {num}");

@@ -32,7 +32,7 @@ let hasWorkspaceFolderCapability = false;
 let hasDiagnosticRelatedInformationCapability = false;
 
 const KEYWORDS = [
-  'sum', 'class', 'implement', 'global', 'Constructor', 'Factory',
+  'sum', 'class', 'implement', 'static', 'Constructor', 'Factory',
   'if', 'else', 'for', 'while', 'return', 'match', 'new',
   'self', 'Sequential', 'true', 'false', "public", "private", "protected"
 ];
@@ -256,13 +256,13 @@ connection.languages.semanticTokens.on((params) => {
       const start = pos;
       const startLine = line;
       const startCol = col;
-      
+
       let end = text.indexOf('\n', pos);
       if (end === -1) end = text.length;
-      
+
       const length = end - start;
       pushToken(startLine, startCol, length, 6);
-      
+
       pos = end;
       col += length;
       continue;
@@ -272,17 +272,17 @@ connection.languages.semanticTokens.on((params) => {
       const start = pos;
       const startLine = line;
       const startCol = col;
-      
+
       let end = text.indexOf('!/', pos + 2);
       if (end === -1) {
         end = text.length;
       } else {
         end += 2;
       }
-      
+
       const length = end - start;
       pushToken(startLine, startCol, length, 6);
-      
+
       const endPos = getEndPosition(start, end);
       line = endPos.line;
       col = endPos.col;
@@ -294,16 +294,16 @@ connection.languages.semanticTokens.on((params) => {
       const start = pos;
       const startLine = line;
       const startCol = col;
-      
+
       let end = pos + 1;
       while (end < text.length && (text[end] !== '"' || text[end - 1] === '\\')) {
         end++;
       }
       if (end < text.length) end++;
-      
+
       const length = end - start;
       pushToken(startLine, startCol, length, 5);
-      
+
       const endPos = getEndPosition(start, end);
       line = endPos.line;
       col = endPos.col;
@@ -315,11 +315,11 @@ connection.languages.semanticTokens.on((params) => {
       const start = pos;
       const startLine = line;
       const startCol = col;
-      
+
       while (pos < text.length && /[0-9.eE+-]/.test(text[pos])) {
         pos++;
       }
-      
+
       const length = pos - start;
       pushToken(startLine, startCol, length, 4);
       col += length;
@@ -330,14 +330,14 @@ connection.languages.semanticTokens.on((params) => {
       const start = pos;
       const startLine = line;
       const startCol = col;
-      
+
       while (pos < text.length && /[a-zA-Z0-9_.]/.test(text[pos])) {
         pos++;
       }
-      
+
       const word = text.slice(start, pos);
       const length = word.length;
-      
+
       let tokenType;
       if (KEYWORDS.includes(word)) {
         tokenType = 0;
@@ -348,7 +348,7 @@ connection.languages.semanticTokens.on((params) => {
       } else {
         tokenType = 3;
       }
-      
+
       pushToken(startLine, startCol, length, tokenType);
       col += length;
       continue;
