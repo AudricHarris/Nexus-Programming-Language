@@ -13,7 +13,7 @@ private class LinkedListNode<T>
 
 	public Constructor(T value)
 	{
-		self.value    <- value;
+		self.value    <- value; /* This explicit moves but value1 = value moves to
 		self.previous = Options.None;
 		self.next     = Options.None;
 	}

@@ -1,9 +1,6 @@
 #include "Token.h"
 #include <unordered_map>
 
-#include "Token.h"
-#include <unordered_map>
-
 TokenInfo TokenTable::table[static_cast<size_t>(TokenKind::NUM_TOKENS)] = {
     // Keywords (0-11)
     {"kw_private", "private", 0, true, true, false, false, false},
