@@ -93,7 +93,7 @@ std::vector<Token> Lexer::Tokenize() {
     }
     if (this->peek() == '+') {
       this->next();
-      if (this->peeknext() == '+') {
+      if (this->peek() == '+') {
         this->next();
         lstTokens.push_back(makeToken(TokenKind::TOK_INCREMENT, "++"));
       }
