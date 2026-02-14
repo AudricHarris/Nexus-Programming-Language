@@ -117,24 +117,24 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named myprogram
+# Target rules for targets named NexusCompiler
 
 # Build rule for target.
-myprogram: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 myprogram
-.PHONY : myprogram
+NexusCompiler: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 NexusCompiler
+.PHONY : NexusCompiler
 
 # fast build rule for target.
-myprogram/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/build
-.PHONY : myprogram/fast
+NexusCompiler/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/build
+.PHONY : NexusCompiler/fast
 
 src/Dictionary/TokenTable.o: src/Dictionary/TokenTable.cpp.o
 .PHONY : src/Dictionary/TokenTable.o
 
 # target to build an object file
 src/Dictionary/TokenTable.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/Dictionary/TokenTable.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/Dictionary/TokenTable.cpp.o
 .PHONY : src/Dictionary/TokenTable.cpp.o
 
 src/Dictionary/TokenTable.i: src/Dictionary/TokenTable.cpp.i
@@ -142,7 +142,7 @@ src/Dictionary/TokenTable.i: src/Dictionary/TokenTable.cpp.i
 
 # target to preprocess a source file
 src/Dictionary/TokenTable.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/Dictionary/TokenTable.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/Dictionary/TokenTable.cpp.i
 .PHONY : src/Dictionary/TokenTable.cpp.i
 
 src/Dictionary/TokenTable.s: src/Dictionary/TokenTable.cpp.s
@@ -150,7 +150,7 @@ src/Dictionary/TokenTable.s: src/Dictionary/TokenTable.cpp.s
 
 # target to generate assembly for a file
 src/Dictionary/TokenTable.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/Dictionary/TokenTable.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/Dictionary/TokenTable.cpp.s
 .PHONY : src/Dictionary/TokenTable.cpp.s
 
 src/FileReader/FileReader.o: src/FileReader/FileReader.cpp.o
@@ -158,7 +158,7 @@ src/FileReader/FileReader.o: src/FileReader/FileReader.cpp.o
 
 # target to build an object file
 src/FileReader/FileReader.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/FileReader/FileReader.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/FileReader/FileReader.cpp.o
 .PHONY : src/FileReader/FileReader.cpp.o
 
 src/FileReader/FileReader.i: src/FileReader/FileReader.cpp.i
@@ -166,7 +166,7 @@ src/FileReader/FileReader.i: src/FileReader/FileReader.cpp.i
 
 # target to preprocess a source file
 src/FileReader/FileReader.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/FileReader/FileReader.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/FileReader/FileReader.cpp.i
 .PHONY : src/FileReader/FileReader.cpp.i
 
 src/FileReader/FileReader.s: src/FileReader/FileReader.cpp.s
@@ -174,7 +174,7 @@ src/FileReader/FileReader.s: src/FileReader/FileReader.cpp.s
 
 # target to generate assembly for a file
 src/FileReader/FileReader.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/FileReader/FileReader.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/FileReader/FileReader.cpp.s
 .PHONY : src/FileReader/FileReader.cpp.s
 
 src/Lexer/Lexer.o: src/Lexer/Lexer.cpp.o
@@ -182,7 +182,7 @@ src/Lexer/Lexer.o: src/Lexer/Lexer.cpp.o
 
 # target to build an object file
 src/Lexer/Lexer.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/Lexer/Lexer.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/Lexer/Lexer.cpp.o
 .PHONY : src/Lexer/Lexer.cpp.o
 
 src/Lexer/Lexer.i: src/Lexer/Lexer.cpp.i
@@ -190,7 +190,7 @@ src/Lexer/Lexer.i: src/Lexer/Lexer.cpp.i
 
 # target to preprocess a source file
 src/Lexer/Lexer.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/Lexer/Lexer.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/Lexer/Lexer.cpp.i
 .PHONY : src/Lexer/Lexer.cpp.i
 
 src/Lexer/Lexer.s: src/Lexer/Lexer.cpp.s
@@ -198,7 +198,7 @@ src/Lexer/Lexer.s: src/Lexer/Lexer.cpp.s
 
 # target to generate assembly for a file
 src/Lexer/Lexer.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/Lexer/Lexer.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/Lexer/Lexer.cpp.s
 .PHONY : src/Lexer/Lexer.cpp.s
 
 src/main.o: src/main.cpp.o
@@ -206,7 +206,7 @@ src/main.o: src/main.cpp.o
 
 # target to build an object file
 src/main.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/main.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/main.cpp.o
 .PHONY : src/main.cpp.o
 
 src/main.i: src/main.cpp.i
@@ -214,7 +214,7 @@ src/main.i: src/main.cpp.i
 
 # target to preprocess a source file
 src/main.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/main.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/main.cpp.i
 .PHONY : src/main.cpp.i
 
 src/main.s: src/main.cpp.s
@@ -222,7 +222,7 @@ src/main.s: src/main.cpp.s
 
 # target to generate assembly for a file
 src/main.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/src/main.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/src/main.cpp.s
 .PHONY : src/main.cpp.s
 
 # Help Target
@@ -233,7 +233,7 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
-	@echo "... myprogram"
+	@echo "... NexusCompiler"
 	@echo "... src/Dictionary/TokenTable.o"
 	@echo "... src/Dictionary/TokenTable.i"
 	@echo "... src/Dictionary/TokenTable.s"

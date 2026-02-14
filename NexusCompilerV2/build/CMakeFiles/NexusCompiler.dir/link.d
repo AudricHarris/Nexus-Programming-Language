@@ -1,11 +1,11 @@
-myprogram: \
+NexusCompiler: \
   /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../lib/Scrt1.o \
   /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../lib/crti.o \
   /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/crtbeginS.o \
-  CMakeFiles/myprogram.dir/src/Dictionary/TokenTable.cpp.o \
-  CMakeFiles/myprogram.dir/src/FileReader/FileReader.cpp.o \
-  CMakeFiles/myprogram.dir/src/Lexer/Lexer.cpp.o \
-  CMakeFiles/myprogram.dir/src/main.cpp.o \
+  CMakeFiles/NexusCompiler.dir/src/Dictionary/TokenTable.cpp.o \
+  CMakeFiles/NexusCompiler.dir/src/FileReader/FileReader.cpp.o \
+  CMakeFiles/NexusCompiler.dir/src/Lexer/Lexer.cpp.o \
+  CMakeFiles/NexusCompiler.dir/src/main.cpp.o \
   /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../lib/libstdc++.so \
   /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../lib/libm.so \
   /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../lib/libm.so \
@@ -40,13 +40,13 @@ myprogram: \
 
 /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/crtbeginS.o:
 
-CMakeFiles/myprogram.dir/src/Dictionary/TokenTable.cpp.o:
+CMakeFiles/NexusCompiler.dir/src/Dictionary/TokenTable.cpp.o:
 
-CMakeFiles/myprogram.dir/src/FileReader/FileReader.cpp.o:
+CMakeFiles/NexusCompiler.dir/src/FileReader/FileReader.cpp.o:
 
-CMakeFiles/myprogram.dir/src/Lexer/Lexer.cpp.o:
+CMakeFiles/NexusCompiler.dir/src/Lexer/Lexer.cpp.o:
 
-CMakeFiles/myprogram.dir/src/main.cpp.o:
+CMakeFiles/NexusCompiler.dir/src/main.cpp.o:
 
 /usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/../../../../lib/libstdc++.so:
 

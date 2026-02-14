@@ -1,8 +1,7 @@
-CMakeFiles/myprogram.dir/src/Lexer/Lexer.cpp.o: \
- /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/Lexer/Lexer.cpp \
+CMakeFiles/NexusCompiler.dir/src/main.cpp.o: \
+ /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/main.cpp \
  /usr/include/stdc-predef.h \
- /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/Lexer/Lexer.h \
- /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/Lexer/../Dictionary/TokenType.h \
+ /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/Dictionary/TokenType.h \
  /usr/include/c++/15.2.1/string \
  /usr/include/c++/15.2.1/bits/requires_hosted.h \
  /usr/include/c++/15.2.1/x86_64-pc-linux-gnu/bits/c++config.h \
@@ -105,13 +104,16 @@ CMakeFiles/myprogram.dir/src/Lexer/Lexer.cpp.o: \
  /usr/include/c++/15.2.1/cstddef \
  /usr/include/c++/15.2.1/bits/uses_allocator.h \
  /usr/include/c++/15.2.1/bits/uses_allocator_args.h \
- /usr/include/c++/15.2.1/tuple /usr/include/c++/15.2.1/optional \
- /usr/include/c++/15.2.1/exception \
+ /usr/include/c++/15.2.1/tuple \
+ /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/FileReader/FileReader.h \
+ /usr/include/c++/15.2.1/optional /usr/include/c++/15.2.1/exception \
  /usr/include/c++/15.2.1/bits/exception_ptr.h \
  /usr/include/c++/15.2.1/bits/cxxabi_init_exception.h \
  /usr/include/c++/15.2.1/typeinfo \
  /usr/include/c++/15.2.1/bits/nested_exception.h \
  /usr/include/c++/15.2.1/bits/enable_special_members.h \
+ /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/Lexer/Lexer.h \
+ /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/src/Lexer/../Dictionary/TokenType.h \
  /usr/include/c++/15.2.1/vector \
  /usr/include/c++/15.2.1/bits/stl_uninitialized.h \
  /usr/include/c++/15.2.1/bits/stl_vector.h \

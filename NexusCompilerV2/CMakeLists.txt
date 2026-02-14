@@ -12,10 +12,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
-add_executable(myprogram ${SOURCES})
+add_executable(NexusCompiler ${SOURCES})
 
-target_compile_options(myprogram PRIVATE
+target_compile_options(NexusCompiler PRIVATE
     -Wall -Wextra -Wpedantic
 )
 
-target_include_directories(myprogram PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(NexusCompiler PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")

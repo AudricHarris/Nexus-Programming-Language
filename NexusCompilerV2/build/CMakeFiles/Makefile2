@@ -63,11 +63,11 @@ CMAKE_BINARY_DIR = /home/wearwqlf/Documents/Nexus-Programming-Language/NexusComp
 # Directory level rules for the build root directory
 
 # The main recursive "all" target.
-all: CMakeFiles/myprogram.dir/all
+all: CMakeFiles/NexusCompiler.dir/all
 .PHONY : all
 
 # The main recursive "codegen" target.
-codegen: CMakeFiles/myprogram.dir/codegen
+codegen: CMakeFiles/NexusCompiler.dir/codegen
 .PHONY : codegen
 
 # The main recursive "preinstall" target.
@@ -75,40 +75,40 @@ preinstall:
 .PHONY : preinstall
 
 # The main recursive "clean" target.
-clean: CMakeFiles/myprogram.dir/clean
+clean: CMakeFiles/NexusCompiler.dir/clean
 .PHONY : clean
 
 #=============================================================================
-# Target rules for target CMakeFiles/myprogram.dir
+# Target rules for target CMakeFiles/NexusCompiler.dir
 
 # All Build rule for target.
-CMakeFiles/myprogram.dir/all:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/depend
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/build/CMakeFiles --progress-num=1,2,3,4,5 "Built target myprogram"
-.PHONY : CMakeFiles/myprogram.dir/all
+CMakeFiles/NexusCompiler.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/build/CMakeFiles --progress-num=1,2,3,4,5 "Built target NexusCompiler"
+.PHONY : CMakeFiles/NexusCompiler.dir/all
 
 # Build rule for subdir invocation for target.
-CMakeFiles/myprogram.dir/rule: cmake_check_build_system
+CMakeFiles/NexusCompiler.dir/rule: cmake_check_build_system
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/build/CMakeFiles 5
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/myprogram.dir/all
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/NexusCompiler.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/build/CMakeFiles 0
-.PHONY : CMakeFiles/myprogram.dir/rule
+.PHONY : CMakeFiles/NexusCompiler.dir/rule
 
 # Convenience name for target.
-myprogram: CMakeFiles/myprogram.dir/rule
-.PHONY : myprogram
+NexusCompiler: CMakeFiles/NexusCompiler.dir/rule
+.PHONY : NexusCompiler
 
 # codegen rule for target.
-CMakeFiles/myprogram.dir/codegen:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/build/CMakeFiles --progress-num=1,2,3,4,5 "Finished codegen for target myprogram"
-.PHONY : CMakeFiles/myprogram.dir/codegen
+CMakeFiles/NexusCompiler.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/wearwqlf/Documents/Nexus-Programming-Language/NexusCompilerV2/build/CMakeFiles --progress-num=1,2,3,4,5 "Finished codegen for target NexusCompiler"
+.PHONY : CMakeFiles/NexusCompiler.dir/codegen
 
 # clean rule for target.
-CMakeFiles/myprogram.dir/clean:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/myprogram.dir/build.make CMakeFiles/myprogram.dir/clean
-.PHONY : CMakeFiles/myprogram.dir/clean
+CMakeFiles/NexusCompiler.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/NexusCompiler.dir/build.make CMakeFiles/NexusCompiler.dir/clean
+.PHONY : CMakeFiles/NexusCompiler.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

@@ -5,4 +5,4 @@ if [ -z "$1" ]; then
     exit
 fi
 
-cd build && cmake --build . && cd .. && ./build/myprogram $1
+cd build && cmake --build . && cd .. && ./build/NexusCompiler $1
