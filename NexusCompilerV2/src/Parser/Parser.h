@@ -60,6 +60,7 @@ private:
 
 public:
   void parseFunction();
+  void parseExpression();
 };
 
 #endif
