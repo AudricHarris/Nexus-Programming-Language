@@ -1,6 +1,7 @@
 #ifndef PARSER_H
 #define PARSER_H
 
+#include <memory>
 #include <vector>
 
 // Custom
@@ -56,6 +57,9 @@
 class Parser {
 private:
   std::vector<Token> tokens;
+
+public:
+  void parseFunction();
 };
 
 #endif
