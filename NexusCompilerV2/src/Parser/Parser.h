@@ -5,6 +5,7 @@
 #include <vector>
 
 // Custom
+#include "../AST/AST.h"
 #include "../Dictionary/TokenType.h"
 
 // Let's start by defining Notions
@@ -61,6 +62,7 @@ private:
 public:
   void parseFunction();
   void parseExpression();
+  std::unique_ptr<Program> parse();
 };
 
 #endif
