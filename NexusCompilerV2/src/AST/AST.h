@@ -1,6 +1,10 @@
 #ifndef AST_H
 #define AST_H
 
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
 enum class NodeType {
   Program,
   FunctionDef,
@@ -27,4 +31,28 @@ NodeType::StringLiteral
         return; --> NodeType::ReturnStmt
 }
 */
+
+class ASTVisitor;
+
+class ASTNode {
+public:
+  virtual ~ASTNode() = default;
+  virtual void accept(ASTVisitor &v) const = 0;
+  virtual void print(int indent = 0) const = 0;
+};
+
+class Decl : public ASTNode {};
+
+class Program : public ASTNode {
+public:
+  std::vector<std::unique_ptr<Decl>> declarations;
+  void accept(ASTVisitor &v) const override { /* TODO */ }
+  void print(int indent) const override {
+    std::cout << std::string(indent, ' ') << "Program\n";
+    for (const auto &decl : declarations) {
+      decl->print(indent + 2);
+    }
+  }
+};
+
 #endif // !AST_H

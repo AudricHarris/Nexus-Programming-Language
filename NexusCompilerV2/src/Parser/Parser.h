@@ -60,9 +60,7 @@ private:
   std::vector<Token> tokens;
 
 public:
-  void parseFunction();
-  void parseExpression();
-  std::unique_ptr<Program> parse();
+  std::unique_ptr<Program> parseFunction();
 };
 
 #endif
