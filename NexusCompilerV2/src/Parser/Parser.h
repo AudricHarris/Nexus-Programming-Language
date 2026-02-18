@@ -1,7 +1,9 @@
 #ifndef PARSER_H
 #define PARSER_H
 
+#include <cstddef>
 #include <memory>
+#include <string_view>
 #include <vector>
 
 // Custom
@@ -58,9 +60,17 @@
 class Parser {
 private:
   std::vector<Token> tokens;
+  size_t currentIndex = 0;
+  const Token &peek() const;
+  Token consume();
+  bool match(TokenKind kind);
+  Token expect(TokenKind kind, std::string_view errorMsg = {});
+  bool isAtEnd() const;
 
 public:
-  std::unique_ptr<Program> parseFunction();
+  explicit Parser(const std::vector<Token> &t) : tokens(t) {}
+  std::unique_ptr<Program> parseFunctionDecl();
+  std::unique_ptr<Block> parseBlock();
 };
 
 #endif
