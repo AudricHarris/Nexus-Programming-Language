@@ -62,7 +62,7 @@ private:
   std::vector<Token> tokens;
   size_t currentIndex = 0;
   const Token &peek() const;
-  Token consume();
+  const Token consume();
   bool match(TokenKind kind);
   Token expect(TokenKind kind, std::string_view errorMsg = {});
   bool isAtEnd() const;

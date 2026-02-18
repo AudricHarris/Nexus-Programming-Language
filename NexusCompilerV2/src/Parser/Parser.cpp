@@ -1,20 +1,46 @@
 #include "Parser.h"
 #include "../Dictionary/TokenType.h"
-#include <cstdint>
+#include "ParserError.h"
 
-struct SourceLoc {
-  uint32_t line = 1;
-  uint32_t column = 1;
-  bool is_eof = false;
-};
-
-static const SourceLoc EOF_LOC{0, 0, true};
+#include <string>
+#include <string_view>
 
 const Token &Parser::peek() const {
-  if (currentIndex >= tokens.size()) {
+  if (this->currentIndex >= this->tokens.size()) {
     static const Token EOF_TOKEN{TokenKind::TOK_EOF, "", 0, 0};
     return EOF_TOKEN;
   }
 
-  return tokens[currentIndex];
+  return this->tokens[this->currentIndex];
+}
+
+const Token Parser::consume() {
+  if (this->currentIndex >= this->tokens.size()) {
+    static const Token EOF_TOKEN{TokenKind::TOK_EOF, "", 0, 0};
+    return EOF_TOKEN;
+  }
+
+  return this->tokens[this->currentIndex++];
+}
+
+bool Parser::match(TokenKind k) {
+  if (this->peek().getKind() == k) {
+    this->consume();
+    return true;
+  }
+  return false;
+}
+
+Token Parser::expect(TokenKind kind, std::string_view errorMsg) {
+  if (this->peek().getKind() == kind) {
+    return this->consume();
+  }
+
+  // Did not match expected type
+  std::string msg;
+  Token tmp(kind, "", 0, 0);
+  msg = "Expected : " + tmp.toString() + ", got : `" + this->peek().getWord() +
+        "`";
+  throw ParseError(this->peek().getLine(), this->peek().getColumn(),
+                   errorMsg.empty() ? msg : std::string(errorMsg));
 }
