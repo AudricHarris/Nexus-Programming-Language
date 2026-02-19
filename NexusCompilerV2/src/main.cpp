@@ -26,6 +26,10 @@ int main(int argc, char *argv[]) {
     std::cout << lst[i].toString();
   }
 
+  for (size_t i = 0; i < lst.size(); i++) {
+    std::cout << lst[i].getWord();
+  }
+
   std::cout << "\n\nParsing Tokens : \n";
 
   return EXIT_SUCCESS;

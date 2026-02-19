@@ -64,12 +64,17 @@ private:
   const Token &peek() const;
   const Token consume();
   bool match(TokenKind kind);
+  bool check(TokenKind kind) const;
   Token expect(TokenKind kind, std::string_view errorMsg = {});
   bool isAtEnd() const;
 
+protected:
+  void synchronize();
+
 public:
   explicit Parser(const std::vector<Token> &t) : tokens(t) {}
-  std::unique_ptr<Program> parseFunctionDecl();
+  std::unique_ptr<Program> parse();
+  std::unique_ptr<Function> parseFunctionDecl();
   std::unique_ptr<Block> parseBlock();
 };
 

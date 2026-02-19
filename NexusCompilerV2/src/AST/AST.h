@@ -55,6 +55,18 @@ public:
   }
 };
 
+class Function : public ASTNode {
+public:
+  std::vector<std::unique_ptr<Decl>> declarations;
+  void accept(ASTVisitor &v) const override {}
+  void print(int indent) const override {
+    std::cout << std::string(indent, ' ') << "Program\n";
+    for (const auto &decl : declarations) {
+      decl->print(indent + 2);
+    }
+  }
+};
+
 class Block : public ASTNode {
 public:
   std::vector<std::unique_ptr<Decl>> declarations;
