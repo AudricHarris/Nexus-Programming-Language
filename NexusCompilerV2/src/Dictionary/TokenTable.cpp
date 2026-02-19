@@ -27,13 +27,21 @@ public:
 };
 
 TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
-    {"TOK_IDENTIFIER", nullptr}, {"TOK_RETURN", "return"},
-    {"TOK_INT", nullptr},        {"TOK_STRING", nullptr},
-    {"TOK_ASSIGN", "="},         {"TOK_INCREMENT", "++"},
-    {"TOK_MOVE", "<-"},          {"TOK_LPAREN", "("},
-    {"TOK_RPAREN", ")"},         {"TOK_LBRACE", "{"},
-    {"TOK_LBRACE", "}"},         {"TOK_SEMI", ";"},
-    {"TOK_EOF", "<EOF>"},        {"TOK_UNKNOWN", "<UNKNOWN>"},
+    {"TOK_IDENTIFIER", nullptr},
+    {"TOK_RETURN", "return"},
+    {"TOK_INT", nullptr},
+    {"TOK_STRING", nullptr},
+    {"TOK_ASSIGN", "="},
+    {"TOK_INCREMENT", "++"},
+    {"TOK_MOVE", "<-"},
+    {"TOK_LPAREN", "("},
+    {"TOK_RPAREN", ")"},
+    {"TOK_LBRACE", "{"},
+    {"TOK_LBRACE", "}"},
+    {"TOK_COMMA", ","},
+    {"TOK_SEMI", ";"},
+    {"TOK_EOF", "<EOF>"},
+    {"TOK_UNKNOWN", "<UNKNOWN>"},
 };
 
 std::string Token::toString() {
@@ -60,6 +68,8 @@ std::string Token::toString() {
     return "\nTOK_LBRACE\n";
   case TokenKind::TOK_RBRACE:
     return "TOK_RBRACE\n";
+  case TokenKind::TOK_COMMA:
+    return "TOK_COMMA  ";
   case TokenKind::TOK_SEMI:
     return "TOK_SEMI\n";
   case TokenKind::TOK_EOF:

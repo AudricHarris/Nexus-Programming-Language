@@ -55,6 +55,7 @@ enum class TokenKind {
   TOK_RPAREN,
   TOK_LBRACE,
   TOK_RBRACE,
+  TOK_COMMA,
   TOK_SEMI,
 
   // SPECIAL

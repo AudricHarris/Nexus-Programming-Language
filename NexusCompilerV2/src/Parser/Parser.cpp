@@ -2,8 +2,11 @@
 #include "../Dictionary/TokenType.h"
 #include "ParserError.h"
 
+#include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 // -------------------------- //
 //      Private methods       //
@@ -81,4 +84,57 @@ void Parser::synchronize() {
       consume();
     }
   }
+}
+
+// -------------------------- //
+//      public methods        //
+// -------------------------- //
+
+std::unique_ptr<Program> Parser::parse() {
+  auto prog = std::make_unique<Program>();
+
+  while (this->isAtEnd()) {
+    try {
+      auto func = this->parseFunctionDecl();
+      prog->functions.push_back(std::move(func));
+    } catch (const ParseError &e) {
+      this->synchronize();
+    }
+  }
+
+  return prog;
+}
+
+std::unique_ptr<Function> Parser::parseFunctionDecl() {
+  // Consume function name
+  Token nameToken =
+      expect(TokenKind::TOK_IDENTIFIER, "Expected function name at top level");
+
+  // (
+  expect(TokenKind::TOK_LPAREN, "Expected '(' after function name");
+
+  std::vector<Parameter> params;
+
+  // Optional parameters
+  if (!match(TokenKind::TOK_RPAREN)) {
+    do {
+      Token typeToken =
+          expect(TokenKind::TOK_IDENTIFIER, "Expected parameter type");
+      Token nameTokenParam = expect(TokenKind::TOK_IDENTIFIER,
+                                    "Expected parameter name after type");
+
+      Parameter p{Identifier{typeToken}, Identifier{nameTokenParam}};
+
+      params.push_back(std::move(p));
+    } while (match(TokenKind::TOK_COMMA));
+
+    expect(TokenKind::TOK_RPAREN, "Expected ')' after parameter list");
+  }
+
+  // Body
+  // auto body = parseBlock();
+
+  // Construct and return
+  return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
+                                    std::move(nullptr));
 }
