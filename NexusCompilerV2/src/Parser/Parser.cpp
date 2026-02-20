@@ -107,28 +107,28 @@ std::unique_ptr<Program> Parser::parse() {
 
 std::unique_ptr<Function> Parser::parseFunctionDecl() {
   // Consume function name
-  Token nameToken =
-      expect(TokenKind::TOK_IDENTIFIER, "Expected function name at top level");
+  Token nameToken = this->expect(TokenKind::TOK_IDENTIFIER,
+                                 "Expected function name at top level");
 
   // (
-  expect(TokenKind::TOK_LPAREN, "Expected '(' after function name");
+  this->expect(TokenKind::TOK_LPAREN, "Expected '(' after function name");
 
   std::vector<Parameter> params;
 
   // Optional parameters
-  if (!match(TokenKind::TOK_RPAREN)) {
+  if (!this->match(TokenKind::TOK_RPAREN)) {
     do {
       Token typeToken =
-          expect(TokenKind::TOK_IDENTIFIER, "Expected parameter type");
-      Token nameTokenParam = expect(TokenKind::TOK_IDENTIFIER,
-                                    "Expected parameter name after type");
+          this->expect(TokenKind::TOK_IDENTIFIER, "Expected parameter type");
+      Token nameTokenParam = this->expect(TokenKind::TOK_IDENTIFIER,
+                                          "Expected parameter name after type");
 
       Parameter p{Identifier{typeToken}, Identifier{nameTokenParam}};
 
       params.push_back(std::move(p));
     } while (match(TokenKind::TOK_COMMA));
 
-    expect(TokenKind::TOK_RPAREN, "Expected ')' after parameter list");
+    this->expect(TokenKind::TOK_RPAREN, "Expected ')' after parameter list");
   }
 
   // Body
@@ -137,4 +137,25 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
   // Construct and return
   return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
                                     std::move(nullptr));
+}
+
+std::unique_ptr<Block> Parser::parseBlock() {
+  auto block = std::make_unique<Block>();
+
+  this->expect(TokenKind::TOK_LBRACE, "Expected `{` at start of block");
+
+  while (!this->check(TokenKind::TOK_RBRACE) && !isAtEnd()) {
+    try {
+      auto stmt = this->parseStatement();
+      if (stmt) {
+        block->statements.push_back(std::move(stmt));
+      }
+    } catch (const ParseError &e) {
+      synchronize();
+    }
+  }
+
+  this->expect(TokenKind::TOK_RBRACE, "Expected `}` to close the block");
+
+  return block;
 }

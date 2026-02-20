@@ -76,6 +76,7 @@ public:
   std::unique_ptr<Program> parse();
   std::unique_ptr<Function> parseFunctionDecl();
   std::unique_ptr<Block> parseBlock();
+  std::unique_ptr<Statement> parseStatement();
 };
 
 #endif
