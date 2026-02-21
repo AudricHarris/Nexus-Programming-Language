@@ -9,9 +9,6 @@
 #include <string>
 #include <vector>
 
-// ─────────────────────────────────────────────
-// JSON string escaping helper
-// ─────────────────────────────────────────────
 namespace json_utils {
 inline std::string escape(const std::string &s) {
   std::ostringstream oss;
@@ -54,9 +51,6 @@ inline std::string escape(const std::string &s) {
 }
 } // namespace json_utils
 
-// ─────────────────────────────────────────────
-// Forward declarations (minimal)
-// ─────────────────────────────────────────────
 struct Identifier;
 struct IntegerLiteral;
 struct StringLiteral;
@@ -67,10 +61,6 @@ struct Expression;
 struct Statement;
 
 using ExprPtr = std::unique_ptr<Expression>;
-
-// ─────────────────────────────────────────────
-// Basic value types
-// ─────────────────────────────────────────────
 
 struct Identifier {
   Token token;
@@ -94,10 +84,6 @@ struct Parameter {
   Parameter(Identifier &&t, Identifier &&n)
       : type(std::move(t)), name(std::move(n)) {}
 };
-
-// ─────────────────────────────────────────────
-// EXPRESSIONS — base + all derived classes
-// ─────────────────────────────────────────────
 
 struct Expression {
   virtual ~Expression() = default;
@@ -219,10 +205,6 @@ struct AssignExpr : Expression {
   }
 };
 
-// ─────────────────────────────────────────────
-// STATEMENTS — base + derived classes
-// ─────────────────────────────────────────────
-
 struct Statement {
   virtual ~Statement() = default;
   virtual void toJson(std::ostream &os, int indent = 0) const = 0;
@@ -288,10 +270,6 @@ struct ExprStmt : Statement {
   }
 };
 
-// ─────────────────────────────────────────────
-// Block — comes after Statement
-// ─────────────────────────────────────────────
-
 struct Block {
   std::vector<std::unique_ptr<Statement>> statements;
   Block() = default;
@@ -312,10 +290,6 @@ struct Block {
     os << pad << "}";
   }
 };
-
-// ─────────────────────────────────────────────
-// Function — comes after Block
-// ─────────────────────────────────────────────
 
 struct Function {
   Identifier name;
@@ -357,10 +331,6 @@ struct Function {
     os << "\n" << pad << "}";
   }
 };
-
-// ─────────────────────────────────────────────
-// Program — at the end
-// ─────────────────────────────────────────────
 
 struct Program {
   std::vector<std::unique_ptr<Function>> functions;
