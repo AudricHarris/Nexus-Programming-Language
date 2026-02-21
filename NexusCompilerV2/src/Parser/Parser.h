@@ -77,6 +77,11 @@ public:
   std::unique_ptr<Function> parseFunctionDecl();
   std::unique_ptr<Block> parseBlock();
   std::unique_ptr<Statement> parseStatement();
+  std::unique_ptr<Expression> parseExpression();
+  std::unique_ptr<VarDecl> parseVarDeclStatement();
+  std::unique_ptr<Return> parseReturnStatement();
+  std::unique_ptr<Expression> parsePrimary();
+  std::unique_ptr<Expression> parseAssignment();
 };
 
 #endif

@@ -93,7 +93,7 @@ void Parser::synchronize() {
 std::unique_ptr<Program> Parser::parse() {
   auto prog = std::make_unique<Program>();
 
-  while (this->isAtEnd()) {
+  while (!this->isAtEnd()) {
     try {
       auto func = this->parseFunctionDecl();
       prog->functions.push_back(std::move(func));
@@ -132,11 +132,10 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
   }
 
   // Body
-  // auto body = parseBlock();
-
+  auto body = parseBlock();
   // Construct and return
   return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
-                                    std::move(nullptr));
+                                    std::move(body));
 }
 
 std::unique_ptr<Block> Parser::parseBlock() {
@@ -158,4 +157,139 @@ std::unique_ptr<Block> Parser::parseBlock() {
   this->expect(TokenKind::TOK_RBRACE, "Expected `}` to close the block");
 
   return block;
+}
+
+std::unique_ptr<Statement> Parser::parseStatement() {
+  Token current = this->peek();
+
+  if (this->match(TokenKind::TOK_RETURN)) {
+    return this->parseReturnStatement();
+  }
+  if (check(TokenKind::TOK_IDENTIFIER)) {
+    Token next = tokens[currentIndex + 1];
+    if (next.getKind() == TokenKind::TOK_IDENTIFIER) {
+      return this->parseVarDeclStatement();
+    }
+  }
+
+  auto expr = this->parseExpression();
+  this->expect(TokenKind::TOK_SEMI, "Expected ';' after expression statement");
+  return std::make_unique<ExprStmt>(std::move(expr));
+}
+
+std::unique_ptr<Return> Parser::parseReturnStatement() {
+  auto ret = std::make_unique<Return>();
+
+  if (this->match(TokenKind::TOK_SEMI)) {
+    return ret;
+  }
+
+  ret->value = this->parseExpression();
+  this->expect(TokenKind::TOK_SEMI, "Expected ';' after return value");
+
+  return ret;
+}
+
+std::unique_ptr<VarDecl> Parser::parseVarDeclStatement() {
+  Token typeTok = this->expect(TokenKind::TOK_IDENTIFIER,
+                               "Expected type in variable declaration");
+  Token nameTok =
+      this->expect(TokenKind::TOK_IDENTIFIER, "Expected variable name");
+
+  this->expect(TokenKind::TOK_ASSIGN, "Expected '=' after variable name");
+
+  auto init = this->parseExpression();
+
+  this->expect(TokenKind::TOK_SEMI, "Expected ';' after variable declaration");
+
+  auto vd = std::make_unique<VarDecl>(
+      VarDecl{Identifier{typeTok}, Identifier{nameTok}, std::move(init)});
+
+  return vd;
+}
+
+std::unique_ptr<Expression> Parser::parseExpression() {
+  auto expr = this->parsePrimary();
+
+  // postfix ++
+  if (match(TokenKind::TOK_INCREMENT)) {
+    if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+      return std::make_unique<Increment>(Increment{id->name});
+    }
+    throw ParseError(peek().getLine(), peek().getColumn(),
+                     "++ can only follow an identifier");
+  }
+
+  if (match(TokenKind::TOK_ASSIGN)) {
+    auto value = parseExpression();
+
+    if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+      auto assign =
+          std::make_unique<Assignment>(Assignment{id->name, std::move(value)});
+      return this->parseAssignment();
+    }
+    throw ParseError(peek().getLine(), peek().getColumn(),
+                     "Left side of = must be identifier");
+  }
+
+  return expr;
+}
+
+std::unique_ptr<Expression> Parser::parsePrimary() {
+  Token tok = consume();
+
+  switch (tok.getKind()) {
+  case TokenKind::TOK_INT: {
+    auto lit = std::make_unique<IntLitExpr>(IntLitExpr{IntegerLiteral{tok}});
+    return lit;
+  }
+
+  case TokenKind::TOK_STRING: {
+    auto lit = std::make_unique<StrLitExpr>(StrLitExpr{StringLiteral{tok}});
+    return lit;
+  }
+
+  case TokenKind::TOK_IDENTIFIER: {
+    Identifier id{tok};
+
+    // function call: ident ( args )
+    if (match(TokenKind::TOK_LPAREN)) {
+      auto call =
+          std::make_unique<CallExpr>(CallExpr{id, std::vector<ExprPtr>()});
+
+      if (!match(TokenKind::TOK_RPAREN)) {
+        do {
+          call->arguments.push_back(parseExpression());
+        } while (match(TokenKind::TOK_COMMA));
+        expect(TokenKind::TOK_RPAREN, "Expected ')' after call arguments");
+      }
+      return call;
+    }
+
+    // plain variable use
+    auto identExpr = std::make_unique<IdentExpr>(IdentExpr{id});
+    return identExpr;
+  }
+
+  default:
+    throw ParseError(tok.getLine(), tok.getColumn(),
+                     "Expected expression, got " + tok.toString());
+  }
+}
+
+std::unique_ptr<Expression> Parser::parseAssignment() {
+  auto expr = parsePrimary(); // or parseCall() / parsePostfix() etc.
+
+  if (match(TokenKind::TOK_ASSIGN)) {
+    auto value = parseAssignment(); // right-recursive → right-associative
+
+    if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+      return std::make_unique<AssignExpr>(id->name, std::move(value));
+    }
+
+    throw ParseError(peek().getLine(), peek().getColumn(),
+                     "Left-hand side of assignment must be an identifier");
+  }
+
+  return expr;
 }

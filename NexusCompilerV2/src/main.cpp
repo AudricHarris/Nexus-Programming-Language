@@ -1,6 +1,7 @@
 #include "Dictionary/TokenType.h"
 #include "FileReader/FileReader.h"
 #include "Lexer/Lexer.h"
+#include "Parser/Parser.h"
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
@@ -31,6 +32,9 @@ int main(int argc, char *argv[]) {
   }
 
   std::cout << "\n\nParsing Tokens : \n";
+  Parser parser(lst);
+  auto parsed = parser.parse();
+  parsed->toJson(std::cout, 0);
 
   return EXIT_SUCCESS;
 }
