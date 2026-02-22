@@ -18,10 +18,6 @@ std::optional<std::string> readFile(char *name) {
 
     std::cout << "File : " << filename << "\n";
     std::string content = fileToString(filename);
-
-    std::cout << "File Content : \n\n" << content << "\n";
-    std::cout << "Tokenized Content : \n\n" << "\n";
-
     return uncommentedCode(content);
 
   } catch (const std::exception &e) {

@@ -108,8 +108,11 @@ std::vector<Token> Lexer::Tokenize() {
       while (this->isIdentifierChar(this->peek())) {
         currentWord += this->next();
       }
-      std::cout << "Identifier " << currentWord << '\n';
-      lstTokens.push_back(makeToken(TokenKind::TOK_IDENTIFIER, currentWord));
+      if (currentWord == "return") {
+        lstTokens.push_back(makeToken(TokenKind::TOK_RETURN, currentWord));
+      } else {
+        lstTokens.push_back(makeToken(TokenKind::TOK_IDENTIFIER, currentWord));
+      }
       continue;
     }
 
@@ -119,9 +122,7 @@ std::vector<Token> Lexer::Tokenize() {
       while (this->pos < this->codeFile.length() && this->peek() != '"') {
         currentWord += this->next();
       }
-      std::cerr << "\033[46m" << "Litteral string found : " << currentWord
-                << "\033[0m"
-                << "\n";
+
       lstTokens.push_back(makeToken(TokenKind::TOK_STRING, currentWord));
       this->next();
       continue;
@@ -133,10 +134,6 @@ std::vector<Token> Lexer::Tokenize() {
       do {
         currentWord += this->next();
       } while (std::isdigit(this->peek()));
-
-      std::cerr << "\033[42m" << "Litteral Number found : " << currentWord
-                << "\033[0m"
-                << "\n";
       lstTokens.push_back(makeToken(TokenKind::TOK_INT, currentWord));
       continue;
     }
@@ -153,8 +150,6 @@ std::vector<Token> Lexer::Tokenize() {
     lstTokens.push_back(makeToken(TokenKind::TOK_UNKNOWN, "<UNKNOWN>"));
     this->next();
   }
-
-  std::cout << "Line & col " << this->line << " " << this->col << '\n';
 
   return lstTokens;
 }
