@@ -1,11 +1,36 @@
+Loop(i32 a)
+{
+	a++;
+	Printf("#990000 Loop Counter {a}");
+	Loop(a);
+}
+
+Five()
+{
+	return 5;
+}
+
 Main()
 {
 	i32 num = 5008526;
 	num++;
 	/* I am testing code
-	Printf("This is a test {num}");
 
+	Printf("Hello I am so happy !");
+	Printf("#0000FF my compiler #FF0000 took #000056 so long to make.");
+	Printf("After 36 days.");
+	Printf("and {num} lines of code it finaly works.");
+	
 	i32 num2 = num;
 	/! num is now invalid if called compiler will scream !/
-	return;
+	num2++;
+	Printf("{num} vs {num2}");
+
+	i32 num3 = Five();
+	Printf("#50FF60 {num3}");
+	
+	Loop(0);
+	return 5;
 }
+
+

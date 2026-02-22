@@ -162,9 +162,7 @@ std::unique_ptr<Block> Parser::parseBlock() {
 
 std::unique_ptr<Statement> Parser::parseStatement() {
   Token current = this->peek();
-  std::cout << current.toString() << current.getWord() << "\n";
   if (this->match(TokenKind::TOK_RETURN)) {
-    std::cout << "Return\n";
     return this->parseReturnStatement();
   }
   if (check(TokenKind::TOK_IDENTIFIER)) {

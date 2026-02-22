@@ -1,0 +1,8 @@
+Main()
+{
+	Printf("#00AAAA[CT]#FF8400 - #00AAAAaxis#00DD00@Atrium#FFFFFF:#DDAA00 Carl has physics!");
+	Printf("[ALL]#AA00AA - #00AAAACARL #FFFFFF[DEAD]: it's over");
+	Printf("#00AAAA[CT]#FF8400 - #00AAAAaxis#00DD00@Stairs#FFFFFF:#00AAFF Surprise question!");
+	Printf("[ALL]#AA00AA - #AAAA00CARL #FFFFFF[DEAD]: Nani?");
+	Printf("#00AAAA[CT]#FF8400 - #00AAAAMrPatrickStar#00DD00@Stairs#FFFFFF:#DDAA00 Carl Died!");
+}

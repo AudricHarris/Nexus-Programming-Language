@@ -20,21 +20,15 @@ public class BankAccount
 	private i4 accountNumber;
 	private i32 balance;
 
-	public static Factory(i32 balance) -> Options<BankAccount>
-	{
-		if (balance < 0)
-		{
-			warnf("balance cannot be negative");
-			return Options.None;
-		}
-		return Options.Some(new BankAccount(balance));
-	}
-
-	private Constructor(i32 balance)
+	private BankAccount(i32 balance)
 	{
 		self.accountNumber = BankAccount::g_nbAccounts++;
 		self.balance = balance;
-		if (balance < 0) return Options.None;
+		if balance < 0
+		{
+			Printf("#FF0000 Balance is not valid.")
+			return Options.None;
+		}
 
 		return Options.Some(self);
 	}
