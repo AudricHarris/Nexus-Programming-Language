@@ -2,6 +2,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include <llvm/IR/Value.h>
 #include <regex>
 #include <string>
 
@@ -294,6 +295,41 @@ llvm::Value *CodeGenerator::codegen(const Statement &stmt) {
     }
     func->insert(func->end(), mergeBB);
     builder.SetInsertPoint(mergeBB);
+
+    return nullptr;
+  }
+
+  if (auto *loop = dynamic_cast<const WhileStmt *>(&stmt)) {
+    llvm::Function *func = builder.GetInsertBlock()->getParent();
+
+    llvm::BasicBlock *condBB =
+        llvm::BasicBlock::Create(context, "while.cond", func);
+    llvm::BasicBlock *bodyBB = llvm::BasicBlock::Create(context, "while.body");
+    llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "while.end");
+
+    builder.CreateBr(condBB);
+
+    builder.SetInsertPoint(condBB);
+    llvm::Value *condV = codegen(*loop->condition);
+    if (!condV)
+      return nullptr;
+
+    if (!condV->getType()->isIntegerTy(1)) {
+      condV = builder.CreateICmpNE(
+          condV, llvm::ConstantInt::get(condV->getType(), 0), "cond");
+    }
+
+    builder.CreateCondBr(condV, bodyBB, exitBB);
+    func->insert(func->end(), bodyBB);
+    builder.SetInsertPoint(bodyBB);
+    codegen(*loop->doBranch);
+
+    if (!builder.GetInsertBlock()->getTerminator()) {
+      builder.CreateBr(condBB);
+    }
+
+    func->insert(func->end(), exitBB);
+    builder.SetInsertPoint(exitBB);
 
     return nullptr;
   }

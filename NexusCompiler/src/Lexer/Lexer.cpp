@@ -92,6 +92,7 @@ std::vector<Token> Lexer::Tokenize() {
     if (this->peek() == '<') {
       this->next();
       if (this->peek() == '=') {
+        this->next();
         lstTokens.push_back(makeToken(TokenKind::TOK_LE, "<="));
       } else {
         lstTokens.push_back(makeToken(TokenKind::TOK_LT, "<"));
@@ -101,6 +102,7 @@ std::vector<Token> Lexer::Tokenize() {
     if (this->peek() == '>') {
       this->next();
       if (this->peek() == '=') {
+        this->next();
         lstTokens.push_back(makeToken(TokenKind::TOK_GE, ">="));
       } else {
         lstTokens.push_back(makeToken(TokenKind::TOK_GT, ">"));
@@ -108,6 +110,7 @@ std::vector<Token> Lexer::Tokenize() {
       continue;
     }
     if (this->peek() == '!' && this->peeknext() == '=') {
+      this->next();
       this->next();
       lstTokens.push_back(makeToken(TokenKind::TOK_NE, "!="));
       continue;
@@ -155,6 +158,8 @@ std::vector<Token> Lexer::Tokenize() {
         lstTokens.push_back(makeToken(TokenKind::TOK_IF, currentWord));
       } else if (currentWord == "else") {
         lstTokens.push_back(makeToken(TokenKind::TOK_ElSE, currentWord));
+      } else if (currentWord == "while") {
+        lstTokens.push_back(makeToken(TokenKind::TOK_WHILE, currentWord));
       } else {
         lstTokens.push_back(makeToken(TokenKind::TOK_IDENTIFIER, currentWord));
       }

@@ -81,6 +81,7 @@ public:
   std::unique_ptr<Expression> parseExpression();
   std::unique_ptr<VarDecl> parseVarDeclStatement();
   std::unique_ptr<IfStmt> parseIfStatement();
+  std::unique_ptr<WhileStmt> parseWhileLoop();
   std::unique_ptr<Return> parseReturnStatement();
   std::unique_ptr<Expression> parsePrimary();
   std::unique_ptr<Expression> parseAssignment();

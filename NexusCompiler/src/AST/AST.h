@@ -261,6 +261,26 @@ struct IfStmt : Statement {
   }
 };
 
+struct WhileStmt : Statement {
+  ExprPtr condition;
+  std::unique_ptr<Block> doBranch;
+
+  WhileStmt(ExprPtr cond, std::unique_ptr<Block> doB)
+      : condition(std::move(cond)), doBranch(std::move(doB)) {}
+
+  void toJson(std::ostream &os, int indent = 0) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"WhileStmt\",\n";
+    os << pad << "  \"condition\": ";
+    condition->toJson(os, indent + 4);
+    os << ",\n";
+
+    os << pad << "  \"do\": ";
+    os << ",\n";
+  }
+};
+
 struct Return : Statement {
   std::optional<ExprPtr> value;
   Return() = default;

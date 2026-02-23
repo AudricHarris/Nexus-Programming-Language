@@ -168,6 +168,9 @@ std::unique_ptr<Statement> Parser::parseStatement() {
   if (this->match(TokenKind::TOK_IF)) {
     return this->parseIfStatement();
   }
+  if (this->match(TokenKind::TOK_WHILE)) {
+    return this->parseWhileLoop();
+  }
 
   if (looksLikeType(peekAt(0)) &&
       peekAt(1).getKind() == TokenKind::TOK_IDENTIFIER &&
@@ -200,6 +203,15 @@ std::unique_ptr<IfStmt> Parser::parseIfStatement() {
 
   return std::make_unique<IfStmt>(std::move(condition), std::move(thenBlock),
                                   std::move(elseBlock));
+}
+
+std::unique_ptr<WhileStmt> Parser::parseWhileLoop() {
+  this->expect(TokenKind::TOK_LPAREN, "Expected '(' to start comparison");
+  auto condition = this->parseExpression();
+  this->expect(TokenKind::TOK_RPAREN, "Expected ')' after comparison");
+  auto doBlock = this->parseBlock();
+
+  return std::make_unique<WhileStmt>(std::move(condition), std::move(doBlock));
 }
 
 std::unique_ptr<Return> Parser::parseReturnStatement() {
