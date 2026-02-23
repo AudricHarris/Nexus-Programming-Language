@@ -62,6 +62,7 @@ private:
   std::vector<Token> tokens;
   size_t currentIndex = 0;
   const Token &peek() const;
+  const Token &peekAt(size_t offset) const;
   const Token consume();
   bool match(TokenKind kind);
   bool check(TokenKind kind) const;
@@ -82,6 +83,10 @@ public:
   std::unique_ptr<Return> parseReturnStatement();
   std::unique_ptr<Expression> parsePrimary();
   std::unique_ptr<Expression> parseAssignment();
+  std::unique_ptr<Expression> parseAdditive();
+  std::unique_ptr<Expression> parseMultiplicative();
+  std::unique_ptr<Expression> parseUnary();
+  std::unique_ptr<Expression> parsePostfix();
 };
 
 #endif

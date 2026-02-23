@@ -351,4 +351,75 @@ struct Program {
   }
 };
 
+// ---------------------------
+//     Binary / Unary Ops
+// ---------------------------
+
+enum class BinaryOp { Add, Sub, Mul, Div };
+
+inline std::string toString(BinaryOp op) {
+  switch (op) {
+  case BinaryOp::Add:
+    return "Add";
+  case BinaryOp::Sub:
+    return "Sub";
+  case BinaryOp::Mul:
+    return "Mul";
+  case BinaryOp::Div:
+    return "Div";
+  }
+  return "Unknown";
+}
+
+enum class UnaryOp { Negate };
+
+inline std::string toString(UnaryOp op) {
+  switch (op) {
+  case UnaryOp::Negate:
+    return "Negate";
+  }
+  return "Unknown";
+}
+
+struct BinaryExpr : Expression {
+  BinaryOp op;
+  ExprPtr left;
+  ExprPtr right;
+
+  BinaryExpr(BinaryOp o, ExprPtr l, ExprPtr r)
+      : op(o), left(std::move(l)), right(std::move(r)) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"BinaryExpr\",\n";
+    os << pad << "  \"operator\": " << json_utils::escape(toString(op))
+       << ",\n";
+    os << pad << "  \"left\": ";
+    left->toJson(os, indent + 2);
+    os << ",\n";
+    os << pad << "  \"right\": ";
+    right->toJson(os, indent + 2);
+    os << "\n" << pad << "}";
+  }
+};
+
+struct UnaryExpr : Expression {
+  UnaryOp op;
+  ExprPtr operand;
+
+  UnaryExpr(UnaryOp o, ExprPtr expr) : op(o), operand(std::move(expr)) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"UnaryExpr\",\n";
+    os << pad << "  \"operator\": " << json_utils::escape(toString(op))
+       << ",\n";
+    os << pad << "  \"operand\": ";
+    operand->toJson(os, indent + 2);
+    os << "\n" << pad << "}";
+  }
+};
+
 #endif

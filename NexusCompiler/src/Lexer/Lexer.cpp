@@ -38,12 +38,10 @@ void Lexer::skipWhitespace() {
   }
 }
 
-// Determine if it can be the start of identifier
 bool Lexer::isIdentifierStart(char c) {
   return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
 }
 
-// Determine if it can be in the content of a identifier
 bool Lexer::isIdentifierChar(char c) {
   return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
 }
@@ -96,12 +94,27 @@ std::vector<Token> Lexer::Tokenize() {
       if (this->peek() == '+') {
         this->next();
         lstTokens.push_back(makeToken(TokenKind::TOK_INCREMENT, "++"));
+      } else {
+        lstTokens.push_back(makeToken(TokenKind::TOK_ADD, "+"));
       }
-      // else
-      //  makeToken(TokenKind::TOK_, "+");
+
       continue;
     }
-
+    if (this->peek() == '-') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_SUB, "-"));
+      continue;
+    }
+    if (this->peek() == '*') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_PROD, "*"));
+      continue;
+    }
+    if (this->peek() == '/') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_DIV, "/"));
+      continue;
+    }
     // Identifiers
     if (this->isIdentifierStart(this->peek())) {
       std::string currentWord;
@@ -128,7 +141,6 @@ std::vector<Token> Lexer::Tokenize() {
       continue;
     }
 
-    // Determine if number litteral
     if (std::isdigit(this->peek())) {
       std::string currentWord;
       do {
@@ -138,7 +150,6 @@ std::vector<Token> Lexer::Tokenize() {
       continue;
     }
 
-    // End case so \0 I assume
     if (this->peek() == '\0') {
       this->next();
       lstTokens.push_back(makeToken(TokenKind::TOK_EOF, "<EOF>"));

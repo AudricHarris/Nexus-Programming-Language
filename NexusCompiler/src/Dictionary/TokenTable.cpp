@@ -34,6 +34,10 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_ASSIGN", "="},
     {"TOK_INCREMENT", "++"},
     {"TOK_MOVE", "<-"},
+    {"TOK_ADD", "+"},
+    {"TOK_SUB", "-"},
+    {"TOK_PROD", "*"},
+    {"TOK_DIV", "/"},
     {"TOK_LPAREN", "("},
     {"TOK_RPAREN", ")"},
     {"TOK_LBRACE", "{"},
@@ -60,6 +64,14 @@ std::string Token::toString() {
     return "TOK_INCREMENT  ";
   case TokenKind::TOK_MOVE:
     return "TOK_MOVE  ";
+  case TokenKind::TOK_ADD:
+    return "TOK_ADD  ";
+  case TokenKind::TOK_SUB:
+    return "TOK_SUB  ";
+  case TokenKind::TOK_PROD:
+    return "TOK_DIV  ";
+  case TokenKind::TOK_DIV:
+    return "TOK_DIV  ";
   case TokenKind::TOK_LPAREN:
     return "TOK_LPAREN  ";
   case TokenKind::TOK_RPAREN:

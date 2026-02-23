@@ -47,8 +47,7 @@ llvm::Type *CodeGenerator::getLLVMType(const Identifier &typeId) {
 static std::string
 expandInterpolation(const std::string &raw,
                     const std::map<std::string, VarInfo> &namedValues,
-                    std::vector<std::string> &outVarNames) // names in order
-{
+                    std::vector<std::string> &outVarNames) {
   std::string result;
   std::regex re(R"(\{(\w+)\})");
   auto it = std::sregex_iterator(raw.begin(), raw.end(), re);
@@ -90,7 +89,8 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
   if (auto *ie = dynamic_cast<const IdentExpr *>(&expr)) {
     auto it = namedValues.find(ie->name.token.getWord());
     if (it == namedValues.end())
-      return logErrorV("Unknown variable");
+      return logErrorV(
+          ("Unknown variable: " + ie->name.token.getWord()).c_str());
     return builder.CreateLoad(it->second.type, it->second.alloca,
                               ie->name.token.getWord() + "_load");
   }
@@ -102,6 +102,65 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
 
   if (auto *sle = dynamic_cast<const StrLitExpr *>(&expr)) {
     return builder.CreateGlobalString(sle->lit.token.getWord());
+  }
+
+  if (auto *bin = dynamic_cast<const BinaryExpr *>(&expr)) {
+    llvm::Value *left = codegen(*bin->left);
+    llvm::Value *right = codegen(*bin->right);
+    if (!left || !right)
+      return nullptr;
+
+    switch (bin->op) {
+    case BinaryOp::Add:
+      return builder.CreateAdd(left, right, "addtmp");
+    case BinaryOp::Sub:
+      return builder.CreateSub(left, right, "subtmp");
+    case BinaryOp::Mul:
+      return builder.CreateMul(left, right, "multmp");
+    case BinaryOp::Div:
+      return builder.CreateSDiv(left, right, "divtmp");
+    }
+  }
+
+  if (auto *un = dynamic_cast<const UnaryExpr *>(&expr)) {
+    llvm::Value *operand = codegen(*un->operand);
+    if (!operand)
+      return nullptr;
+    switch (un->op) {
+    case UnaryOp::Negate:
+      return builder.CreateNeg(operand, "negtmp");
+    }
+  }
+
+  if (auto *ae = dynamic_cast<const AssignExpr *>(&expr)) {
+    std::string targetName = ae->target.token.getWord();
+    auto it = namedValues.find(targetName);
+    if (it == namedValues.end())
+      return logErrorV(
+          ("Cannot assign to unknown variable: " + targetName).c_str());
+
+    llvm::Value *val = codegen(*ae->value);
+    if (!val)
+      return nullptr;
+
+    builder.CreateStore(val, it->second.alloca);
+    return val;
+  }
+
+  if (auto *inc = dynamic_cast<const Increment *>(&expr)) {
+    auto it = namedValues.find(inc->target.token.getWord());
+    if (it == namedValues.end())
+      return logErrorV(
+          ("Unknown variable in ++: " + inc->target.token.getWord()).c_str());
+
+    llvm::AllocaInst *alloca = it->second.alloca;
+    llvm::Type *valType = it->second.type;
+
+    auto *cur = builder.CreateLoad(valType, alloca, "load_inc");
+    auto *one = llvm::ConstantInt::get(valType, 1);
+    auto *add = builder.CreateAdd(cur, one, "inctmp");
+    builder.CreateStore(add, alloca);
+    return add;
   }
 
   if (auto *ce = dynamic_cast<const CallExpr *>(&expr)) {
@@ -158,35 +217,6 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
     return builder.CreateCall(calleeF, argsV, "calltmp");
   }
 
-  if (auto *ae = dynamic_cast<const Assignment *>(&expr)) {
-    std::string targetName = ae->target.token.getWord();
-    auto it = namedValues.find(targetName);
-    if (it == namedValues.end())
-      return logErrorV("Cannot assign to unknown variable");
-
-    llvm::Value *val = codegen(*ae->value);
-    if (!val)
-      return nullptr;
-
-    builder.CreateStore(val, it->second.alloca);
-    return val;
-  }
-
-  if (auto *inc = dynamic_cast<const Increment *>(&expr)) {
-    auto it = namedValues.find(inc->target.token.getWord());
-    if (it == namedValues.end())
-      return logErrorV("Unknown variable in ++");
-
-    llvm::AllocaInst *alloca = it->second.alloca;
-    llvm::Type *valType = it->second.type;
-
-    auto *cur = builder.CreateLoad(valType, alloca, "load_inc");
-    auto *one = llvm::ConstantInt::get(valType, 1);
-    auto *add = builder.CreateAdd(cur, one, "inctmp");
-    builder.CreateStore(add, alloca);
-    return add;
-  }
-
   return logErrorV("Unknown expression type");
 }
 
@@ -197,18 +227,20 @@ llvm::Value *CodeGenerator::codegen(const Statement &stmt) {
 
     llvm::Type *ty = getLLVMType(vd->type);
     if (!ty)
-      return logErrorV("Unknown type in var decl");
+      return logErrorV(("Unknown type in var decl: " + varName).c_str());
 
     llvm::AllocaInst *alloc = builder.CreateAlloca(ty, nullptr, varName);
+
+    namedValues[varName] = {alloc, ty};
 
     if (vd->initializer) {
       auto *initVal = codegen(*vd->initializer);
       if (!initVal)
-        return nullptr;
+        return logErrorV(
+            ("Failed to evaluate initializer for: " + varName).c_str());
       builder.CreateStore(initVal, alloc);
     }
 
-    namedValues[varName] = {alloc, ty};
     return alloc;
   }
 

@@ -49,6 +49,10 @@ enum class TokenKind {
   TOK_ASSIGN,
   TOK_INCREMENT,
   TOK_MOVE,
+  TOK_ADD,
+  TOK_SUB,
+  TOK_PROD,
+  TOK_DIV,
 
   // Punctuation / Delimiters
   TOK_LPAREN,
