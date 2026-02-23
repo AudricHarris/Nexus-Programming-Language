@@ -28,6 +28,9 @@ public:
 
 TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_IDENTIFIER", nullptr},
+    {"TOK_IF", "if"},
+    {"TOK_ELSE", "else"},
+    {"TOK_WHILE", "while"},
     {"TOK_RETURN", "return"},
     {"TOK_INT", nullptr},
     {"TOK_STRING", nullptr},
@@ -38,6 +41,12 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_SUB", "-"},
     {"TOK_PROD", "*"},
     {"TOK_DIV", "/"},
+    {"TOK_LT", "<"},
+    {"TOK_GT", ">"},
+    {"TOK_LE", "<="},
+    {"TOK_GE", ">="},
+    {"TOK_EQ", "=="},
+    {"TOK_NE", "!="},
     {"TOK_LPAREN", "("},
     {"TOK_RPAREN", ")"},
     {"TOK_LBRACE", "{"},
@@ -52,6 +61,12 @@ std::string Token::toString() {
   switch (this->kind) {
   case TokenKind::TOK_IDENTIFIER:
     return "TOK_IDENTIFIER  ";
+  case TokenKind::TOK_IF:
+    return "TOK_IF  ";
+  case TokenKind::TOK_ElSE:
+    return "TOK ELSE  ";
+  case TokenKind::TOK_WHILE:
+    return "TOK_WHILE  ";
   case TokenKind::TOK_RETURN:
     return "TOK_RETURN  ";
   case TokenKind::TOK_INT:
@@ -72,6 +87,18 @@ std::string Token::toString() {
     return "TOK_DIV  ";
   case TokenKind::TOK_DIV:
     return "TOK_DIV  ";
+  case TokenKind::TOK_LT:
+    return "TOK_LT  ";
+  case TokenKind::TOK_GT:
+    return "TOK_GT  ";
+  case TokenKind::TOK_LE:
+    return "TOK_LE  ";
+  case TokenKind::TOK_GE:
+    return "TOK_GE  ";
+  case TokenKind::TOK_EQ:
+    return "TOK_EQ  ";
+  case TokenKind::TOK_NE:
+    return "TOK_NE  ";
   case TokenKind::TOK_LPAREN:
     return "TOK_LPAREN  ";
   case TokenKind::TOK_RPAREN:

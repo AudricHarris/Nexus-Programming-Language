@@ -234,6 +234,33 @@ struct VarDecl : Statement {
   }
 };
 
+struct IfStmt : Statement {
+  ExprPtr condition;
+  std::unique_ptr<Block> thenBranch;
+  std::unique_ptr<Block> elseBranch;
+
+  IfStmt(ExprPtr cond, std::unique_ptr<Block> thenB,
+         std::unique_ptr<Block> elseB = nullptr)
+      : condition(std::move(cond)), thenBranch(std::move(thenB)),
+        elseBranch(std::move(elseB)) {}
+
+  void toJson(std::ostream &os, int indent = 0) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"IfStmt\",\n";
+    os << pad << "  \"condition\": ";
+    condition->toJson(os, indent + 4);
+    os << ",\n";
+
+    os << pad << "  \"then\": ";
+    os << ",\n";
+
+    os << pad << "  \"else\": ";
+
+    os << "\n" << pad << "}";
+  }
+};
+
 struct Return : Statement {
   std::optional<ExprPtr> value;
   Return() = default;
@@ -355,7 +382,7 @@ struct Program {
 //     Binary / Unary Ops
 // ---------------------------
 
-enum class BinaryOp { Add, Sub, Mul, Div };
+enum class BinaryOp { Add, Sub, Mul, Div, Eq, Ne, Lt, Gt, Le, Ge };
 
 inline std::string toString(BinaryOp op) {
   switch (op) {
@@ -367,6 +394,18 @@ inline std::string toString(BinaryOp op) {
     return "Mul";
   case BinaryOp::Div:
     return "Div";
+  case BinaryOp::Eq:
+    return "Eq";
+  case BinaryOp::Ne:
+    return "Ne";
+  case BinaryOp::Lt:
+    return "Lt";
+  case BinaryOp::Gt:
+    return "Gt";
+  case BinaryOp::Le:
+    return "Le";
+  case BinaryOp::Ge:
+    return "Ge";
   }
   return "Unknown";
 }

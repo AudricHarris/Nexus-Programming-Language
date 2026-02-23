@@ -39,6 +39,9 @@
 enum class TokenKind {
   // KeyWords
   TOK_IDENTIFIER,
+  TOK_IF,
+  TOK_ElSE,
+  TOK_WHILE,
   TOK_RETURN,
 
   // Litterals
@@ -53,6 +56,12 @@ enum class TokenKind {
   TOK_SUB,
   TOK_PROD,
   TOK_DIV,
+  TOK_LT, //<
+  TOK_GT,
+  TOK_LE, // <=
+  TOK_GE,
+  TOK_EQ,
+  TOK_NE,
 
   // Punctuation / Delimiters
   TOK_LPAREN,

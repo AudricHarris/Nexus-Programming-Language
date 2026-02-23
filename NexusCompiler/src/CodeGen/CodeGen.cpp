@@ -119,6 +119,18 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
       return builder.CreateMul(left, right, "multmp");
     case BinaryOp::Div:
       return builder.CreateSDiv(left, right, "divtmp");
+    case BinaryOp::Lt:
+      return builder.CreateICmpSLT(left, right, "cmplt");
+    case BinaryOp::Le:
+      return builder.CreateICmpSLE(left, right, "cmple");
+    case BinaryOp::Gt:
+      return builder.CreateICmpSGT(left, right, "cmpgt");
+    case BinaryOp::Ge:
+      return builder.CreateICmpSGE(left, right, "cmpge");
+    case BinaryOp::Eq:
+      return builder.CreateICmpEQ(left, right, "cmpeq");
+    case BinaryOp::Ne:
+      return builder.CreateICmpNE(left, right, "cmpne");
     }
   }
 
@@ -246,6 +258,44 @@ llvm::Value *CodeGenerator::codegen(const Statement &stmt) {
 
   if (auto *es = dynamic_cast<const ExprStmt *>(&stmt)) {
     return codegen(*es->expr);
+  }
+
+  if (auto *ifs = dynamic_cast<const IfStmt *>(&stmt)) {
+    llvm::Value *condV = codegen(*ifs->condition);
+    if (!condV)
+      return nullptr;
+
+    if (!condV->getType()->isIntegerTy(1)) {
+      condV = builder.CreateICmpNE(
+          condV, llvm::ConstantInt::get(condV->getType(), 0), "ifcond");
+    }
+
+    llvm::Function *func = builder.GetInsertBlock()->getParent();
+
+    llvm::BasicBlock *thenBB = llvm::BasicBlock::Create(context, "then", func);
+    llvm::BasicBlock *elseBB = llvm::BasicBlock::Create(context, "else");
+    llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(context, "ifcont");
+
+    builder.CreateCondBr(condV, thenBB, elseBB);
+
+    builder.SetInsertPoint(thenBB);
+    codegen(*ifs->thenBranch);
+    if (!builder.GetInsertBlock()->getTerminator()) {
+      builder.CreateBr(mergeBB);
+    }
+
+    func->insert(func->end(), elseBB);
+    builder.SetInsertPoint(elseBB);
+    if (ifs->elseBranch) {
+      codegen(*ifs->elseBranch);
+    }
+    if (!builder.GetInsertBlock()->getTerminator()) {
+      builder.CreateBr(mergeBB);
+    }
+    func->insert(func->end(), mergeBB);
+    builder.SetInsertPoint(mergeBB);
+
+    return nullptr;
   }
 
   if (auto *ret = dynamic_cast<const Return *>(&stmt)) {

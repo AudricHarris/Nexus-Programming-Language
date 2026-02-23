@@ -81,7 +81,35 @@ std::vector<Token> Lexer::Tokenize() {
     }
     if (this->peek() == '=') {
       this->next();
-      lstTokens.push_back(makeToken(TokenKind::TOK_ASSIGN, "="));
+      if (this->peek() == '=') {
+        this->next();
+        lstTokens.push_back(makeToken(TokenKind::TOK_EQ, "=="));
+      } else {
+        lstTokens.push_back(makeToken(TokenKind::TOK_ASSIGN, "="));
+      }
+      continue;
+    }
+    if (this->peek() == '<') {
+      this->next();
+      if (this->peek() == '=') {
+        lstTokens.push_back(makeToken(TokenKind::TOK_LE, "<="));
+      } else {
+        lstTokens.push_back(makeToken(TokenKind::TOK_LT, "<"));
+      }
+      continue;
+    }
+    if (this->peek() == '>') {
+      this->next();
+      if (this->peek() == '=') {
+        lstTokens.push_back(makeToken(TokenKind::TOK_GE, ">="));
+      } else {
+        lstTokens.push_back(makeToken(TokenKind::TOK_GT, ">"));
+      }
+      continue;
+    }
+    if (this->peek() == '!' && this->peeknext() == '=') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_NE, "!="));
       continue;
     }
     if (this->peek() == ';') {
@@ -123,6 +151,10 @@ std::vector<Token> Lexer::Tokenize() {
       }
       if (currentWord == "return") {
         lstTokens.push_back(makeToken(TokenKind::TOK_RETURN, currentWord));
+      } else if (currentWord == "if") {
+        lstTokens.push_back(makeToken(TokenKind::TOK_IF, currentWord));
+      } else if (currentWord == "else") {
+        lstTokens.push_back(makeToken(TokenKind::TOK_ElSE, currentWord));
       } else {
         lstTokens.push_back(makeToken(TokenKind::TOK_IDENTIFIER, currentWord));
       }
@@ -164,15 +196,3 @@ std::vector<Token> Lexer::Tokenize() {
 
   return lstTokens;
 }
-
-/*
- * Instructions for tokenize
- * Step 1 ignore white space
- * Step 2 create a string
- * step 3 check if symbol has any importance
- * Step 4 if it doesn't then add to string
- * step 5 if space then stop create token from string and reset
- * step 6 if symbol create token for string and then token for symbol
- *
- * Default : all words are identifier unknown types will be in parser
- * */

@@ -80,9 +80,12 @@ public:
   std::unique_ptr<Statement> parseStatement();
   std::unique_ptr<Expression> parseExpression();
   std::unique_ptr<VarDecl> parseVarDeclStatement();
+  std::unique_ptr<IfStmt> parseIfStatement();
   std::unique_ptr<Return> parseReturnStatement();
   std::unique_ptr<Expression> parsePrimary();
   std::unique_ptr<Expression> parseAssignment();
+  std::unique_ptr<Expression> parseEquality();
+  std::unique_ptr<Expression> parseComparison();
   std::unique_ptr<Expression> parseAdditive();
   std::unique_ptr<Expression> parseMultiplicative();
   std::unique_ptr<Expression> parseUnary();

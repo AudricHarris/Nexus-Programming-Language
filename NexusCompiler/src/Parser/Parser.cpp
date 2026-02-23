@@ -89,9 +89,6 @@ void Parser::synchronize() {
   }
 }
 
-// Returns true if this token is a type keyword like i32, f32, bool, etc.
-// This works even if the lexer gives them TOK_IDENTIFIER instead of a
-// dedicated type token kind.
 static bool looksLikeType(const Token &tok) {
   const std::string &w = tok.getWord();
   return w == "i32" || w == "i64" || w == "f32" || w == "f64" || w == "bool" ||
@@ -165,28 +162,44 @@ std::unique_ptr<Block> Parser::parseBlock() {
 }
 
 std::unique_ptr<Statement> Parser::parseStatement() {
-  // return statement
   if (this->match(TokenKind::TOK_RETURN)) {
     return this->parseReturnStatement();
   }
+  if (this->match(TokenKind::TOK_IF)) {
+    return this->parseIfStatement();
+  }
 
-  // VarDecl detection - must match ALL THREE conditions:
-  //   peekAt(0) = a type keyword (i32, f32, bool, etc.)
-  //   peekAt(1) = any identifier (the variable name)
-  //   peekAt(2) = '=' (assignment operator)
-  //
-  // This means "num3 = num + num2" is correctly NOT a VarDecl
-  // because "num3" is not a type keyword.
   if (looksLikeType(peekAt(0)) &&
       peekAt(1).getKind() == TokenKind::TOK_IDENTIFIER &&
       peekAt(2).getKind() == TokenKind::TOK_ASSIGN) {
     return this->parseVarDeclStatement();
   }
 
-  // Everything else: assignments, calls, increments, binary exprs, etc.
   auto expr = this->parseExpression();
   this->expect(TokenKind::TOK_SEMI, "Expected ';' after expression statement");
   return std::make_unique<ExprStmt>(std::move(expr));
+}
+
+std::unique_ptr<IfStmt> Parser::parseIfStatement() {
+  this->expect(TokenKind::TOK_LPAREN, "Expected '(' to start comparison");
+  auto condition = this->parseExpression();
+  this->expect(TokenKind::TOK_RPAREN, "Expected ')' after comparison");
+  auto thenBlock = this->parseBlock();
+
+  std::unique_ptr<Block> elseBlock = nullptr;
+  if (this->match(TokenKind::TOK_ElSE)) {
+    if (this->match(TokenKind::TOK_IF)) {
+      auto elseIf = this->parseIfStatement();
+      elseBlock = std::make_unique<Block>();
+      elseBlock->statements.push_back(std::move(elseIf));
+    } else {
+      std::cout << this->peek().getWord() << "\n";
+      elseBlock = this->parseBlock();
+    }
+  }
+
+  return std::make_unique<IfStmt>(std::move(condition), std::move(thenBlock),
+                                  std::move(elseBlock));
 }
 
 std::unique_ptr<Return> Parser::parseReturnStatement() {
@@ -202,16 +215,12 @@ std::unique_ptr<Return> Parser::parseReturnStatement() {
 }
 
 std::unique_ptr<VarDecl> Parser::parseVarDeclStatement() {
-  // Consume the type keyword using consume() directly since looksLikeType()
-  // works on the word, not the token kind — so expect(TOK_IDENTIFIER) is fine
   Token typeTok = this->consume();
   Token nameTok =
       this->expect(TokenKind::TOK_IDENTIFIER, "Expected variable name");
 
   this->expect(TokenKind::TOK_ASSIGN, "Expected '=' after variable name");
 
-  // parseExpression() handles the full RHS: literals, variables,
-  // binary ops (num + num2, 5 + 3 * 2), unary, calls, etc.
   auto init = this->parseExpression();
 
   this->expect(TokenKind::TOK_SEMI, "Expected ';' after variable declaration");
@@ -264,7 +273,7 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
 }
 
 std::unique_ptr<Expression> Parser::parseAssignment() {
-  auto left = parseAdditive();
+  auto left = this->parseEquality();
   if (match(TokenKind::TOK_ASSIGN)) {
     auto value = parseAssignment();
 
@@ -279,7 +288,53 @@ std::unique_ptr<Expression> Parser::parseAssignment() {
   return left;
 }
 
-// Handles: expr + expr, expr - expr
+std::unique_ptr<Expression> Parser::parseEquality() {
+  auto expr = this->parseComparison();
+
+  while (true) {
+    if (this->match(TokenKind::TOK_EQ)) {
+      auto right = this->parseComparison();
+      expr = std::make_unique<BinaryExpr>(BinaryOp::Eq, std::move(expr),
+                                          std::move(right));
+    } else if (this->match(TokenKind::TOK_NE)) {
+      auto right = this->parseComparison();
+      expr = std::make_unique<BinaryExpr>(BinaryOp::Ne, std::move(expr),
+                                          std::move(right));
+    } else {
+      break;
+    }
+  }
+  return expr;
+}
+
+std::unique_ptr<Expression> Parser::parseComparison() {
+  auto expr = this->parseAdditive();
+
+  while (true) {
+    if (this->match(TokenKind::TOK_LT)) {
+      auto right = this->parseComparison();
+      expr = std::make_unique<BinaryExpr>(BinaryOp::Lt, std::move(expr),
+                                          std::move(right));
+    } else if (this->match(TokenKind::TOK_GT)) {
+      auto right = this->parseComparison();
+      expr = std::make_unique<BinaryExpr>(BinaryOp::Gt, std::move(expr),
+                                          std::move(right));
+    } else if (this->match(TokenKind::TOK_LE)) {
+      auto right = this->parseComparison();
+      expr = std::make_unique<BinaryExpr>(BinaryOp::Le, std::move(expr),
+                                          std::move(right));
+    } else if (this->match(TokenKind::TOK_GE)) {
+      auto right = this->parseComparison();
+      expr = std::make_unique<BinaryExpr>(BinaryOp::Ge, std::move(expr),
+                                          std::move(right));
+    } else {
+      break;
+    }
+  }
+
+  return expr;
+}
+
 std::unique_ptr<Expression> Parser::parseAdditive() {
   auto expr = parseMultiplicative();
 
@@ -300,7 +355,6 @@ std::unique_ptr<Expression> Parser::parseAdditive() {
   return expr;
 }
 
-// Handles: expr * expr, expr / expr
 std::unique_ptr<Expression> Parser::parseMultiplicative() {
   auto expr = parseUnary();
 
@@ -321,7 +375,6 @@ std::unique_ptr<Expression> Parser::parseMultiplicative() {
   return expr;
 }
 
-// Handles: -expr
 std::unique_ptr<Expression> Parser::parseUnary() {
   if (match(TokenKind::TOK_SUB)) {
     auto operand = parseUnary();
@@ -330,7 +383,6 @@ std::unique_ptr<Expression> Parser::parseUnary() {
   return parsePostfix();
 }
 
-// Handles: expr++
 std::unique_ptr<Expression> Parser::parsePostfix() {
   auto expr = parsePrimary();
 
