@@ -25,21 +25,19 @@ int main(int argc, char *argv[]) {
   std::cout << "Tokenizing Errors : \n";
   Lexer l(code);
   std::vector<Token> lst = l.Tokenize();
-  for (size_t i = 0; i < lst.size(); i++)
-    std::cout << lst[i].toString();
+  //for (size_t i = 0; i < lst.size(); i++)
+    //std::cout << lst[i].toString();
 
-  std::cout << "\n\nParsing Errors : \n";
+  std::cout << "\nParsing Errors : \n";
   Parser parser(lst);
   auto parsed = parser.parse();
-  std::cout << "\n\nParsing Tokens : \n";
-  parsed->toJson(std::cout, 0);
   CodeGenerator cg;
   if (!cg.generate(*parsed, "out")) {
     std::cerr << "Codegen failed\n";
     return 1;
   }
 
-  std::cout << "Now run:\n";
+  std::cout << "\nNow run:\n";
   std::string cmd = "clang out.ll -o " + std::string(argv[2]);
   system(cmd.c_str());
   system("rm -rf out.ll");

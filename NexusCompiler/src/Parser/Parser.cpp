@@ -141,12 +141,24 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
                                     std::move(body));
 }
 
-std::unique_ptr<Block> Parser::parseBlock() {
+std::unique_ptr<Block> Parser::parseBlock(bool uni) {
   auto block = std::make_unique<Block>();
+  if (this->check(TokenKind::TOK_LBRACE)) {
+    this->expect(TokenKind::TOK_LBRACE, "Expected `{` at start of block");
 
-  this->expect(TokenKind::TOK_LBRACE, "Expected `{` at start of block");
+    while (!this->check(TokenKind::TOK_RBRACE) && !isAtEnd()) {
+      try {
+        auto stmt = this->parseStatement();
+        if (stmt) {
+          block->statements.push_back(std::move(stmt));
+        }
+      } catch (const ParseError &e) {
+        synchronize();
+      }
+    }
 
-  while (!this->check(TokenKind::TOK_RBRACE) && !isAtEnd()) {
+    this->expect(TokenKind::TOK_RBRACE, "Expected `}` to close the block");
+  } else if (uni) {
     try {
       auto stmt = this->parseStatement();
       if (stmt) {
@@ -157,7 +169,6 @@ std::unique_ptr<Block> Parser::parseBlock() {
     }
   }
 
-  this->expect(TokenKind::TOK_RBRACE, "Expected `}` to close the block");
   return block;
 }
 
@@ -178,6 +189,13 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     return this->parseVarDeclStatement();
   }
 
+  if (looksLikeType(peekAt(0)) &&
+      peekAt(1).getKind() == TokenKind::TOK_IDENTIFIER &&
+      peekAt(2).getKind() == TokenKind::TOK_SEMI) {
+    throw ParseError(this->peek().getLine(), this->peek().getColumn(),
+                     "Cannot have a null object, Var decl must have value");
+  }
+
   auto expr = this->parseExpression();
   this->expect(TokenKind::TOK_SEMI, "Expected ';' after expression statement");
   return std::make_unique<ExprStmt>(std::move(expr));
@@ -187,7 +205,7 @@ std::unique_ptr<IfStmt> Parser::parseIfStatement() {
   this->expect(TokenKind::TOK_LPAREN, "Expected '(' to start comparison");
   auto condition = this->parseExpression();
   this->expect(TokenKind::TOK_RPAREN, "Expected ')' after comparison");
-  auto thenBlock = this->parseBlock();
+  auto thenBlock = this->parseBlock(true);
 
   std::unique_ptr<Block> elseBlock = nullptr;
   if (this->match(TokenKind::TOK_ElSE)) {
@@ -196,8 +214,7 @@ std::unique_ptr<IfStmt> Parser::parseIfStatement() {
       elseBlock = std::make_unique<Block>();
       elseBlock->statements.push_back(std::move(elseIf));
     } else {
-      std::cout << this->peek().getWord() << "\n";
-      elseBlock = this->parseBlock();
+      elseBlock = this->parseBlock(true);
     }
   }
 

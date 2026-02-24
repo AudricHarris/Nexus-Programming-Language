@@ -13,7 +13,7 @@ CodeGenerator::CodeGenerator()
 }
 
 llvm::Value *CodeGenerator::logErrorV(const char *msg) {
-  llvm::errs() << "Codegen error: " << msg << "\n";
+  llvm::errs() << "\033[31mCode compiling error: " << msg << "\033[0m\n";
   return nullptr;
 }
 
@@ -427,7 +427,7 @@ bool CodeGenerator::generate(const Program &program,
       return false;
   }
 
-  module->print(llvm::outs(), nullptr);
+  // module->print(llvm::outs(), nullptr);
 
   std::error_code ec;
   llvm::raw_fd_ostream out(outputFilename + ".ll", ec, llvm::sys::fs::OF_None);
