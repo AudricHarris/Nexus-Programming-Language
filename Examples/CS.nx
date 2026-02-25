@@ -1,16 +1,23 @@
 Main()
 {
-	Printf("#00AAAA[CT]#FF8400 - #00AAAAaxis#00DD00@Atrium#FFFFFF:#DDAA00 Incendiary!\n");
-	Printf("[ALL]#AA00AA - #00AAAASovereign #FFFFFF[DEAD]: Your ip address is 95.163.0.1\n");
-	Printf("#00AAAA[CT]#FF8400 - #00AAAAaxis#00DD00@Stairs#FFFFFF:#00AAFF Flashbang!\n");
-	Printf("[ALL]#AA00AA - #AAAA00N33ROOO #FFFFFF[DEAD]: who?\n");
-	Printf("#00AAAA[CT]#FF8400 - #00AAAAMrPatrickStar#00DD00@Stairs#FFFFFF:#DDAA00 Incendiary!\n");
-	
-	f32 num = 5.5;
-	Printf("Num : {num}");
-	Print("");
-	if (num == 5.5) {Print("equal");}
+	string ulrond = "Sovereign";
+	Printf("Ulrond account : {ulrond}\n");
 
-	Print("Done{num}");
+	/* Setting up new accounts
+	string wolf &= ulrond;
+	string gnome <- ulrond;
+	/! Printing !/
+	Printf("Ulrond account : {ulrond}\n");
+	Printf("Gnome account  : {gnome}\n");
+	Printf("WQLF account   : {wqlf}\n");
+
+	ulrond = "test";
+
+	/! Printing !/
+	Printf("Ulrond account : {ulrond}\n");
+	Printf("Gnome account  : {gnome}\n");
+	Printf("WQLF account   : {wqlf}\n");
+
+
 	return 0;
-}
+}	
