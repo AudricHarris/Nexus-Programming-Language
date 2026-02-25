@@ -2,6 +2,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include <iostream>
 #include <llvm/IR/Value.h>
 #include <regex>
 #include <string>
@@ -71,7 +72,6 @@ static std::string unescapeString(const std::string &s) {
 
 llvm::Type *CodeGenerator::getLLVMType(const Identifier &typeId) {
   std::string t = typeId.token.getWord();
-
   if (t == "i32" || t == "int" || t == "integer")
     return llvm::Type::getInt32Ty(context);
   if (t == "i64" || t == "long")
@@ -86,7 +86,6 @@ llvm::Type *CodeGenerator::getLLVMType(const Identifier &typeId) {
     return llvm::Type::getDoubleTy(context);
   if (t == "str" || t == "string")
     return llvm::PointerType::get(context, 0);
-
   logErrorV(("Unknown type: " + t).c_str());
   return nullptr;
 }
@@ -104,7 +103,6 @@ static std::string fmtSpecForType(llvm::Type *ty) {
 }
 
 namespace {
-
 struct MiniToken {
   enum class Kind {
     Int,
@@ -134,7 +132,6 @@ static std::vector<MiniToken> miniTokenise(const std::string &src) {
       ++i;
       continue;
     }
-
     if (std::isdigit(static_cast<unsigned char>(c))) {
       std::string num;
       bool isFloat = false;
@@ -149,7 +146,6 @@ static std::vector<MiniToken> miniTokenise(const std::string &src) {
           {isFloat ? MiniToken::Kind::Float : MiniToken::Kind::Int, num});
       continue;
     }
-
     if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
       std::string id;
       while (
@@ -159,7 +155,6 @@ static std::vector<MiniToken> miniTokenise(const std::string &src) {
       toks.push_back({MiniToken::Kind::Ident, id});
       continue;
     }
-
     switch (c) {
     case '+':
       toks.push_back({MiniToken::Kind::Plus, "+"});
@@ -210,14 +205,11 @@ struct MiniParser {
   llvm::LLVMContext &ctx;
   llvm::IRBuilder<> &builder;
   const std::map<std::string, VarInfo> &namedValues;
-
   const MiniToken &peek() const { return toks[pos]; }
   MiniToken consume() { return toks[pos++]; }
   bool check(MiniToken::Kind k) const { return toks[pos].kind == k; }
-
   // entry
   llvm::Value *parseExpr() { return parseAddSub(); }
-
   llvm::Value *parseAddSub() {
     auto *lhs = parseMulDiv();
     if (!lhs)
@@ -240,7 +232,6 @@ struct MiniParser {
     }
     return lhs;
   }
-
   llvm::Value *parseMulDiv() {
     auto *lhs = parseUnary();
     if (!lhs)
@@ -252,7 +243,6 @@ struct MiniParser {
       auto *rhs = parseUnary();
       if (!rhs)
         return nullptr;
-
       if (op.kind == MiniToken::Kind::SlashSlash) {
         // Floor division — always integer
         lhs = toInt(lhs);
@@ -279,7 +269,6 @@ struct MiniParser {
     }
     return lhs;
   }
-
   llvm::Value *parseUnary() {
     if (check(MiniToken::Kind::Minus)) {
       consume();
@@ -292,7 +281,6 @@ struct MiniParser {
     }
     return parseAtom();
   }
-
   llvm::Value *parseAtom() {
     auto tok = consume();
     if (tok.kind == MiniToken::Kind::Int) {
@@ -307,6 +295,9 @@ struct MiniParser {
       auto it = namedValues.find(tok.text);
       if (it == namedValues.end())
         return nullptr; // unknown var
+      if (it->second.isMoved)
+        return nullptr;
+
       return builder.CreateLoad(it->second.type, it->second.alloca,
                                 tok.text + "_load");
     }
@@ -319,7 +310,6 @@ struct MiniParser {
     }
     return nullptr;
   }
-
   llvm::Value *toDouble(llvm::Value *v) {
     if (v->getType()->isDoubleTy())
       return v;
@@ -329,13 +319,11 @@ struct MiniParser {
       return builder.CreateSIToFP(v, llvm::Type::getDoubleTy(ctx), "i2d");
     return v;
   }
-
   llvm::Value *toInt(llvm::Value *v) {
     if (v->getType()->isFloatingPointTy())
       return builder.CreateFPToSI(v, llvm::Type::getInt32Ty(ctx), "f2i");
     return v;
   }
-
   // If one operand is float and the other isn't, promote the other
   llvm::Value *promoteMatch(llvm::Value *v, llvm::Value *other) {
     if (other->getType()->isFloatingPointTy() && v->getType()->isIntegerTy())
@@ -343,7 +331,6 @@ struct MiniParser {
     return v;
   }
 };
-
 } // namespace
 
 static std::string
@@ -353,13 +340,11 @@ expandPrintfString(const std::string &raw, llvm::LLVMContext &ctx,
                    std::vector<llvm::Value *> &outExprs) {
   std::string result;
   size_t i = 0;
-
   while (i < raw.size()) {
     if (raw[i] != '{') {
       result += raw[i++];
       continue;
     }
-
     size_t start = i + 1;
     size_t depth = 1;
     size_t j = start;
@@ -372,11 +357,9 @@ expandPrintfString(const std::string &raw, llvm::LLVMContext &ctx,
         ++j;
     }
     std::string inner = raw.substr(start, j - start);
-
     auto toks = miniTokenise(inner);
     MiniParser mp{toks, 0, ctx, builder, namedValues};
     llvm::Value *val = mp.parseExpr();
-
     if (val) {
       result += fmtSpecForType(val->getType());
       outExprs.push_back(val);
@@ -385,47 +368,43 @@ expandPrintfString(const std::string &raw, llvm::LLVMContext &ctx,
       result += inner;
       result += '}';
     }
-
     i = j + 1;
   }
-
   return result;
 }
 
 llvm::Value *CodeGenerator::codegen(const Expression &expr) {
-
   if (auto *ie = dynamic_cast<const IdentExpr *>(&expr)) {
-    auto it = namedValues.find(ie->name.token.getWord());
+    std::string name = ie->name.token.getWord();
+    auto it = namedValues.find(name);
     if (it == namedValues.end())
-      return logErrorV(
-          ("Unknown variable: " + ie->name.token.getWord()).c_str());
+      return logErrorV(("Unknown variable: " + name).c_str());
+
+    if (it->second.isMoved)
+      return logErrorV(("Use of moved value: " + name).c_str());
+
     return builder.CreateLoad(it->second.type, it->second.alloca,
-                              ie->name.token.getWord() + "_load");
+                              name + "_load");
   }
 
   if (auto *ile = dynamic_cast<const IntLitExpr *>(&expr)) {
     return llvm::ConstantInt::get(llvm::Type::getInt32Ty(context),
                                   std::stoll(ile->lit.token.getWord()));
   }
-
   if (auto *fle = dynamic_cast<const FloatLitExpr *>(&expr)) {
     return llvm::ConstantFP::get(llvm::Type::getDoubleTy(context),
                                  std::stod(fle->lit.token.getWord()));
   }
-
   if (auto *sle = dynamic_cast<const StrLitExpr *>(&expr)) {
     return builder.CreateGlobalString(sle->lit.token.getWord());
   }
-
   if (auto *bin = dynamic_cast<const BinaryExpr *>(&expr)) {
     llvm::Value *left = codegen(*bin->left);
     llvm::Value *right = codegen(*bin->right);
     if (!left || !right)
       return nullptr;
-
     bool leftFloat = left->getType()->isFloatingPointTy();
     bool rightFloat = right->getType()->isFloatingPointTy();
-
     // Auto-promote for true division and mixed float/int
     auto toDouble = [&](llvm::Value *v) -> llvm::Value * {
       if (v->getType()->isDoubleTy())
@@ -434,7 +413,6 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
         return builder.CreateFPExt(v, llvm::Type::getDoubleTy(context), "f2d");
       return builder.CreateSIToFP(v, llvm::Type::getDoubleTy(context), "i2d");
     };
-
     switch (bin->op) {
     case BinaryOp::Add:
       if (leftFloat || rightFloat) {
@@ -443,7 +421,6 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
         return builder.CreateFAdd(left, right, "faddtmp");
       }
       return builder.CreateAdd(left, right, "addtmp");
-
     case BinaryOp::Sub:
       if (leftFloat || rightFloat) {
         left = toDouble(left);
@@ -451,7 +428,6 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
         return builder.CreateFSub(left, right, "fsubtmp");
       }
       return builder.CreateSub(left, right, "subtmp");
-
     case BinaryOp::Mul:
       if (leftFloat || rightFloat) {
         left = toDouble(left);
@@ -459,12 +435,10 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
         return builder.CreateFMul(left, right, "fmultmp");
       }
       return builder.CreateMul(left, right, "multmp");
-
     case BinaryOp::Div:
       left = toDouble(left);
       right = toDouble(right);
       return builder.CreateFDiv(left, right, "divtmp");
-
     case BinaryOp::DivFloor:
       if (leftFloat)
         left =
@@ -473,7 +447,6 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
         right =
             builder.CreateFPToSI(right, llvm::Type::getInt32Ty(context), "f2i");
       return builder.CreateSDiv(left, right, "divfloortmp");
-
     case BinaryOp::Mod:
       if (leftFloat)
         left =
@@ -482,7 +455,6 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
         right =
             builder.CreateFPToSI(right, llvm::Type::getInt32Ty(context), "f2i");
       return builder.CreateSRem(left, right, "modtmp");
-
     case BinaryOp::Lt:
       if (leftFloat || rightFloat) {
         left = toDouble(left);
@@ -527,7 +499,6 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
       return builder.CreateICmpNE(left, right, "cmpne");
     }
   }
-
   if (auto *un = dynamic_cast<const UnaryExpr *>(&expr)) {
     llvm::Value *operand = codegen(*un->operand);
     if (!operand)
@@ -539,31 +510,114 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
       return builder.CreateNeg(operand, "negtmp");
     }
   }
-
   if (auto *ae = dynamic_cast<const AssignExpr *>(&expr)) {
     std::string targetName = ae->target.token.getWord();
-    auto it = namedValues.find(targetName);
-    if (it == namedValues.end())
-      return logErrorV(
-          ("Cannot assign to unknown variable: " + targetName).c_str());
-
     llvm::Value *val = codegen(*ae->value);
     if (!val)
       return nullptr;
 
-    builder.CreateStore(val, it->second.alloca);
+    auto it = namedValues.find(targetName);
+    if (it == namedValues.end()) {
+      return logErrorV(
+          ("Cannot assign to undeclared variable: " + targetName).c_str());
+    }
+
+    if (it->second.isBorrowed) {
+      return logErrorV(
+          ("Cannot modify borrowed variable: " + targetName).c_str());
+    }
+
+    llvm::AllocaInst *targetAlloca = it->second.alloca;
+    llvm::Type *targetTy = it->second.type;
+
+    if (val->getType() != targetTy) {
+      return logErrorV("Type mismatch in assignment");
+    }
+
+    if (ae->kind == AssignKind::Move) {
+      if (auto *sourceIdent =
+              dynamic_cast<const IdentExpr *>(ae->value.get())) {
+        std::string sourceName = sourceIdent->name.token.getWord();
+
+        auto srcIt = namedValues.find(sourceName);
+        if (srcIt == namedValues.end())
+          return logErrorV(("Unknown variable in move: " + sourceName).c_str());
+
+        if (srcIt->second.isMoved)
+          return logErrorV(
+              ("Cannot move already moved value: " + sourceName).c_str());
+
+        if (srcIt->second.isBorrowed)
+          return logErrorV(
+              ("Cannot move value while it is borrowed: " + sourceName)
+                  .c_str());
+
+        // Perform the move - copy the value to target
+        builder.CreateStore(val, targetAlloca);
+
+        // Invalidate source - mark as moved
+        srcIt->second.isMoved = true;
+
+        return val;
+      }
+
+      return logErrorV("Move requires variable on right-hand side");
+    } else if (ae->kind == AssignKind::Borrow) {
+      // Borrow operation
+      if (auto *sourceIdent =
+              dynamic_cast<const IdentExpr *>(ae->value.get())) {
+        std::string sourceName = sourceIdent->name.token.getWord();
+
+        auto srcIt = namedValues.find(sourceName);
+        if (srcIt == namedValues.end())
+          return logErrorV(
+              ("Unknown variable for borrow: " + sourceName).c_str());
+
+        if (srcIt->second.isMoved)
+          return logErrorV(
+              ("Cannot borrow moved value: " + sourceName).c_str());
+
+        // Create borrow - target points to source's data
+        // The target is read-only (isBorrowed = true)
+        namedValues[targetName] = {
+            srcIt->second.alloca, // Same allocation as source
+            srcIt->second.type,   // Same type
+            true,                 // isBorrowed = true (read-only)
+            false                 // isMoved = false
+        };
+
+        return val;
+      }
+
+      return logErrorV(
+          "Borrow requires a variable name on the right-hand side");
+    } else {
+      // Regular copy assignment
+      builder.CreateStore(val, targetAlloca);
+    }
+
     return val;
   }
-
   if (auto *inc = dynamic_cast<const Increment *>(&expr)) {
     auto it = namedValues.find(inc->target.token.getWord());
     if (it == namedValues.end())
       return logErrorV(
           ("Unknown variable in ++: " + inc->target.token.getWord()).c_str());
 
+    if (it->second.isBorrowed) {
+      return logErrorV(("Cannot modify borrowed variable in ++: " +
+                        inc->target.token.getWord())
+                           .c_str());
+    }
+
+    if (it->second.isMoved) {
+      return logErrorV(
+          ("Cannot use moved variable in ++: " + inc->target.token.getWord())
+              .c_str());
+    }
+
     llvm::AllocaInst *alloca = it->second.alloca;
     llvm::Type *valType = it->second.type;
-
     auto *cur = builder.CreateLoad(valType, alloca, "load_inc");
     auto *one = llvm::ConstantInt::get(valType, 1);
     auto *add = builder.CreateAdd(cur, one, "inctmp");
@@ -577,20 +631,29 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
       return logErrorV(
           ("Unknown variable in --: " + dec->target.token.getWord()).c_str());
 
+    if (it->second.isBorrowed) {
+      return logErrorV(("Cannot modify borrowed variable in --: " +
+                        dec->target.token.getWord())
+                           .c_str());
+    }
+
+    if (it->second.isMoved) {
+      return logErrorV(
+          ("Cannot use moved variable in --: " + dec->target.token.getWord())
+              .c_str());
+    }
+
     llvm::AllocaInst *alloca = it->second.alloca;
     llvm::Type *valType = it->second.type;
-
     auto *cur = builder.CreateLoad(valType, alloca, "load_dec");
     auto *one = llvm::ConstantInt::get(valType, 1);
     auto *sub = builder.CreateSub(cur, one, "dectmp");
     builder.CreateStore(sub, alloca);
     return sub;
   }
-
   if (auto *ce = dynamic_cast<const CallExpr *>(&expr)) {
     std::string rawName = ce->callee.token.getWord();
     std::string calleeName = normaliseFunctionName(rawName);
-
     if ((calleeName == "printf" || rawName == "Printf") &&
         ce->arguments.size() == 1) {
       if (auto *strArg =
@@ -599,16 +662,12 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
         std::string fmt = expandPrintfString(
             unescapeString(strArg->lit.token.getWord()), context, builder,
             namedValues, interpolatedExprs);
-
         fmt = CodeGenerator::replaceHexColors(fmt);
         fmt += "\033[0m";
-
         llvm::Value *fmtPtr = builder.CreateGlobalString(fmt, ".fmt");
-
         llvm::Function *printfF = module->getFunction("printf");
         if (!printfF)
           return logErrorV("printf not declared");
-
         std::vector<llvm::Value *> argsV = {fmtPtr};
         for (auto *v : interpolatedExprs) {
           if (v->getType()->isFloatTy())
@@ -616,38 +675,29 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
                                     "f2d_arg");
           argsV.push_back(v);
         }
-
         return builder.CreateCall(printfF, argsV, "printf_ret");
       }
     }
-
     if (rawName == "Print" && ce->arguments.size() == 1) {
       if (auto *strArg =
               dynamic_cast<const StrLitExpr *>(ce->arguments[0].get())) {
         std::string literal = unescapeString(strArg->lit.token.getWord());
-
         literal = CodeGenerator::replaceHexColors(literal);
         literal += "\033[0m";
         literal += '\n';
-
         llvm::Value *fmtPtr = builder.CreateGlobalString(literal, ".lit");
         llvm::Value *strArg2 = builder.CreateGlobalString("%s", ".pfmt");
-
         llvm::Function *printfF = module->getFunction("printf");
         if (!printfF)
           return logErrorV("printf not declared");
-
         return builder.CreateCall(printfF, {strArg2, fmtPtr}, "print_ret");
       }
     }
-
     llvm::Function *calleeF = module->getFunction(calleeName);
     if (!calleeF)
       return logErrorV(("Unknown function: " + calleeName).c_str());
-
     if (!calleeF->isVarArg() && calleeF->arg_size() != ce->arguments.size())
       return logErrorV("Incorrect # arguments");
-
     std::vector<llvm::Value *> argsV;
     for (auto &arg : ce->arguments) {
       auto *v = codegen(*arg);
@@ -655,15 +705,12 @@ llvm::Value *CodeGenerator::codegen(const Expression &expr) {
         return nullptr;
       argsV.push_back(v);
     }
-
     return builder.CreateCall(calleeF, argsV, "calltmp");
   }
-
   return logErrorV("Unknown expression type");
 }
 
 llvm::Value *CodeGenerator::codegen(const Statement &stmt) {
-
   if (auto *vd = dynamic_cast<const VarDecl *>(&stmt)) {
     std::string varName = vd->name.token.getWord();
 
@@ -672,95 +719,126 @@ llvm::Value *CodeGenerator::codegen(const Statement &stmt) {
       return logErrorV(("Unknown type in var decl: " + varName).c_str());
 
     llvm::AllocaInst *alloc = builder.CreateAlloca(ty, nullptr, varName);
-    namedValues[varName] = {alloc, ty};
 
     if (vd->initializer) {
-      auto *initVal = codegen(*vd->initializer);
-      if (!initVal)
-        return logErrorV(
-            ("Failed to evaluate initializer for: " + varName).c_str());
+      if (vd->isMove) {
+        auto *initExpr = vd->initializer.get();
+        auto *identExpr = dynamic_cast<const IdentExpr *>(initExpr);
 
-      if (ty->isFloatTy() && initVal->getType()->isDoubleTy())
-        initVal = builder.CreateFPTrunc(initVal, ty, "d2f");
+        if (!identExpr) {
+          return logErrorV("Move requires a variable on the right-hand side");
+        }
 
-      builder.CreateStore(initVal, alloc);
+        std::string sourceName = identExpr->name.token.getWord();
+
+        auto srcIt = namedValues.find(sourceName);
+        if (srcIt == namedValues.end()) {
+          return logErrorV(("Unknown variable in move: " + sourceName).c_str());
+        }
+
+        if (srcIt->second.isMoved) {
+          return logErrorV(
+              ("Cannot move already moved value: " + sourceName).c_str());
+        }
+
+        if (srcIt->second.isBorrowed) {
+          return logErrorV(
+              ("Cannot move value while it is borrowed: " + sourceName)
+                  .c_str());
+        }
+
+        auto *srcVal = builder.CreateLoad(
+            srcIt->second.type, srcIt->second.alloca, sourceName + "_load");
+
+        builder.CreateStore(srcVal, alloc);
+
+        srcIt->second.isMoved = true;
+
+        namedValues[varName] = {alloc, ty, false, false};
+      } else {
+        auto *initVal = codegen(*vd->initializer);
+        if (!initVal) {
+          return logErrorV(
+              ("Failed to evaluate initializer for: " + varName).c_str());
+        }
+
+        if (ty->isFloatTy() && initVal->getType()->isDoubleTy()) {
+          initVal = builder.CreateFPTrunc(initVal, ty, "d2f");
+        } else if (ty->isDoubleTy() && initVal->getType()->isFloatTy()) {
+          initVal = builder.CreateFPExt(initVal, ty, "f2d");
+        } else if (ty->isIntegerTy() &&
+                   initVal->getType()->isFloatingPointTy()) {
+          initVal = builder.CreateFPToSI(initVal, ty, "f2i");
+        } else if (ty->isFloatingPointTy() &&
+                   initVal->getType()->isIntegerTy()) {
+          initVal = builder.CreateSIToFP(initVal, ty, "i2f");
+        }
+
+        builder.CreateStore(initVal, alloc);
+
+        namedValues[varName] = {alloc, ty, false, false};
+      }
+    } else {
+      namedValues[varName] = {alloc, ty, false, false};
     }
 
     return alloc;
   }
-
   if (auto *es = dynamic_cast<const ExprStmt *>(&stmt)) {
     return codegen(*es->expr);
   }
-
   if (auto *ifs = dynamic_cast<const IfStmt *>(&stmt)) {
     llvm::Value *condV = codegen(*ifs->condition);
     if (!condV)
       return nullptr;
-
     if (!condV->getType()->isIntegerTy(1)) {
       condV = builder.CreateICmpNE(
           condV, llvm::ConstantInt::get(condV->getType(), 0), "ifcond");
     }
-
     llvm::Function *func = builder.GetInsertBlock()->getParent();
-
     llvm::BasicBlock *thenBB = llvm::BasicBlock::Create(context, "then", func);
     llvm::BasicBlock *elseBB = llvm::BasicBlock::Create(context, "else");
     llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(context, "ifcont");
-
     builder.CreateCondBr(condV, thenBB, elseBB);
-
     builder.SetInsertPoint(thenBB);
     codegen(*ifs->thenBranch);
     if (!builder.GetInsertBlock()->getTerminator())
       builder.CreateBr(mergeBB);
-
     func->insert(func->end(), elseBB);
     builder.SetInsertPoint(elseBB);
     if (ifs->elseBranch)
       codegen(*ifs->elseBranch);
     if (!builder.GetInsertBlock()->getTerminator())
       builder.CreateBr(mergeBB);
-
     func->insert(func->end(), mergeBB);
     builder.SetInsertPoint(mergeBB);
     return nullptr;
   }
-
   if (auto *loop = dynamic_cast<const WhileStmt *>(&stmt)) {
     llvm::Function *func = builder.GetInsertBlock()->getParent();
-
     llvm::BasicBlock *condBB =
         llvm::BasicBlock::Create(context, "while.cond", func);
     llvm::BasicBlock *bodyBB = llvm::BasicBlock::Create(context, "while.body");
     llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "while.end");
-
     builder.CreateBr(condBB);
-
     builder.SetInsertPoint(condBB);
     llvm::Value *condV = codegen(*loop->condition);
     if (!condV)
       return nullptr;
-
     if (!condV->getType()->isIntegerTy(1)) {
       condV = builder.CreateICmpNE(
           condV, llvm::ConstantInt::get(condV->getType(), 0), "cond");
     }
-
     builder.CreateCondBr(condV, bodyBB, exitBB);
     func->insert(func->end(), bodyBB);
     builder.SetInsertPoint(bodyBB);
     codegen(*loop->doBranch);
-
     if (!builder.GetInsertBlock()->getTerminator())
       builder.CreateBr(condBB);
-
     func->insert(func->end(), exitBB);
     builder.SetInsertPoint(exitBB);
     return nullptr;
   }
-
   if (auto *ret = dynamic_cast<const Return *>(&stmt)) {
     if (ret->value) {
       auto *v = codegen(**ret->value);
@@ -772,7 +850,6 @@ llvm::Value *CodeGenerator::codegen(const Statement &stmt) {
     }
     return nullptr;
   }
-
   return logErrorV("Unknown statement type");
 }
 
@@ -786,9 +863,7 @@ void CodeGenerator::codegen(const Block &block) {
 
 llvm::Function *CodeGenerator::codegen(const Function &func) {
   std::string fname = normaliseFunctionName(func.name.token.getWord());
-
   llvm::Type *retTy = llvm::Type::getInt32Ty(context);
-
   std::vector<llvm::Type *> paramTypes;
   for (const auto &p : func.params) {
     llvm::Type *t = getLLVMType(p.type);
@@ -796,51 +871,41 @@ llvm::Function *CodeGenerator::codegen(const Function &func) {
       return nullptr;
     paramTypes.push_back(t);
   }
-
   llvm::Function *f = module->getFunction(fname);
   if (!f) {
     auto *ft = llvm::FunctionType::get(retTy, paramTypes, false);
     f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, fname,
                                *module);
   }
-
   llvm::BasicBlock *bb = llvm::BasicBlock::Create(context, "entry", f);
   builder.SetInsertPoint(bb);
-
   namedValues.clear();
-
   size_t idx = 0;
   for (auto &arg : f->args()) {
     const auto &param = func.params[idx++];
     std::string name = param.name.token.getWord();
-
     llvm::AllocaInst *alloc =
         builder.CreateAlloca(arg.getType(), nullptr, name);
     builder.CreateStore(&arg, alloc);
-    namedValues[name] = {alloc, arg.getType()};
+    namedValues[name] = {alloc, arg.getType(), false}; // not borrowed
   }
-
   codegen(*func.body);
-
   if (!builder.GetInsertBlock()->getTerminator()) {
     if (retTy->isVoidTy())
       builder.CreateRetVoid();
     else
       builder.CreateRet(llvm::ConstantInt::get(retTy, 0));
   }
-
   if (llvm::verifyFunction(*f, &llvm::errs())) {
     f->eraseFromParent();
     return nullptr;
   }
-
   return f;
 }
 
 bool CodeGenerator::generate(const Program &program,
                              const std::string &outputFilename) {
   namedValues.clear();
-
   {
     auto *i8PtrTy = llvm::PointerType::get(context, 0);
     auto *printfTy = llvm::FunctionType::get(llvm::Type::getInt32Ty(context),
@@ -848,12 +913,10 @@ bool CodeGenerator::generate(const Program &program,
     llvm::Function::Create(printfTy, llvm::Function::ExternalLinkage, "printf",
                            *module);
   }
-
   for (const auto &f : program.functions) {
     if (!codegen(*f))
       return false;
   }
-
   std::error_code ec;
   llvm::raw_fd_ostream out(outputFilename + ".ll", ec, llvm::sys::fs::OF_None);
   if (ec) {
@@ -867,11 +930,9 @@ bool CodeGenerator::generate(const Program &program,
 std::string CodeGenerator::hexToAnsi(const std::string &hex) {
   if (hex.size() != 7 || hex[0] != '#')
     return hex;
-
   int r = std::stoi(hex.substr(1, 2), nullptr, 16);
   int g = std::stoi(hex.substr(3, 2), nullptr, 16);
   int b = std::stoi(hex.substr(5, 2), nullptr, 16);
-
   return "\033[38;2;" + std::to_string(r) + ";" + std::to_string(g) + ";" +
          std::to_string(b) + "m";
 }
@@ -881,7 +942,6 @@ std::string CodeGenerator::replaceHexColors(const std::string &input) {
   std::string result;
   std::sregex_iterator begin(input.begin(), input.end(), hexColor);
   std::sregex_iterator end;
-
   size_t lastPos = 0;
   for (auto i = begin; i != end; ++i) {
     auto match = *i;

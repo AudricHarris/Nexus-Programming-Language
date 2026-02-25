@@ -259,13 +259,14 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
   Token typeTok = this->consume();
   Token nameTok =
       this->expect(TokenKind::TOK_IDENTIFIER, "Expected variable name");
-
+  bool moved = false;
   switch (kind) {
   case AssignKind::Copy:
     this->expect(TokenKind::TOK_ASSIGN, "Expected '=' after variable name");
     break;
   case AssignKind::Move:
     this->expect(TokenKind::TOK_MOVE, "Expected '<-' after variable name");
+    moved = true;
     break;
   case AssignKind::Borrow:
     this->expect(TokenKind::TOK_BORROW, "Expected '&=' after variable name");
@@ -276,7 +277,7 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
   this->expect(TokenKind::TOK_SEMI, "Expected ';' after variable declaration");
 
   return std::make_unique<VarDecl>(Identifier{typeTok}, Identifier{nameTok},
-                                   std::move(init), kind);
+                                   std::move(init), kind, moved);
 }
 
 std::unique_ptr<Expression> Parser::parseExpression() {

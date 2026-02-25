@@ -10,7 +10,9 @@
 
 struct VarInfo {
   llvm::AllocaInst *alloca;
-  llvm::Type *type; // pointee type
+  llvm::Type *type;
+  bool isBorrowed = false;
+  bool isMoved = false;
 };
 
 class CodeGenerator {

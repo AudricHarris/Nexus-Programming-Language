@@ -1,23 +1,29 @@
 Main()
 {
-	string ulrond = "Sovereign";
-	Printf("Ulrond account : {ulrond}\n");
+	string t = "Hello";
 
-	/* Setting up new accounts
-	string wolf &= ulrond;
-	string gnome <- ulrond;
-	/! Printing !/
-	Printf("Ulrond account : {ulrond}\n");
-	Printf("Gnome account  : {gnome}\n");
-	Printf("WQLF account   : {wqlf}\n");
+	if (t == "Hello")
+		Print("Hello, my fellow gnomes");
 
-	ulrond = "test";
+	string g <- t;
+	
+	if (g == "Hello")
+		Print("Hello, my fellow gnomes");
 
-	/! Printing !/
-	Printf("Ulrond account : {ulrond}\n");
-	Printf("Gnome account  : {gnome}\n");
-	Printf("WQLF account   : {wqlf}\n");
+	string h <- g;
+	Printf("{h}\n");
 
+	string i &= h;
+	Printf("Borrowed {h}\n");
+	Printf("borrower {i}\n");
+	i = "test";
 
+	/! Impossible to modify Borrowed value read only !/
+	Printf("Borrowed {h}\n");
+	Printf("borrower {i}\n");
+
+	Printf("{5+6}\t");
+	Printf("{5+6}\n");
+	
 	return 0;
 }	

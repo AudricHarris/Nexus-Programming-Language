@@ -357,10 +357,12 @@ struct VarDecl : Statement {
   Identifier name;
   ExprPtr initializer;
   AssignKind kind; // Copy | Move | Borrow
+  bool isMove;
 
   VarDecl(const Identifier &t, const Identifier &n, ExprPtr init,
-          AssignKind k = AssignKind::Copy)
-      : type(t), name(n), initializer(std::move(init)), kind(k) {}
+          AssignKind k = AssignKind::Copy, bool moved = false)
+      : type(t), name(n), initializer(std::move(init)), kind(k), isMove(moved) {
+  }
 
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
