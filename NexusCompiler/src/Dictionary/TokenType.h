@@ -46,16 +46,21 @@ enum class TokenKind {
 
   // Litterals
   TOK_INT,
+  TOK_FLOAT,
   TOK_STRING,
 
   // Operations
   TOK_ASSIGN,
   TOK_INCREMENT,
+  TOK_DECREMENT,
   TOK_MOVE,
+  TOK_BORROW,
   TOK_ADD,
   TOK_SUB,
   TOK_PROD,
   TOK_DIV,
+  TOK_DIV_FLOOR,
+  TOK_MOD,
   TOK_LT, //<
   TOK_GT,
   TOK_LE, // <=
@@ -70,6 +75,7 @@ enum class TokenKind {
   TOK_RBRACE,
   TOK_COMMA,
   TOK_SEMI,
+  TOK_DOT,
 
   // SPECIAL
   TOK_EOF,

@@ -33,14 +33,19 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_WHILE", "while"},
     {"TOK_RETURN", "return"},
     {"TOK_INT", nullptr},
+    {"TOK_FLOAT", nullptr},
     {"TOK_STRING", nullptr},
     {"TOK_ASSIGN", "="},
     {"TOK_INCREMENT", "++"},
+    {"TOK_DECREMENT", "--"},
     {"TOK_MOVE", "<-"},
+    {"TOK_BORROW", "&="},
     {"TOK_ADD", "+"},
     {"TOK_SUB", "-"},
     {"TOK_PROD", "*"},
     {"TOK_DIV", "/"},
+    {"TOK_DIV_FLOOR", "//"},
+    {"TOK_MOD", "%"},
     {"TOK_LT", "<"},
     {"TOK_GT", ">"},
     {"TOK_LE", "<="},
@@ -53,6 +58,7 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_LBRACE", "}"},
     {"TOK_COMMA", ","},
     {"TOK_SEMI", ";"},
+    {"TOK_DIV_FLOOR", "."},
     {"TOK_EOF", "<EOF>"},
     {"TOK_UNKNOWN", "<UNKNOWN>"},
 };
@@ -71,14 +77,20 @@ std::string Token::toString() {
     return "TOK_RETURN  ";
   case TokenKind::TOK_INT:
     return "TOK_INT  ";
+  case TokenKind::TOK_FLOAT:
+    return "TOK_FLOAT  ";
   case TokenKind::TOK_STRING:
     return "TOK_STRING  ";
   case TokenKind::TOK_ASSIGN:
     return "TOK_ASSIGN  ";
   case TokenKind::TOK_INCREMENT:
     return "TOK_INCREMENT  ";
+  case TokenKind::TOK_DECREMENT:
+    return "TOK_DECREMENT  ";
   case TokenKind::TOK_MOVE:
     return "TOK_MOVE  ";
+  case TokenKind::TOK_BORROW:
+    return "TOK_BORROW  ";
   case TokenKind::TOK_ADD:
     return "TOK_ADD  ";
   case TokenKind::TOK_SUB:
@@ -87,6 +99,10 @@ std::string Token::toString() {
     return "TOK_DIV  ";
   case TokenKind::TOK_DIV:
     return "TOK_DIV  ";
+  case TokenKind::TOK_DIV_FLOOR:
+    return "TOK_DIV_FLOOR  ";
+  case TokenKind::TOK_MOD:
+    return "TOK_MOD  ";
   case TokenKind::TOK_LT:
     return "TOK_LT  ";
   case TokenKind::TOK_GT:
@@ -111,6 +127,8 @@ std::string Token::toString() {
     return "TOK_COMMA  ";
   case TokenKind::TOK_SEMI:
     return "TOK_SEMI\n";
+  case TokenKind::TOK_DOT:
+    return "TOK_DOT  ";
   case TokenKind::TOK_EOF:
     return "TOK_EOF\n\n";
   case TokenKind::TOK_UNKNOWN:

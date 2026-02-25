@@ -1,31 +1,16 @@
-ILoveMeth()/* -> i32
-{
-	i32	res	= 1 ;
-
-	res = res * 10 + 4;
-
-	res = res/2; /* 7
-	res = res + 8*20/5; /* 32 + 7 = 39
-
-	return res;
-}
-
-
 Main()
 {
-	Printf("#00AAAA[CT]#FF8400 - #00AAAAaxis#00DD00@Atrium#FFFFFF:#DDAA00 Incendiary!");
-	Printf("[ALL]#AA00AA - #00AAAASovereign #FFFFFF[DEAD]: Your ip address is 95.163.0.1");
-	Printf("#00AAAA[CT]#FF8400 - #00AAAAaxis#00DD00@Stairs#FFFFFF:#00AAFF Flashbang!");
-	Printf("[ALL]#AA00AA - #AAAA00N33ROOO #FFFFFF[DEAD]: who?");
-	Printf("#00AAAA[CT]#FF8400 - #00AAAAMrPatrickStar#00DD00@Stairs#FFFFFF:#DDAA00 Incendiary!");
+	Printf("#00AAAA[CT]#FF8400 - #00AAAAaxis#00DD00@Atrium#FFFFFF:#DDAA00 Incendiary!\n");
+	Printf("[ALL]#AA00AA - #00AAAASovereign #FFFFFF[DEAD]: Your ip address is 95.163.0.1\n");
+	Printf("#00AAAA[CT]#FF8400 - #00AAAAaxis#00DD00@Stairs#FFFFFF:#00AAFF Flashbang!\n");
+	Printf("[ALL]#AA00AA - #AAAA00N33ROOO #FFFFFF[DEAD]: who?\n");
+	Printf("#00AAAA[CT]#FF8400 - #00AAAAMrPatrickStar#00DD00@Stairs#FFFFFF:#DDAA00 Incendiary!\n");
 	
-	i32 num = 5;
-	i32 num2 = num;
-	num2++;
-	num2++;
+	f32 num = 5.5;
+	Printf("Num : {num}");
+	Print("");
+	if (num == 5.5) {Print("equal");}
 
-	i32 num3 = ILoveMeth();
-	Printf("Result of I love Meth =#00AAFF {num3}");
-
-	return num3;
+	Print("Done{num}");
+	return 0;
 }

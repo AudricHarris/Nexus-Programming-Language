@@ -53,6 +53,7 @@ inline std::string escape(const std::string &s) {
 
 struct Identifier;
 struct IntegerLiteral;
+struct FloatLiteral;
 struct StringLiteral;
 struct Parameter;
 struct Block;
@@ -70,6 +71,11 @@ struct Identifier {
 struct IntegerLiteral {
   Token token;
   explicit IntegerLiteral(const Token &t) : token(t) {}
+};
+
+struct FloatLiteral {
+  Token token;
+  explicit FloatLiteral(const Token &t) : token(t) {}
 };
 
 struct StringLiteral {
@@ -90,37 +96,77 @@ struct Expression {
   virtual void toJson(std::ostream &os, int indent = 0) const = 0;
 };
 
-struct Assignment : Expression {
-  Identifier target;
-  ExprPtr value;
-  Assignment(const Identifier &tgt, ExprPtr val)
-      : target(tgt), value(std::move(val)) {}
+// ---------------------------
+//     Binary / Unary Ops
+// ---------------------------
 
-  void toJson(std::ostream &os, int indent) const override {
-    std::string pad(indent, ' ');
-    os << pad << "{\n";
-    os << pad << "  \"kind\": \"Assignment\",\n";
-    os << pad << "  \"target\": " << json_utils::escape(target.token.getWord())
-       << ",\n";
-    os << pad << "  \"value\": ";
-    value->toJson(os, indent + 2);
-    os << "\n" << pad << "}";
-  }
+enum class BinaryOp {
+  Add,
+  Sub,
+  Mul,
+  Div,
+  DivFloor,
+  Mod,
+  Eq,
+  Ne,
+  Lt,
+  Gt,
+  Le,
+  Ge
 };
 
-struct Increment : Expression {
-  Identifier target;
-  explicit Increment(const Identifier &tgt) : target(tgt) {}
-
-  void toJson(std::ostream &os, int indent) const override {
-    std::string pad(indent, ' ');
-    os << pad << "{\n";
-    os << pad << "  \"kind\": \"Increment\",\n";
-    os << pad << "  \"target\": " << json_utils::escape(target.token.getWord())
-       << "\n";
-    os << pad << "}";
+inline std::string toString(BinaryOp op) {
+  switch (op) {
+  case BinaryOp::Add:
+    return "Add";
+  case BinaryOp::Sub:
+    return "Sub";
+  case BinaryOp::Mul:
+    return "Mul";
+  case BinaryOp::Div:
+    return "Div";
+  case BinaryOp::DivFloor:
+    return "DivFloor";
+  case BinaryOp::Mod:
+    return "Mod";
+  case BinaryOp::Eq:
+    return "Eq";
+  case BinaryOp::Ne:
+    return "Ne";
+  case BinaryOp::Lt:
+    return "Lt";
+  case BinaryOp::Gt:
+    return "Gt";
+  case BinaryOp::Le:
+    return "Le";
+  case BinaryOp::Ge:
+    return "Ge";
   }
-};
+  return "Unknown";
+}
+
+enum class UnaryOp { Negate };
+
+inline std::string toString(UnaryOp op) {
+  switch (op) {
+  case UnaryOp::Negate:
+    return "Negate";
+  }
+  return "Unknown";
+}
+
+// ---------------------------
+//     Assignment kinds
+// ---------------------------
+
+// Copy  : T x = value   (or x = value for reassignment)
+// Move  : T x <- value  (transfers ownership; source invalidated)
+// Borrow: T x &= value  (reference borrow; no ownership transfer)
+enum class AssignKind { Copy, Move, Borrow };
+
+// ---------------------------
+//     Expression nodes
+// ---------------------------
 
 struct IdentExpr : Expression {
   Identifier name;
@@ -150,6 +196,20 @@ struct IntLitExpr : Expression {
   }
 };
 
+struct FloatLitExpr : Expression {
+  FloatLiteral lit;
+  explicit FloatLitExpr(const FloatLiteral &l) : lit(l) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"FloatLitExpr\",\n";
+    os << pad << "  \"value\": " << json_utils::escape(lit.token.getWord())
+       << "\n";
+    os << pad << "}";
+  }
+};
+
 struct StrLitExpr : Expression {
   StringLiteral lit;
   explicit StrLitExpr(const StringLiteral &l) : lit(l) {}
@@ -161,6 +221,47 @@ struct StrLitExpr : Expression {
     os << pad << "  \"value\": " << json_utils::escape(lit.token.getWord())
        << "\n";
     os << pad << "}";
+  }
+};
+
+struct BinaryExpr : Expression {
+  BinaryOp op;
+  ExprPtr left;
+  ExprPtr right;
+
+  BinaryExpr(BinaryOp o, ExprPtr l, ExprPtr r)
+      : op(o), left(std::move(l)), right(std::move(r)) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"BinaryExpr\",\n";
+    os << pad << "  \"operator\": " << json_utils::escape(toString(op))
+       << ",\n";
+    os << pad << "  \"left\": ";
+    left->toJson(os, indent + 2);
+    os << ",\n";
+    os << pad << "  \"right\": ";
+    right->toJson(os, indent + 2);
+    os << "\n" << pad << "}";
+  }
+};
+
+struct UnaryExpr : Expression {
+  UnaryOp op;
+  ExprPtr operand;
+
+  UnaryExpr(UnaryOp o, ExprPtr expr) : op(o), operand(std::move(expr)) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"UnaryExpr\",\n";
+    os << pad << "  \"operator\": " << json_utils::escape(toString(op))
+       << ",\n";
+    os << pad << "  \"operand\": ";
+    operand->toJson(os, indent + 2);
+    os << "\n" << pad << "}";
   }
 };
 
@@ -187,16 +288,24 @@ struct CallExpr : Expression {
   }
 };
 
+// Copy assignment expression (reassignment, not declaration): x = expr
 struct AssignExpr : Expression {
   Identifier target;
   ExprPtr value;
-  AssignExpr(Identifier tgt, ExprPtr val)
-      : target(std::move(tgt)), value(std::move(val)) {}
+  AssignKind kind; // Copy | Move | Borrow
+
+  AssignExpr(Identifier tgt, ExprPtr val, AssignKind k = AssignKind::Copy)
+      : target(std::move(tgt)), value(std::move(val)), kind(k) {}
 
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
     os << pad << "  \"kind\": \"AssignExpr\",\n";
+    os << pad << "  \"assignKind\": \""
+       << (kind == AssignKind::Copy   ? "Copy"
+           : kind == AssignKind::Move ? "Move"
+                                      : "Borrow")
+       << "\",\n";
     os << pad << "  \"target\": " << json_utils::escape(target.token.getWord())
        << ",\n";
     os << pad << "  \"value\": ";
@@ -205,22 +314,63 @@ struct AssignExpr : Expression {
   }
 };
 
+struct Increment : Expression {
+  Identifier target;
+  explicit Increment(const Identifier &tgt) : target(tgt) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"Increment\",\n";
+    os << pad << "  \"target\": " << json_utils::escape(target.token.getWord())
+       << "\n";
+    os << pad << "}";
+  }
+};
+
+struct Decrement : Expression {
+  Identifier target;
+  explicit Decrement(const Identifier &tgt) : target(tgt) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"Decrement\",\n";
+    os << pad << "  \"target\": " << json_utils::escape(target.token.getWord())
+       << "\n";
+    os << pad << "}";
+  }
+};
+
+// ---------------------------
+//     Statement nodes
+// ---------------------------
+
 struct Statement {
   virtual ~Statement() = default;
   virtual void toJson(std::ostream &os, int indent = 0) const = 0;
 };
 
+// Variable declaration: T name = expr  /  T name <- expr  /  T name &= expr
 struct VarDecl : Statement {
   Identifier type;
   Identifier name;
   ExprPtr initializer;
-  VarDecl(const Identifier &t, const Identifier &n, ExprPtr init)
-      : type(t), name(n), initializer(std::move(init)) {}
+  AssignKind kind; // Copy | Move | Borrow
+
+  VarDecl(const Identifier &t, const Identifier &n, ExprPtr init,
+          AssignKind k = AssignKind::Copy)
+      : type(t), name(n), initializer(std::move(init)), kind(k) {}
 
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
     os << pad << "  \"kind\": \"VarDecl\",\n";
+    os << pad << "  \"assignKind\": \""
+       << (kind == AssignKind::Copy   ? "Copy"
+           : kind == AssignKind::Move ? "Move"
+                                      : "Borrow")
+       << "\",\n";
     os << pad << "  \"type\": " << json_utils::escape(type.token.getWord())
        << ",\n";
     os << pad << "  \"name\": " << json_utils::escape(name.token.getWord())
@@ -251,13 +401,11 @@ struct IfStmt : Statement {
     os << pad << "  \"condition\": ";
     condition->toJson(os, indent + 4);
     os << ",\n";
-
     os << pad << "  \"then\": ";
+    // thenBranch->toJson(...) — omitted for brevity like original
     os << ",\n";
-
-    os << pad << "  \"else\": ";
-
-    os << "\n" << pad << "}";
+    os << pad << "  \"else\": null\n";
+    os << pad << "}";
   }
 };
 
@@ -274,10 +422,7 @@ struct WhileStmt : Statement {
     os << pad << "  \"kind\": \"WhileStmt\",\n";
     os << pad << "  \"condition\": ";
     condition->toJson(os, indent + 4);
-    os << ",\n";
-
-    os << pad << "  \"do\": ";
-    os << ",\n";
+    os << "\n" << pad << "}";
   }
 };
 
@@ -316,6 +461,10 @@ struct ExprStmt : Statement {
     os << "\n" << pad << "}";
   }
 };
+
+// ---------------------------
+//     Block / Function / Program
+// ---------------------------
 
 struct Block {
   std::vector<std::unique_ptr<Statement>> statements;
@@ -370,11 +519,10 @@ struct Function {
     }
     os << "\n" << pad << "  ],\n";
     os << pad << "  \"body\": ";
-    if (body) {
+    if (body)
       body->toJson(os, indent + 2);
-    } else {
+    else
       os << "null";
-    }
     os << "\n" << pad << "}";
   }
 };
@@ -395,89 +543,6 @@ struct Program {
     }
     os << "\n" << pad << "  ]\n";
     os << pad << "}\n";
-  }
-};
-
-// ---------------------------
-//     Binary / Unary Ops
-// ---------------------------
-
-enum class BinaryOp { Add, Sub, Mul, Div, Eq, Ne, Lt, Gt, Le, Ge };
-
-inline std::string toString(BinaryOp op) {
-  switch (op) {
-  case BinaryOp::Add:
-    return "Add";
-  case BinaryOp::Sub:
-    return "Sub";
-  case BinaryOp::Mul:
-    return "Mul";
-  case BinaryOp::Div:
-    return "Div";
-  case BinaryOp::Eq:
-    return "Eq";
-  case BinaryOp::Ne:
-    return "Ne";
-  case BinaryOp::Lt:
-    return "Lt";
-  case BinaryOp::Gt:
-    return "Gt";
-  case BinaryOp::Le:
-    return "Le";
-  case BinaryOp::Ge:
-    return "Ge";
-  }
-  return "Unknown";
-}
-
-enum class UnaryOp { Negate };
-
-inline std::string toString(UnaryOp op) {
-  switch (op) {
-  case UnaryOp::Negate:
-    return "Negate";
-  }
-  return "Unknown";
-}
-
-struct BinaryExpr : Expression {
-  BinaryOp op;
-  ExprPtr left;
-  ExprPtr right;
-
-  BinaryExpr(BinaryOp o, ExprPtr l, ExprPtr r)
-      : op(o), left(std::move(l)), right(std::move(r)) {}
-
-  void toJson(std::ostream &os, int indent) const override {
-    std::string pad(indent, ' ');
-    os << pad << "{\n";
-    os << pad << "  \"kind\": \"BinaryExpr\",\n";
-    os << pad << "  \"operator\": " << json_utils::escape(toString(op))
-       << ",\n";
-    os << pad << "  \"left\": ";
-    left->toJson(os, indent + 2);
-    os << ",\n";
-    os << pad << "  \"right\": ";
-    right->toJson(os, indent + 2);
-    os << "\n" << pad << "}";
-  }
-};
-
-struct UnaryExpr : Expression {
-  UnaryOp op;
-  ExprPtr operand;
-
-  UnaryExpr(UnaryOp o, ExprPtr expr) : op(o), operand(std::move(expr)) {}
-
-  void toJson(std::ostream &os, int indent) const override {
-    std::string pad(indent, ' ');
-    os << pad << "{\n";
-    os << pad << "  \"kind\": \"UnaryExpr\",\n";
-    os << pad << "  \"operator\": " << json_utils::escape(toString(op))
-       << ",\n";
-    os << pad << "  \"operand\": ";
-    operand->toJson(os, indent + 2);
-    os << "\n" << pad << "}";
   }
 };
 

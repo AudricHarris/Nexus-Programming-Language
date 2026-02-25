@@ -79,7 +79,7 @@ public:
   std::unique_ptr<Block> parseBlock(bool uni = false);
   std::unique_ptr<Statement> parseStatement();
   std::unique_ptr<Expression> parseExpression();
-  std::unique_ptr<VarDecl> parseVarDeclStatement();
+  std::unique_ptr<VarDecl> parseVarDeclStatement(AssignKind kind);
   std::unique_ptr<IfStmt> parseIfStatement();
   std::unique_ptr<WhileStmt> parseWhileLoop();
   std::unique_ptr<Return> parseReturnStatement();

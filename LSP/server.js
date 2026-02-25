@@ -33,7 +33,7 @@ let hasDiagnosticRelatedInformationCapability = false;
 
 const KEYWORDS = [
   'sum', 'class', 'implement', 'static', 'Constructor', 'Factory',
-  'if', 'else', 'for', 'while', 'return', 'match', 'new',
+  'if', 'else', 'for', 'while', 'return', 'match', 'new', 'export', 'static', "import",
   'self', 'Sequential', 'true', 'false', "public", "private", "protected"
 ];
 

@@ -94,6 +94,9 @@ std::vector<Token> Lexer::Tokenize() {
       if (this->peek() == '=') {
         this->next();
         lstTokens.push_back(makeToken(TokenKind::TOK_LE, "<="));
+      } else if (this->peek() == '-') {
+        this->next();
+        lstTokens.push_back(makeToken(TokenKind::TOK_MOVE, "<-"));
       } else {
         lstTokens.push_back(makeToken(TokenKind::TOK_LT, "<"));
       }
@@ -107,6 +110,12 @@ std::vector<Token> Lexer::Tokenize() {
       } else {
         lstTokens.push_back(makeToken(TokenKind::TOK_GT, ">"));
       }
+      continue;
+    }
+    if (this->peek() == '&' && this->peeknext() == '=') {
+      this->next();
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_BORROW, "&="));
       continue;
     }
     if (this->peek() == '!' && this->peeknext() == '=') {
@@ -133,7 +142,12 @@ std::vector<Token> Lexer::Tokenize() {
     }
     if (this->peek() == '-') {
       this->next();
-      lstTokens.push_back(makeToken(TokenKind::TOK_SUB, "-"));
+      if (this->peek() == '-') {
+        this->next();
+        lstTokens.push_back(makeToken(TokenKind::TOK_DECREMENT, "--"));
+      } else {
+        lstTokens.push_back(makeToken(TokenKind::TOK_SUB, "-"));
+      }
       continue;
     }
     if (this->peek() == '*') {
@@ -141,9 +155,20 @@ std::vector<Token> Lexer::Tokenize() {
       lstTokens.push_back(makeToken(TokenKind::TOK_PROD, "*"));
       continue;
     }
+    if (this->peek() == '%') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_MOD, "%"));
+      continue;
+    }
+
     if (this->peek() == '/') {
       this->next();
-      lstTokens.push_back(makeToken(TokenKind::TOK_DIV, "/"));
+      if (this->peek() == '/') {
+        this->next();
+        lstTokens.push_back(makeToken(TokenKind::TOK_DIV_FLOOR, "//"));
+      } else {
+        lstTokens.push_back(makeToken(TokenKind::TOK_DIV, "/"));
+      }
       continue;
     }
     // Identifiers
@@ -183,7 +208,14 @@ std::vector<Token> Lexer::Tokenize() {
       do {
         currentWord += this->next();
       } while (std::isdigit(this->peek()));
-      lstTokens.push_back(makeToken(TokenKind::TOK_INT, currentWord));
+      if (this->peek() == '.') {
+        do {
+          currentWord += this->next();
+        } while (std::isdigit(this->peek()));
+        lstTokens.push_back(makeToken(TokenKind::TOK_FLOAT, currentWord));
+      } else {
+        lstTokens.push_back(makeToken(TokenKind::TOK_INT, currentWord));
+      }
       continue;
     }
 

@@ -1,0 +1,42 @@
+Check()
+{
+	i32 test = 5;
+	Printf("Recursion = {test}");
+	test++;
+	test = test * 9 / 3 + 5 - 2; /* From memory 21
+
+	if (test == 21)
+	{
+		Printf("#00FF00 Result is equal to 21");
+	}
+	else
+	{
+		Printf("#FF0000 Result is not equal to 21");
+	}
+
+	return test;
+}
+
+IsEven(i32 num)
+{
+	i32 half = num/2;
+	return num - half*2;
+}
+
+Main()
+{
+	i32 test = Check();
+	Printf("Num = {test}");
+
+	while (test++ < 50)
+	{
+		if (IsEven(test) == 0) Printf("#00FF00Even number");
+		Printf("test");
+		else Printf("#FF0000Odd number");
+
+		Printf("Number : {test}");
+	}
+	
+	Printf("Finished counting to 50");
+	return 0;
+}
