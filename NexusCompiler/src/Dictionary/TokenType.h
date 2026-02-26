@@ -48,6 +48,7 @@ enum class TokenKind {
   TOK_INT,
   TOK_FLOAT,
   TOK_STRING,
+  TOK_BOOL,
 
   // Operations
   TOK_ASSIGN,

@@ -301,6 +301,10 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     return std::make_unique<StrLitExpr>(StrLitExpr{StringLiteral{tok}});
   }
 
+  case TokenKind::TOK_BOOL: {
+    return std::make_unique<BoolLitExpr>(BoolLitExpr{BoolLiteral{tok}});
+  }
+
   case TokenKind::TOK_IDENTIFIER: {
     Identifier id{tok};
 

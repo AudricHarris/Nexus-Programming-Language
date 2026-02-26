@@ -1,0 +1,8 @@
+/! This is the standard Library for Math !/
+
+f32 PI = 3.14159;
+f32 EXP = 2.718;
+
+
+export Pow(i32 x) return x * x;
+export Pow(f32 x) return x * x;

@@ -1,29 +1,6 @@
 Main()
 {
-	string t = "Hello";
-
-	if (t == "Hello")
-		Print("Hello, my fellow gnomes");
-
-	string g <- t;
-	
-	if (g == "Hello")
-		Print("Hello, my fellow gnomes");
-
-	string h <- g;
-	Printf("{h}\n");
-
-	string i &= h;
-	Printf("Borrowed {h}\n");
-	Printf("borrower {i}\n");
-	i = "test";
-
-	/! Impossible to modify Borrowed value read only !/
-	Printf("Borrowed {h}\n");
-	Printf("borrower {i}\n");
-
-	Printf("{5+6}\t");
-	Printf("{5+6}\n");
-	
-	return 0;
-}	
+	bool isTrue = true;
+	bool isFalse = false;
+	Printf("#00FF00True : {isTrue} #FFFFFFvs#FF0000 False : {isFalse}\n");
+}

@@ -55,6 +55,7 @@ struct Identifier;
 struct IntegerLiteral;
 struct FloatLiteral;
 struct StringLiteral;
+struct BoolLiteral;
 struct Parameter;
 struct Block;
 struct Function;
@@ -81,6 +82,11 @@ struct FloatLiteral {
 struct StringLiteral {
   Token token;
   explicit StringLiteral(const Token &t) : token(t) {}
+};
+
+struct BoolLiteral {
+  Token token;
+  explicit BoolLiteral(const Token &t) : token(t) {}
 };
 
 struct Parameter {
@@ -218,6 +224,20 @@ struct StrLitExpr : Expression {
     std::string pad(indent, ' ');
     os << pad << "{\n";
     os << pad << "  \"kind\": \"StrLitExpr\",\n";
+    os << pad << "  \"value\": " << json_utils::escape(lit.token.getWord())
+       << "\n";
+    os << pad << "}";
+  }
+};
+
+struct BoolLitExpr : Expression {
+  BoolLiteral lit;
+  explicit BoolLitExpr(const BoolLiteral &l) : lit(l) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"BoolLitExpr\",\n";
     os << pad << "  \"value\": " << json_utils::escape(lit.token.getWord())
        << "\n";
     os << pad << "}";
