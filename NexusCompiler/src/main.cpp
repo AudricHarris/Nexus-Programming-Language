@@ -12,7 +12,7 @@
 int main(int argc, char *argv[]) {
   if (argc != 3) {
     if (argc == 2 && std::string(argv[1]) == "--version") {
-      std::cout << "nexus 1.3" << std::endl;
+      std::cout << "nexus 1.4" << std::endl;
       return 0;
     };
     std::cerr << "Usage: nexus input.nx output.x\n";

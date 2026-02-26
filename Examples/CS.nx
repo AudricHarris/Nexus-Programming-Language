@@ -1,6 +1,0 @@
-Main()
-{
-	bool isTrue = true;
-	bool isFalse = false;
-	Printf("#00FF00True : {isTrue} #FFFFFFvs#FF0000 False : {isFalse}\n");
-}
