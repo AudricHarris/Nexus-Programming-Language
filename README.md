@@ -33,3 +33,5 @@ You can find both compilers :
 - NexusCompilerV1
 - NexusCompilerV2
 
+# Version logs can be found in documentation.
+
