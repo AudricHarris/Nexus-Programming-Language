@@ -60,6 +60,7 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_COMMA", ","},
     {"TOK_SEMI", ";"},
     {"TOK_DIV_FLOOR", "."},
+    {"TOK_RETURN_TYPE", "->"},
     {"TOK_EOF", "<EOF>"},
     {"TOK_UNKNOWN", "<UNKNOWN>"},
 };
@@ -132,6 +133,8 @@ std::string Token::toString() {
     return "TOK_SEMI\n";
   case TokenKind::TOK_DOT:
     return "TOK_DOT  ";
+  case TokenKind::TOK_RETURN_TYPE:
+    return "TOK_RETURN_TYPE  ";
   case TokenKind::TOK_EOF:
     return "TOK_EOF\n\n";
   case TokenKind::TOK_UNKNOWN:

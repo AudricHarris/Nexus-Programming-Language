@@ -2,6 +2,8 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cinttypes>
+#include <iostream>
 #include <memory>
 #include <regex>
 #include <unordered_map>
@@ -123,7 +125,7 @@ public:
     if (!ty)
       return "%d";
     if (ty->isIntegerTy(64))
-      return "%lld";
+      return "%" PRId64;
     if (ty->isIntegerTy())
       return "%d";
     if (ty->isFloatTy() || ty->isDoubleTy())
@@ -937,8 +939,12 @@ Value *CodeGenerator::handleCopyInitialization(const VarDecl &decl,
   if (!initVal)
     return logError(("Failed to initialize: " + varName).c_str());
 
-  // Type conversions
-  if (ty->isFloatTy() && initVal->getType()->isDoubleTy())
+  // Type conversions - add i32 to i64 extension
+  if (ty->isIntegerTy(64) && initVal->getType()->isIntegerTy(32)) {
+    // Extend i32 to i64
+    initVal =
+        builder.CreateSExt(initVal, Type::getInt64Ty(context), "i32_to_i64");
+  } else if (ty->isFloatTy() && initVal->getType()->isDoubleTy())
     initVal = builder.CreateFPTrunc(initVal, ty, "d2f");
   else if (ty->isDoubleTy() && initVal->getType()->isFloatTy())
     initVal = builder.CreateFPExt(initVal, ty, "f2d");
@@ -1052,7 +1058,9 @@ void CodeGenerator::codegen(const Block &block) {
 
 llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   std::string fname = normalizeFunctionName(func.name.token.getWord());
-  Type *retTy = Type::getInt32Ty(context); // Default return type
+  Type *retTy = TypeResolver::getLLVMType(context, func.returnType);
+
+  namedValues.clear();
 
   // Build parameter types
   std::vector<Type *> paramTypes;
@@ -1070,6 +1078,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, fname,
                                *module);
   }
+  f->addFnAttr("stackrealignment");
 
   // Create entry block
   BasicBlock *bb = BasicBlock::Create(context, "entry", f);
@@ -1083,6 +1092,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     std::string name = param.name.token.getWord();
 
     AllocaInst *alloc = builder.CreateAlloca(arg.getType(), nullptr, name);
+
     builder.CreateStore(&arg, alloc);
     namedValues[name] = {alloc, arg.getType(), false, false};
   }
@@ -1103,7 +1113,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     f->eraseFromParent();
     return nullptr;
   }
-
   return f;
 }
 

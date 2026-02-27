@@ -269,7 +269,6 @@ connection.languages.semanticTokens.on((params) => {
     }
 
     if (text.startsWith('/!', pos)) {
-      const start = pos;
       const startLine = line;
       const startCol = col;
 
@@ -280,16 +279,46 @@ connection.languages.semanticTokens.on((params) => {
         end += 2;
       }
 
-      const length = end - start;
-      pushToken(startLine, startCol, length, 6);
+      const commentText = text.slice(pos, end);
+      const commentLines = commentText.split('\n');
 
-      const endPos = getEndPosition(start, end);
-      line = endPos.line;
-      col = endPos.col;
+      if (commentLines.length === 1) {
+        pushToken(startLine, startCol, commentLines[0].length, 6);
+        col += commentLines[0].length;
+      } else {
+        for (let i = 0; i < commentLines.length; i++) {
+          const segLine = startLine + i;
+          const segCol = i === 0 ? startCol : 0;
+          const segLen = commentLines[i].length;
+          if (segLen > 0) {
+            pushToken(segLine, segCol, segLen, 6);
+          }
+        }
+        line = startLine + commentLines.length - 1;
+        col = commentLines[commentLines.length - 1].length;
+      }
+
       pos = end;
       continue;
     }
+    if (ch === "'") {
+      const startLine = line;
+      const startCol = col;
 
+      let end = pos + 1;
+      if (end < text.length && text[end] === '\\') {
+        end += 2; // skip escape + escaped char e.g. '\n'
+      } else {
+        end++; // skip single char e.g. 'a'
+      }
+      if (end < text.length && text[end] === "'") end++; // closing quote
+
+      const length = end - pos;
+      pushToken(startLine, startCol, length, 5); // token type 5 = string colour
+      col += length;
+      pos = end;
+      continue;
+    }
     if (ch === '"') {
       const start = pos;
       const startLine = line;

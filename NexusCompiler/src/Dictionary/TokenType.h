@@ -79,6 +79,7 @@ enum class TokenKind {
   TOK_DOT,
 
   // SPECIAL
+  TOK_RETURN_TYPE,
   TOK_EOF,
   TOK_UNKNOWN,
 

@@ -145,6 +145,9 @@ std::vector<Token> Lexer::Tokenize() {
       if (this->peek() == '-') {
         this->next();
         lstTokens.push_back(makeToken(TokenKind::TOK_DECREMENT, "--"));
+      } else if (this->peek() == '>') {
+        this->next();
+        lstTokens.push_back(makeToken(TokenKind::TOK_RETURN_TYPE, "->"));
       } else {
         lstTokens.push_back(makeToken(TokenKind::TOK_SUB, "-"));
       }

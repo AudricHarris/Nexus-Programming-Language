@@ -122,7 +122,6 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
   this->expect(TokenKind::TOK_LPAREN, "Expected '(' after function name");
 
   std::vector<Parameter> params;
-
   if (!this->match(TokenKind::TOK_RPAREN)) {
     do {
       Token typeToken =
@@ -136,9 +135,23 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
     this->expect(TokenKind::TOK_RPAREN, "Expected ')' after parameter list");
   }
 
-  auto body = parseBlock();
-  return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
-                                    std::move(body));
+  // Return types by defauly void
+
+  if (this->match(TokenKind::TOK_RETURN_TYPE)) {
+    Token retTypeToken =
+        this->expect(TokenKind::TOK_IDENTIFIER, "expected a type");
+
+    Identifier returnType = Identifier{retTypeToken};
+    auto body = parseBlock();
+    return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
+                                      std::move(body), returnType);
+  } else {
+    Identifier returnType = Identifier{
+        Token{TokenKind::TOK_IDENTIFIER, "void", nameToken.getLine(), 0}};
+    auto body = parseBlock();
+    return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
+                                      std::move(body), returnType);
+  }
 }
 
 std::unique_ptr<Block> Parser::parseBlock(bool uni) {

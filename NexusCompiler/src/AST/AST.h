@@ -513,20 +513,24 @@ struct Function {
   Identifier name;
   std::vector<Parameter> params;
   std::unique_ptr<Block> body;
+  Identifier returnType;
 
   Function(const Identifier &n, std::vector<Parameter> p,
-           std::unique_ptr<Block> b)
-      : name(n), params(std::move(p)), body(std::move(b)) {}
+           std::unique_ptr<Block> b, Identifier type)
+      : name(n), params(std::move(p)), body(std::move(b)), returnType(type) {}
 
   Function(Identifier &&n, std::vector<Parameter> &&p,
-           std::unique_ptr<Block> &&b)
-      : name(std::move(n)), params(std::move(p)), body(std::move(b)) {}
+           std::unique_ptr<Block> &&b, Identifier type)
+      : name(std::move(n)), params(std::move(p)), body(std::move(b)),
+        returnType(type) {}
 
   void toJson(std::ostream &os, int indent = 0) const {
     std::string pad(indent, ' ');
     os << pad << "{\n";
     os << pad << "  \"kind\": \"Function\",\n";
     os << pad << "  \"name\": " << json_utils::escape(name.token.getWord())
+       << ",\n";
+    os << pad << "  \"Return\": " << json_utils::escape(name.token.getWord())
        << ",\n";
     os << pad << "  \"params\": [\n";
     for (size_t i = 0; i < params.size(); ++i) {
