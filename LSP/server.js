@@ -40,7 +40,8 @@ const KEYWORDS = [
 const TYPES = [
   'i32', 'i64', 'i16', 'i8', 'i4',
   'u32', 'u64', 'u16', 'u8',
-  'f32', 'f64', 'bool', 'string', 'void', 'char'
+  'f32', 'f64', 'bool', 'string', 'void', 'char',
+  'any'
 ];
 
 const BUILTIN_FUNCTIONS = [

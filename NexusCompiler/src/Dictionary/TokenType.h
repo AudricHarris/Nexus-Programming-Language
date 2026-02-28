@@ -73,6 +73,8 @@ enum class TokenKind {
   // Punctuation / Delimiters
   TOK_LPAREN,
   TOK_RPAREN,
+  TOK_LBRACKET,
+  TOK_RBRACKET,
   TOK_LBRACE,
   TOK_RBRACE,
   TOK_COMMA,
@@ -81,6 +83,7 @@ enum class TokenKind {
 
   // SPECIAL
   TOK_RETURN_TYPE,
+  TOK_NEW,
   TOK_EOF,
   TOK_UNKNOWN,
 

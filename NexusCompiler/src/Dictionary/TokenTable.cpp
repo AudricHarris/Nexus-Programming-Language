@@ -55,12 +55,16 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_NE", "!="},
     {"TOK_LPAREN", "("},
     {"TOK_RPAREN", ")"},
+    {"TOK_LBRACKET", "["},
+    {"TOK_RBRACKET", "]"},
+    {"TOK_LPAREN", "("},
     {"TOK_LBRACE", "{"},
     {"TOK_LBRACE", "}"},
     {"TOK_COMMA", ","},
     {"TOK_SEMI", ";"},
     {"TOK_DIV_FLOOR", "."},
     {"TOK_RETURN_TYPE", "->"},
+    {"TOK_NEW", "new"},
     {"TOK_EOF", "<EOF>"},
     {"TOK_UNKNOWN", "<UNKNOWN>"},
 };
@@ -123,6 +127,10 @@ std::string Token::toString() {
     return "TOK_LPAREN  ";
   case TokenKind::TOK_RPAREN:
     return "TOK_RPAREN  ";
+  case TokenKind::TOK_LBRACKET:
+    return "TOK_LBRACKET  ";
+  case TokenKind::TOK_RBRACKET:
+    return "TOK_RBRACKET  ";
   case TokenKind::TOK_LBRACE:
     return "\nTOK_LBRACE\n";
   case TokenKind::TOK_RBRACE:
@@ -135,6 +143,8 @@ std::string Token::toString() {
     return "TOK_DOT  ";
   case TokenKind::TOK_RETURN_TYPE:
     return "TOK_RETURN_TYPE  ";
+  case TokenKind::TOK_NEW:
+    return "TOK_NEW  ";
   case TokenKind::TOK_EOF:
     return "TOK_EOF\n\n";
   case TokenKind::TOK_UNKNOWN:

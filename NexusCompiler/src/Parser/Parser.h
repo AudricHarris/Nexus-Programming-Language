@@ -84,6 +84,8 @@ public:
   std::unique_ptr<WhileStmt> parseWhileLoop();
   std::unique_ptr<Return> parseReturnStatement();
   std::unique_ptr<Expression> parsePrimary();
+  std::unique_ptr<Expression> parseNewArray();
+  std::unique_ptr<Statement> parseArrayElementAssignStatement();
   std::unique_ptr<Expression> parseAssignment();
   std::unique_ptr<Expression> parseEquality();
   std::unique_ptr<Expression> parseComparison();

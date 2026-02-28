@@ -71,12 +71,12 @@ std::vector<Token> Lexer::Tokenize() {
     }
     if (this->peek() == '[') {
       this->next();
-      lstTokens.push_back(makeToken(TokenKind::TOK_LBRACE, "["));
+      lstTokens.push_back(makeToken(TokenKind::TOK_LBRACKET, "["));
       continue;
     }
     if (this->peek() == ']') {
       this->next();
-      lstTokens.push_back(makeToken(TokenKind::TOK_RBRACE, "]"));
+      lstTokens.push_back(makeToken(TokenKind::TOK_RBRACKET, "]"));
       continue;
     }
 
@@ -169,6 +169,11 @@ std::vector<Token> Lexer::Tokenize() {
       lstTokens.push_back(makeToken(TokenKind::TOK_PROD, "*"));
       continue;
     }
+    if (this->peek() == '.') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_DOT, "."));
+      continue;
+    }
     if (this->peek() == ',') {
       this->next();
       lstTokens.push_back(makeToken(TokenKind::TOK_COMMA, ","));
@@ -207,6 +212,8 @@ std::vector<Token> Lexer::Tokenize() {
         lstTokens.push_back(makeToken(TokenKind::TOK_WHILE, currentWord));
       } else if (currentWord == "true" || currentWord == "false") {
         lstTokens.push_back(makeToken(TokenKind::TOK_BOOL, currentWord));
+      } else if (currentWord == "new") {
+        lstTokens.push_back(makeToken(TokenKind::TOK_NEW, currentWord));
       } else {
         lstTokens.push_back(makeToken(TokenKind::TOK_IDENTIFIER, currentWord));
       }

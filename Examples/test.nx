@@ -1,24 +1,27 @@
-Var() -> i32
+Main() -> bool
 {
-	i64 c = 54;
-	Printf("{c}\n");
+	i32[][] arr1 = new i32[](5);
+	
+	i32 t = 0;
+	i32 length = arr1.length;
 
-	return 8;
-}
-
-Main()
-{
-	i32 i = 0;
-	while (i < 5)
+	while (t < length )
 	{
-		Printf("line : {i} |");
-		i32 j = 0;
-		while (j<5){Printf("#");j++;}
-		Print("|");
-		i++;
+		arr1[t] = t;
+		t++;
 	}
 
-	/*return "Hi";
+	i32 tmp = 0;
+	t = 0;
+	while (t < length )
+	{
+		tmp = arr1[t];
+		Printf("{tmp}\n");
+		t++;
+	}
+	Printf("ok\n");
+
+	string ok = "hi";
+
+	Printf("{ok}\n");
 }
-
-

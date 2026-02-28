@@ -2,8 +2,6 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
-#include <cinttypes>
-#include <iostream>
 #include <memory>
 #include <regex>
 #include <unordered_map>
@@ -54,6 +52,10 @@ static std::string unescapeString(const std::string &s) {
         result += '\0';
         ++i;
         break;
+      case '{':
+        result += '{';
+        ++i;
+        break; // \{ → literal {
       default:
         result += s[i];
         break;
@@ -68,11 +70,9 @@ static std::string unescapeString(const std::string &s) {
 std::string CodeGenerator::hexToAnsi(const std::string &hex) {
   if (hex.size() != 7 || hex[0] != '#')
     return hex;
-
   int r = std::stoi(hex.substr(1, 2), nullptr, 16);
   int g = std::stoi(hex.substr(3, 2), nullptr, 16);
   int b = std::stoi(hex.substr(5, 2), nullptr, 16);
-
   return "\033[38;2;" + std::to_string(r) + ";" + std::to_string(g) + ";" +
          std::to_string(b) + "m";
 }
@@ -82,7 +82,6 @@ std::string CodeGenerator::replaceHexColors(const std::string &input) {
   std::string result;
   std::sregex_iterator begin(input.begin(), input.end(), hexColor);
   std::sregex_iterator end;
-
   size_t lastPos = 0;
   for (auto i = begin; i != end; ++i) {
     auto match = *i;
@@ -102,7 +101,6 @@ class TypeResolver {
 public:
   static Type *getLLVMType(LLVMContext &context, const Identifier &typeId) {
     const std::string &t = typeId.token.getWord();
-
     if (t == "i32" || t == "int" || t == "integer")
       return Type::getInt32Ty(context);
     if (t == "i64" || t == "long")
@@ -119,466 +117,530 @@ public:
       return Type::getInt1Ty(context);
     if (t == "void")
       return Type::getVoidTy(context);
-    if (t == "str" || t == "string")
-      return PointerType::getUnqual(context);
-
+    if (t == "str" || t == "string") {
+      StructType *st = StructType::getTypeByName(context, "string");
+      if (!st) {
+        st = StructType::create(context, "string");
+        st->setBody({PointerType::get(context, 0), Type::getInt64Ty(context),
+                     Type::getInt64Ty(context)});
+      }
+      return st;
+    }
+    // Nested array element type: "array.i32", "array.array.i32", etc.
+    if (t.size() > 6 && t.substr(0, 6) == "array.") {
+      StructType *existing = StructType::getTypeByName(context, t);
+      if (existing)
+        return existing;
+      std::string elemTypeName = t.substr(6);
+      Identifier elemId{Token{TokenKind::TOK_IDENTIFIER, elemTypeName, 0, 0}};
+      getLLVMType(context, elemId); // ensure element type registered first
+      StructType *st = StructType::create(context, t);
+      st->setBody({Type::getInt64Ty(context), PointerType::get(context, 0)});
+      return st;
+    }
     return nullptr;
   }
 
-  static std::string getFormatSpecifier(Type *ty) {
-    if (!ty)
-      return "%d";
+  static Type *getLLVMType(LLVMContext &context, const ::ArrayType &arrType) {
+    Type *elemType = getLLVMType(context, arrType.elementType);
+    if (!elemType)
+      return nullptr;
+    std::string structName = "array." + arrType.elementType.token.getWord();
+    StructType *arrayStruct = StructType::getTypeByName(context, structName);
+    if (!arrayStruct) {
+      arrayStruct = StructType::create(context, structName);
+      arrayStruct->setBody(
+          {Type::getInt64Ty(context), PointerType::get(context, 0)});
+    }
+    return arrayStruct;
+  }
 
-    if (ty->isIntegerTy(64))
-      return "%" PRId64;
-    if (ty->isIntegerTy(32))
-      return "%d";
-    if (ty->isIntegerTy(16))
-      return "%hd";
-    if (ty->isIntegerTy(8))
-      return "%hhd";
-    if (ty->isIntegerTy(1))
-      return "%d";
+  static Type *getLLVMType(LLVMContext &context,
+                           const VarDecl::TypeVariant &type) {
+    if (std::holds_alternative<Identifier>(type))
+      return getLLVMType(context, std::get<Identifier>(type));
+    else
+      return getLLVMType(context, std::get<::ArrayType>(type));
+  }
 
-    if (ty->isFloatTy())
-      return "%f";
-    if (ty->isDoubleTy())
-      return "%f";
+  static bool isString(Type *ty) {
+    if (!ty || !ty->isStructTy())
+      return false;
+    return cast<StructType>(ty)->getName() == "string";
+  }
 
-    if (ty->isPointerTy())
-      return "%s";
-
-    return "%d";
+  static bool isArrayType(Type *ty) {
+    if (!ty || !ty->isStructTy())
+      return false;
+    return cast<StructType>(ty)->getName().starts_with("array.");
   }
 
   static bool isNumeric(Type *ty) {
     return ty->isIntegerTy() || ty->isFloatingPointTy();
   }
-
   static bool isFloat(Type *ty) { return ty->isFloatingPointTy(); }
-
-  static bool isString(Type *ty) {
-    return ty->isPointerTy() && ty->getPointerAddressSpace() == 0;
-  }
+  static bool isBool(Type *ty) { return ty->isIntegerTy(1); }
 
   static Type *getLargerType(Type *a, Type *b) {
+    if (!a || !b)
+      return a ? a : b;
     if (a == b)
       return a;
-
+    if (isArrayType(a) || isArrayType(b) || isString(a) || isString(b))
+      return a;
+    if (a->isPointerTy() || b->isPointerTy())
+      return a->isPointerTy() ? a : b;
     if (a->isFloatingPointTy() || b->isFloatingPointTy()) {
       if (a->isDoubleTy() || b->isDoubleTy())
         return Type::getDoubleTy(a->getContext());
       return Type::getFloatTy(a->getContext());
     }
-
     if (a->isIntegerTy() && b->isIntegerTy()) {
-      unsigned aBits = a->getIntegerBitWidth();
-      unsigned bBits = b->getIntegerBitWidth();
-      return Type::getIntNTy(a->getContext(), std::max(aBits, bBits));
+      unsigned maxBits = std::max(
+          std::max(a->getIntegerBitWidth(), b->getIntegerBitWidth()), 32u);
+      return Type::getIntNTy(a->getContext(), maxBits);
     }
-
     return a;
   }
 
   static Value *convertToType(IRBuilder<> &builder, Value *val,
                               Type *targetTy) {
-    if (val->getType() == targetTy)
+    if (!val || !targetTy)
       return val;
-
-    if (targetTy->isPointerTy()) {
-      return convertToString(builder, val);
+    Type *srcTy = val->getType();
+    if (srcTy == targetTy)
+      return val;
+    if (targetTy->isPointerTy() && srcTy->isPointerTy())
+      return val;
+    if (targetTy->isFloatingPointTy()) {
+      if (srcTy->isFloatingPointTy()) {
+        if (targetTy->isDoubleTy() && srcTy->isFloatTy())
+          return builder.CreateFPExt(val, targetTy, "f2d");
+        if (targetTy->isFloatTy() && srcTy->isDoubleTy())
+          return builder.CreateFPTrunc(val, targetTy, "d2f");
+      } else if (srcTy->isIntegerTy()) {
+        return builder.CreateSIToFP(val, targetTy,
+                                    targetTy->isDoubleTy() ? "i2d" : "i2f");
+      }
     }
-
-    if (targetTy->isFloatingPointTy() && val->getType()->isFloatingPointTy()) {
-      if (targetTy->isDoubleTy() && val->getType()->isFloatTy())
-        return builder.CreateFPExt(val, targetTy, "f2d");
-      if (targetTy->isFloatTy() && val->getType()->isDoubleTy())
-        return builder.CreateFPTrunc(val, targetTy, "d2f");
+    if (targetTy->isIntegerTy()) {
+      if (srcTy->isIntegerTy()) {
+        unsigned tb = targetTy->getIntegerBitWidth();
+        unsigned sb = srcTy->getIntegerBitWidth();
+        if (tb > sb)
+          return builder.CreateSExt(val, targetTy, "ext");
+        if (tb < sb)
+          return builder.CreateTrunc(val, targetTy, "trunc");
+      } else if (srcTy->isFloatingPointTy()) {
+        return builder.CreateFPToSI(val, targetTy, "f2i");
+      }
     }
-
-    if (targetTy->isIntegerTy() && val->getType()->isIntegerTy()) {
-      unsigned targetBits = targetTy->getIntegerBitWidth();
-      unsigned srcBits = val->getType()->getIntegerBitWidth();
-
-      if (targetBits > srcBits)
-        return builder.CreateSExt(val, targetTy, "ext");
-      if (targetBits < srcBits)
-        return builder.CreateTrunc(val, targetTy, "trunc");
-    }
-
-    if (targetTy->isFloatingPointTy() && val->getType()->isIntegerTy())
-      return builder.CreateSIToFP(val, targetTy, "i2f");
-
-    if (targetTy->isIntegerTy() && val->getType()->isFloatingPointTy())
-      return builder.CreateFPToSI(val, targetTy, "f2i");
-
     return val;
   }
 
-  static Value *convertToString(IRBuilder<> &builder, Value *val) {
+  static AllocaInst *createArrayAlloca(IRBuilder<> &builder, Type *elemType,
+                                       Value *size,
+                                       const std::string &name = "array") {
+    LLVMContext &ctx = builder.getContext();
+    llvm::Function *mallocF = getMallocFunction(builder, ctx);
+    if (!mallocF)
+      return nullptr;
+
+    Type *i64Ty = Type::getInt64Ty(ctx);
+    uint64_t elemSize = builder.GetInsertBlock()
+                            ->getParent()
+                            ->getParent()
+                            ->getDataLayout()
+                            .getTypeAllocSize(elemType);
+    Value *elemSizeVal = ConstantInt::get(i64Ty, elemSize);
+
+    if (size->getType()->isIntegerTy(32))
+      size = builder.CreateSExt(size, i64Ty, "size_ext");
+
+    Value *totalSize = builder.CreateMul(size, elemSizeVal, "array_bytes");
+    Value *rawMem = builder.CreateCall(mallocF, {totalSize}, "array_mem");
+
+    std::string structName = "array." + getTypeName(elemType);
+    StructType *arrayStructTy = StructType::getTypeByName(ctx, structName);
+    if (!arrayStructTy) {
+      arrayStructTy = StructType::create(ctx, structName);
+      arrayStructTy->setBody({i64Ty, PointerType::get(ctx, 0)});
+    }
+
+    AllocaInst *arrayStruct =
+        builder.CreateAlloca(arrayStructTy, nullptr, name);
+
+    Value *lengthField = builder.CreateStructGEP(arrayStructTy, arrayStruct, 0);
+    builder.CreateStore(size, lengthField);
+
+    Value *dataField = builder.CreateStructGEP(arrayStructTy, arrayStruct, 1);
+    builder.CreateStore(rawMem, dataField);
+
+    return arrayStruct;
+  }
+
+  static Value *getArrayLength(IRBuilder<> &builder, Value *arrayStruct,
+                               StructType *arrayTy) {
+    if (!arrayStruct || !arrayTy || !isArrayType(arrayTy))
+      return nullptr;
+    Value *loadedArray = builder.CreateLoad(arrayTy, arrayStruct, "array_load");
+    return builder.CreateExtractValue(loadedArray, {0}, "length");
+  }
+
+  // Extract the raw char* data pointer from a string struct alloca
+  static Value *getStringDataPtr(IRBuilder<> &builder, LLVMContext &ctx,
+                                 Value *strAlloca) {
+    StructType *stringTy = StructType::getTypeByName(ctx, "string");
+    if (!stringTy)
+      return strAlloca;
+    Value *dataFieldPtr =
+        builder.CreateStructGEP(stringTy, strAlloca, 0, "str_data_gep");
+    return builder.CreateLoad(PointerType::get(ctx, 0), dataFieldPtr,
+                              "str_data_ptr");
+  }
+
+private:
+  static std::string getTypeName(Type *ty) {
+    if (ty->isIntegerTy(64))
+      return "i64";
+    if (ty->isIntegerTy(32))
+      return "i32";
+    if (ty->isIntegerTy(16))
+      return "i16";
+    if (ty->isIntegerTy(8))
+      return "i8";
+    if (ty->isIntegerTy(1))
+      return "bool";
+    if (ty->isFloatTy())
+      return "f32";
+    if (ty->isDoubleTy())
+      return "f64";
+    return "unknown";
+  }
+
+  static llvm::Function *getMallocFunction(IRBuilder<> &builder,
+                                           LLVMContext &ctx) {
+    Module *module = builder.GetInsertBlock()->getParent()->getParent();
+    llvm::Function *mallocF = module->getFunction("malloc");
+    if (!mallocF) {
+      FunctionType *mallocTy = FunctionType::get(
+          PointerType::get(ctx, 0), {Type::getInt64Ty(ctx)}, false);
+      mallocF = llvm::Function::Create(
+          mallocTy, llvm::Function::ExternalLinkage, "malloc", module);
+    }
+    return mallocF;
+  }
+};
+
+//------------------------------------------------------------------------------
+// String Operations
+//------------------------------------------------------------------------------
+
+class StringOperations {
+public:
+  static Value *createStringFromLiteral(IRBuilder<> &builder, LLVMContext &ctx,
+                                        const std::string &literal) {
+    Value *literalPtr = builder.CreateGlobalString(literal, "str_lit");
+    Value *literalLen =
+        ConstantInt::get(Type::getInt64Ty(ctx), literal.length());
+    return createStringFromParts(builder, ctx, literalPtr, literalLen);
+  }
+
+  static Value *createStringFromParts(IRBuilder<> &builder, LLVMContext &ctx,
+                                      Value *dataPtr, Value *length) {
+    llvm::Function *mallocF = getMallocFunction(builder, ctx);
+    if (!mallocF)
+      return nullptr;
+
+    Type *i64Ty = Type::getInt64Ty(ctx);
+    Value *size =
+        builder.CreateAdd(length, ConstantInt::get(i64Ty, 1), "size_with_null");
+    Value *newMem = builder.CreateCall(mallocF, {size}, "string_alloc");
+
+    llvm::Function *memcpyF = getMemcpyFunction(builder, ctx);
+    if (!memcpyF)
+      return nullptr;
+
+    builder.CreateCall(memcpyF,
+                       {newMem, dataPtr, length, ConstantInt::getFalse(ctx)});
+
+    // Null terminator
+    Value *nullPtr = builder.CreateGEP(Type::getInt8Ty(ctx), newMem, length);
+    builder.CreateStore(ConstantInt::get(Type::getInt8Ty(ctx), 0), nullPtr);
+
+    StructType *stringTy = getStringType(ctx);
+    AllocaInst *stringStruct =
+        builder.CreateAlloca(stringTy, nullptr, "string");
+
+    builder.CreateStore(newMem,
+                        builder.CreateStructGEP(stringTy, stringStruct, 0));
+    builder.CreateStore(length,
+                        builder.CreateStructGEP(stringTy, stringStruct, 1));
+    builder.CreateStore(size,
+                        builder.CreateStructGEP(stringTy, stringStruct, 2));
+
+    return stringStruct;
+  }
+
+  // Concatenate two string struct allocas → new string struct alloca
+  static Value *concatStrings(IRBuilder<> &builder, LLVMContext &ctx,
+                              Value *leftStruct, Value *rightStruct) {
+    StructType *stringTy = getStringType(ctx);
+    if (!stringTy)
+      return nullptr;
+
+    Value *leftLoaded = builder.CreateLoad(stringTy, leftStruct, "left_str");
+    Value *leftData = builder.CreateExtractValue(leftLoaded, {0}, "left_data");
+    Value *leftLen = builder.CreateExtractValue(leftLoaded, {1}, "left_len");
+
+    Value *rightLoaded = builder.CreateLoad(stringTy, rightStruct, "right_str");
+    Value *rightData =
+        builder.CreateExtractValue(rightLoaded, {0}, "right_data");
+    Value *rightLen = builder.CreateExtractValue(rightLoaded, {1}, "right_len");
+
+    Type *i64Ty = Type::getInt64Ty(ctx);
+    Value *totalLen = builder.CreateAdd(leftLen, rightLen, "total_len");
+    Value *totalSize =
+        builder.CreateAdd(totalLen, ConstantInt::get(i64Ty, 1), "total_size");
+
+    llvm::Function *mallocF = getMallocFunction(builder, ctx);
+    llvm::Function *memcpyF = getMemcpyFunction(builder, ctx);
+    if (!mallocF || !memcpyF)
+      return nullptr;
+
+    Value *newMem = builder.CreateCall(mallocF, {totalSize}, "concat_alloc");
+
+    builder.CreateCall(memcpyF,
+                       {newMem, leftData, leftLen, ConstantInt::getFalse(ctx)});
+    Value *rightStart =
+        builder.CreateGEP(Type::getInt8Ty(ctx), newMem, leftLen);
+    builder.CreateCall(
+        memcpyF, {rightStart, rightData, rightLen, ConstantInt::getFalse(ctx)});
+
+    Value *nullPtr = builder.CreateGEP(Type::getInt8Ty(ctx), newMem, totalLen);
+    builder.CreateStore(ConstantInt::get(Type::getInt8Ty(ctx), 0), nullPtr);
+
+    AllocaInst *resultStruct =
+        builder.CreateAlloca(stringTy, nullptr, "concat_result");
+    builder.CreateStore(newMem,
+                        builder.CreateStructGEP(stringTy, resultStruct, 0));
+    builder.CreateStore(totalLen,
+                        builder.CreateStructGEP(stringTy, resultStruct, 1));
+    builder.CreateStore(totalSize,
+                        builder.CreateStructGEP(stringTy, resultStruct, 2));
+
+    return resultStruct;
+  }
+
+  // Convert any value to a string struct alloca
+  static Value *valueToString(IRBuilder<> &builder, LLVMContext &ctx,
+                              Value *val) {
     Type *ty = val->getType();
 
-    if (ty->isPointerTy())
-      return val;
+    if (TypeResolver::isString(ty))
+      return val; // already a string struct alloca
 
-    std::string formatStr;
-    std::string valueStr;
+    if (ty->isIntegerTy())
+      return intToString(builder, ctx, val);
 
-    if (ty->isIntegerTy(64))
-      formatStr = "%lld";
-    else if (ty->isIntegerTy(32))
-      formatStr = "%d";
-    else if (ty->isIntegerTy(16))
-      formatStr = "%hd";
-    else if (ty->isIntegerTy(8))
-      formatStr = "%hhd";
-    else if (ty->isFloatTy())
-      formatStr = "%f";
-    else if (ty->isDoubleTy())
-      formatStr = "%f";
-    else
-      formatStr = "%p";
+    if (ty->isFloatingPointTy())
+      return floatToString(builder, ctx, val);
 
-    Value *fmtPtr = builder.CreateGlobalString(formatStr, "fmt");
+    // Opaque pointer — assume null-terminated char*
+    if (ty->isPointerTy()) {
+      Value *len = getCStringLength(builder, ctx, val);
+      return createStringFromParts(builder, ctx, val, len);
+    }
 
-    return createStringFormat(builder, fmtPtr, val);
+    if (TypeResolver::isArrayType(ty))
+      return createStringFromLiteral(builder, ctx, "[array]");
+
+    return createStringFromLiteral(builder, ctx, "[unprintable]");
+  }
+
+  static StructType *getStringType(LLVMContext &ctx) {
+    StructType *st = StructType::getTypeByName(ctx, "string");
+    if (!st) {
+      st = StructType::create(ctx, "string");
+      st->setBody({PointerType::get(ctx, 0), Type::getInt64Ty(ctx),
+                   Type::getInt64Ty(ctx)});
+    }
+    return st;
   }
 
 private:
-  static Value *createStringFormat(IRBuilder<> &builder, Value *fmtPtr,
-                                   Value *val) {
-    LLVMContext &ctx = builder.getContext();
-
-    Type *i8PtrTy = PointerType::getUnqual(ctx);
-    ArrayType *bufferTy = ArrayType::get(Type::getInt8Ty(ctx), 32);
-    AllocaInst *buffer = builder.CreateAlloca(bufferTy, nullptr, "strbuf");
-
-    Value *bufferPtr = builder.CreatePointerCast(buffer, i8PtrTy);
-
-    llvm::Function *sprintfFn =
-        builder.GetInsertBlock()->getParent()->getParent()->getFunction(
-            "sprintf");
-    if (!sprintfFn) {
-      auto *sprintfTy =
-          FunctionType::get(Type::getInt32Ty(ctx), {i8PtrTy, i8PtrTy}, true);
-      sprintfFn = llvm::Function::Create(
-          sprintfTy, llvm::Function::ExternalLinkage, "sprintf",
-          builder.GetInsertBlock()->getParent()->getParent());
+  static llvm::Function *getMallocFunction(IRBuilder<> &builder,
+                                           LLVMContext &ctx) {
+    Module *module = builder.GetInsertBlock()->getParent()->getParent();
+    llvm::Function *mallocF = module->getFunction("malloc");
+    if (!mallocF) {
+      FunctionType *mallocTy = FunctionType::get(
+          PointerType::get(ctx, 0), {Type::getInt64Ty(ctx)}, false);
+      mallocF = llvm::Function::Create(
+          mallocTy, llvm::Function::ExternalLinkage, "malloc", module);
     }
+    return mallocF;
+  }
 
-    std::vector<Value *> args = {bufferPtr, fmtPtr, val};
-    builder.CreateCall(sprintfFn, args);
+  static llvm::Function *getMemcpyFunction(IRBuilder<> &builder,
+                                           LLVMContext &ctx) {
+    Module *module = builder.GetInsertBlock()->getParent()->getParent();
+    const std::string name = "llvm.memcpy.p0.p0.i64";
+    llvm::Function *memcpyF = module->getFunction(name);
+    if (!memcpyF) {
+      Type *ptrTy = PointerType::get(ctx, 0);
+      FunctionType *ft = FunctionType::get(
+          Type::getVoidTy(ctx),
+          {ptrTy, ptrTy, Type::getInt64Ty(ctx), Type::getInt1Ty(ctx)}, false);
+      memcpyF = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                                       name, module);
+      memcpyF->addFnAttr(Attribute::NoUnwind);
+    }
+    return memcpyF;
+  }
 
-    return bufferPtr;
+  static llvm::Function *getSprintfFunction(IRBuilder<> &builder,
+                                            LLVMContext &ctx) {
+    Module *module = builder.GetInsertBlock()->getParent()->getParent();
+    llvm::Function *f = module->getFunction("sprintf");
+    if (!f) {
+      Type *ptrTy = PointerType::get(ctx, 0);
+      FunctionType *ft =
+          FunctionType::get(Type::getInt32Ty(ctx), {ptrTy, ptrTy}, true);
+      f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "sprintf",
+                                 module);
+    }
+    return f;
+  }
+
+  static Value *getCStringLength(IRBuilder<> &builder, LLVMContext &ctx,
+                                 Value *strPtr) {
+    Module *module = builder.GetInsertBlock()->getParent()->getParent();
+    llvm::Function *strlenF = module->getFunction("strlen");
+    if (!strlenF) {
+      FunctionType *ft = FunctionType::get(Type::getInt64Ty(ctx),
+                                           {PointerType::get(ctx, 0)}, false);
+      strlenF = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                                       "strlen", module);
+    }
+    return builder.CreateCall(strlenF, {strPtr}, "strlen");
+  }
+
+  static Value *intToString(IRBuilder<> &builder, LLVMContext &ctx,
+                            Value *val) {
+    Type *i64Ty = Type::getInt64Ty(ctx);
+    if (val->getType()->getIntegerBitWidth() < 64)
+      val = builder.CreateSExt(val, i64Ty, "int_ext");
+
+    Value *fmtPtr = builder.CreateGlobalString("%lld", "fmt");
+    llvm::ArrayType *bufferTy = llvm::ArrayType::get(Type::getInt8Ty(ctx), 32);
+    AllocaInst *buffer = builder.CreateAlloca(bufferTy, nullptr, "int_buf");
+
+    llvm::Function *sprintfF = getSprintfFunction(builder, ctx);
+    builder.CreateCall(sprintfF, {buffer, fmtPtr, val});
+
+    Value *len = getCStringLength(builder, ctx, buffer);
+    return createStringFromParts(builder, ctx, buffer, len);
+  }
+
+  static Value *floatToString(IRBuilder<> &builder, LLVMContext &ctx,
+                              Value *val) {
+    if (val->getType()->isFloatTy())
+      val = builder.CreateFPExt(val, Type::getDoubleTy(ctx), "f2d");
+
+    Value *fmtPtr = builder.CreateGlobalString("%g", "fmt");
+    llvm::ArrayType *bufferTy = llvm::ArrayType::get(Type::getInt8Ty(ctx), 64);
+    AllocaInst *buffer = builder.CreateAlloca(bufferTy, nullptr, "float_buf");
+
+    llvm::Function *sprintfF = getSprintfFunction(builder, ctx);
+    builder.CreateCall(sprintfF, {buffer, fmtPtr, val});
+
+    Value *len = getCStringLength(builder, ctx, buffer);
+    return createStringFromParts(builder, ctx, buffer, len);
   }
 };
 
-//------------------------------------------------------------------------------
-// Expression Parser for String Interpolation
-//------------------------------------------------------------------------------
-
-namespace {
-enum class MiniTokenKind {
-  Int,
-  Float,
-  Bool,
-  Ident,
-  Plus,
-  Minus,
-  Star,
-  Slash,
-  SlashSlash,
-  Percent,
-  LParen,
-  RParen,
-  End,
-  Unknown
+struct FmtArg {
+  std::string spec; // e.g. "%s", "%lld", "%g"
+  Value *value;     // the actual LLVM value to pass to printf
 };
 
-struct MiniToken {
-  MiniTokenKind kind;
-  std::string text;
-};
-
-class MiniParser {
-public:
-  MiniParser(const std::vector<MiniToken> &tokens_, LLVMContext &ctx_,
-             IRBuilder<> &builder_, const std::map<std::string, VarInfo> &vars_)
-      : tokens(tokens_), ctx(ctx_), builder(builder_), vars(vars_), pos(0) {}
-
-  Value *parse() { return parseAddSub(); }
-
-private:
-  const std::vector<MiniToken> &tokens;
-  LLVMContext &ctx;
-  IRBuilder<> &builder;
-  const std::map<std::string, VarInfo> &vars;
-  size_t pos;
-
-  const MiniToken &peek() const { return tokens[pos]; }
-  MiniToken consume() { return tokens[pos++]; }
-  bool check(MiniTokenKind k) const { return tokens[pos].kind == k; }
-
-  Value *parseAddSub() {
-    Value *lhs = parseMulDiv();
-    if (!lhs)
-      return nullptr;
-
-    while (check(MiniTokenKind::Plus) || check(MiniTokenKind::Minus)) {
-      auto op = consume();
-      Value *rhs = parseMulDiv();
-      if (!rhs)
-        return nullptr;
-
-      lhs = promoteToMatch(lhs, rhs);
-      rhs = promoteToMatch(rhs, lhs);
-
-      if (lhs->getType()->isFloatingPointTy()) {
-        lhs = (op.kind == MiniTokenKind::Plus)
-                  ? builder.CreateFAdd(lhs, rhs, "fadd")
-                  : builder.CreateFSub(lhs, rhs, "fsub");
-      } else {
-        lhs = (op.kind == MiniTokenKind::Plus)
-                  ? builder.CreateAdd(lhs, rhs, "add")
-                  : builder.CreateSub(lhs, rhs, "sub");
-      }
+static Value *evalInterpolation(const std::string &inner, LLVMContext &ctx,
+                                IRBuilder<> &builder,
+                                const std::map<std::string, VarInfo> &vars) {
+  bool isSimpleIdent = !inner.empty();
+  for (char c : inner)
+    if (!std::isalnum((unsigned char)c) && c != '_') {
+      isSimpleIdent = false;
+      break;
     }
-    return lhs;
-  }
 
-  Value *parseMulDiv() {
-    Value *lhs = parseUnary();
-    if (!lhs)
-      return nullptr;
-
-    while (check(MiniTokenKind::Star) || check(MiniTokenKind::Slash) ||
-           check(MiniTokenKind::SlashSlash) || check(MiniTokenKind::Percent)) {
-      auto op = consume();
-      Value *rhs = parseUnary();
-      if (!rhs)
-        return nullptr;
-
-      switch (op.kind) {
-      case MiniTokenKind::SlashSlash: // Floor division
-        lhs = toInt(lhs);
-        rhs = toInt(rhs);
-        lhs = builder.CreateSDiv(lhs, rhs, "divfloor");
-        break;
-
-      case MiniTokenKind::Percent: // Modulo
-        lhs = toInt(lhs);
-        rhs = toInt(rhs);
-        lhs = builder.CreateSRem(lhs, rhs, "mod");
-        break;
-
-      case MiniTokenKind::Slash: // True division
-        lhs = toDouble(lhs);
-        rhs = toDouble(rhs);
-        lhs = builder.CreateFDiv(lhs, rhs, "divtrue");
-        break;
-
-      case MiniTokenKind::Star: // Multiplication
-        lhs = promoteToMatch(lhs, rhs);
-        rhs = promoteToMatch(rhs, lhs);
-        if (lhs->getType()->isFloatingPointTy())
-          lhs = builder.CreateFMul(lhs, rhs, "fmul");
-        else
-          lhs = builder.CreateMul(lhs, rhs, "mul");
-        break;
-
-      default:
-        break;
-      }
-    }
-    return lhs;
-  }
-
-  Value *parseUnary() {
-    if (check(MiniTokenKind::Minus)) {
-      consume();
-      Value *v = parseAtom();
-      if (!v)
-        return nullptr;
-
-      if (v->getType()->isFloatingPointTy())
-        return builder.CreateFNeg(v, "fneg");
-      return builder.CreateNeg(v, "neg");
-    }
-    return parseAtom();
-  }
-
-  Value *parseAtom() {
-    auto tok = consume();
-
-    switch (tok.kind) {
-    case MiniTokenKind::Int:
-      return ConstantInt::get(Type::getInt32Ty(ctx), std::stoll(tok.text));
-
-    case MiniTokenKind::Float:
-      return ConstantFP::get(Type::getDoubleTy(ctx), std::stod(tok.text));
-
-    case MiniTokenKind::Bool:
-      return ConstantInt::get(Type::getInt1Ty(ctx), tok.text == "true" ? 1 : 0);
-
-    case MiniTokenKind::Ident: {
-      auto it = vars.find(tok.text);
-      if (it == vars.end() || it->second.isMoved)
-        return nullptr;
-
+  if (isSimpleIdent) {
+    auto it = vars.find(inner);
+    if (it != vars.end() && !it->second.isMoved) {
+      if (TypeResolver::isString(it->second.type) ||
+          TypeResolver::isArrayType(it->second.type))
+        return it->second.alloca;
       return builder.CreateLoad(it->second.type, it->second.alloca,
-                                tok.text + "_load");
+                                inner + "_load");
     }
-
-    case MiniTokenKind::LParen: {
-      Value *v = parse();
-      if (check(MiniTokenKind::RParen))
-        consume();
-      return v;
-    }
-
-    default:
-      return nullptr;
-    }
+    return nullptr;
   }
 
-  Value *toDouble(Value *v) {
-    if (v->getType()->isDoubleTy())
-      return v;
-    if (v->getType()->isFloatTy())
-      return builder.CreateFPExt(v, Type::getDoubleTy(ctx), "f2d");
-    if (v->getType()->isIntegerTy())
-      return builder.CreateSIToFP(v, Type::getDoubleTy(ctx), "i2d");
-    return v;
+  try {
+    size_t pos = 0;
+    long long v = std::stoll(inner, &pos);
+    if (pos == inner.size())
+      return ConstantInt::get(Type::getInt32Ty(ctx), v);
+  } catch (...) {
   }
 
-  Value *toInt(Value *v) {
-    if (v->getType()->isFloatingPointTy())
-      return builder.CreateFPToSI(v, Type::getInt32Ty(ctx), "f2i");
-    return v;
+  // Try float literal
+  try {
+    size_t pos = 0;
+    double v = std::stod(inner, &pos);
+    if (pos == inner.size())
+      return ConstantFP::get(Type::getDoubleTy(ctx), v);
+  } catch (...) {
   }
 
-  Value *promoteToMatch(Value *v, Value *other) {
-    if (other->getType()->isFloatingPointTy() && v->getType()->isIntegerTy())
-      return toDouble(v);
-    return v;
-  }
-};
-
-static std::vector<MiniToken> tokenizeExpression(const std::string &src) {
-  std::vector<MiniToken> tokens;
-  size_t i = 0;
-
-  while (i < src.size()) {
-    char c = src[i];
-
-    // Skip whitespace
-    if (std::isspace(static_cast<unsigned char>(c))) {
-      ++i;
-      continue;
-    }
-
-    // Numbers
-    if (std::isdigit(static_cast<unsigned char>(c))) {
-      std::string num;
-      bool isFloat = false;
-      while (
-          i < src.size() &&
-          (std::isdigit(static_cast<unsigned char>(src[i])) || src[i] == '.')) {
-        if (src[i] == '.')
-          isFloat = true;
-        num += src[i++];
-      }
-      tokens.push_back(
-          {isFloat ? MiniTokenKind::Float : MiniTokenKind::Int, num});
-      continue;
-    }
-
-    // Identifiers and booleans
-    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
-      std::string id;
-      while (
-          i < src.size() &&
-          (std::isalnum(static_cast<unsigned char>(src[i])) || src[i] == '_'))
-        id += src[i++];
-
-      if (id == "true" || id == "false") {
-        tokens.push_back({MiniTokenKind::Bool, id});
-      } else {
-        tokens.push_back({MiniTokenKind::Ident, id});
-      }
-      continue;
-    }
-
-    // Operators and punctuation
-    switch (c) {
-    case '+':
-      tokens.push_back({MiniTokenKind::Plus, "+"});
-      ++i;
-      break;
-    case '-':
-      tokens.push_back({MiniTokenKind::Minus, "-"});
-      ++i;
-      break;
-    case '*':
-      tokens.push_back({MiniTokenKind::Star, "*"});
-      ++i;
-      break;
-    case '/':
-      if (i + 1 < src.size() && src[i + 1] == '/') {
-        tokens.push_back({MiniTokenKind::SlashSlash, "//"});
-        i += 2;
-      } else {
-        tokens.push_back({MiniTokenKind::Slash, "/"});
-        ++i;
-      }
-      break;
-    case '%':
-      tokens.push_back({MiniTokenKind::Percent, "%"});
-      ++i;
-      break;
-    case '(':
-      tokens.push_back({MiniTokenKind::LParen, "("});
-      ++i;
-      break;
-    case ')':
-      tokens.push_back({MiniTokenKind::RParen, ")"});
-      ++i;
-      break;
-    default:
-      tokens.push_back({MiniTokenKind::Unknown, std::string(1, c)});
-      ++i;
-      break;
-    }
-  }
-
-  tokens.push_back({MiniTokenKind::End, ""});
-  return tokens;
+  return nullptr;
 }
-} // namespace
 
-//------------------------------------------------------------------------------
-// Printf String Processor
-//------------------------------------------------------------------------------
-
-static std::string
-processPrintfString(const std::string &raw, LLVMContext &ctx,
-                    IRBuilder<> &builder,
-                    const std::map<std::string, VarInfo> &vars,
-                    std::vector<Value *> &outExprs) {
-
+// Process the raw string, returning a printf-style format string and populating
+// outArgs with (format-specifier, value) pairs.
+static std::string processPrintfString(
+    const std::string &raw, LLVMContext &ctx, IRBuilder<> &builder,
+    const std::map<std::string, VarInfo> &vars, std::vector<FmtArg> &outArgs) {
   std::string result;
   size_t i = 0;
 
   while (i < raw.size()) {
+    // Escaped {: \{ → literal {
+    if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '{') {
+      result += '{';
+      i += 2;
+      continue;
+    }
+
     if (raw[i] != '{') {
+      // Escape any literal % for printf
+      if (raw[i] == '%')
+        result += '%';
       result += raw[i++];
       continue;
     }
 
+    if (i + 1 < raw.size() && raw[i + 1] == '{') {
+      result += '{';
+      i += 2;
+      continue;
+    }
+
+    // Find matching }
     size_t start = i + 1;
     size_t depth = 1;
     size_t j = start;
-
     while (j < raw.size() && depth > 0) {
       if (raw[j] == '{')
         ++depth;
@@ -586,15 +648,58 @@ processPrintfString(const std::string &raw, LLVMContext &ctx,
         --depth;
       if (depth > 0)
         ++j;
+      else
+        break;
+    }
+    if (j >= raw.size()) {
+      result += raw[i++];
+      continue;
     }
 
     std::string inner = raw.substr(start, j - start);
-    auto tokens = tokenizeExpression(inner);
-    MiniParser parser(tokens, ctx, builder, vars);
+    Value *val = evalInterpolation(inner, ctx, builder, vars);
 
-    if (Value *val = parser.parse()) {
-      result += TypeResolver::getFormatSpecifier(val->getType());
-      outExprs.push_back(val);
+    if (val) {
+      Type *ty = val->getType();
+
+      bool valIsString = false;
+      // if (isSimpleIdent) {
+      //  auto vit = vars.find(inner);
+      // if (vit != vars.end())
+      // valIsString = TypeResolver::isString(vit->second.type);
+      //}
+
+      if (valIsString) {
+        Value *dataPtr = TypeResolver::getStringDataPtr(builder, ctx, val);
+        outArgs.push_back({"%s", dataPtr});
+        result += "%s";
+      } else if (ty->isIntegerTy(1)) {
+        Value *trueStr = builder.CreateGlobalString("true", "bool_t");
+        Value *falseStr = builder.CreateGlobalString("false", "bool_f");
+        Value *selected =
+            builder.CreateSelect(val, trueStr, falseStr, "bool_str");
+        outArgs.push_back({"%s", selected});
+        result += "%s";
+      } else if (ty->isIntegerTy()) {
+        if (ty->getIntegerBitWidth() < 64)
+          val = builder.CreateSExt(val, Type::getInt64Ty(ctx), "iext");
+        outArgs.push_back({"%lld", val});
+        result += "%lld";
+      } else if (ty->isFloatingPointTy()) {
+        if (!ty->isDoubleTy())
+          val = builder.CreateFPExt(val, Type::getDoubleTy(ctx), "f2d");
+        outArgs.push_back({"%g", val});
+        result += "%g";
+      } else if (ty->isPointerTy()) {
+        outArgs.push_back({"%s", val});
+        result += "%s";
+      } else {
+        Value *strStruct = StringOperations::valueToString(builder, ctx, val);
+        Value *dataPtr =
+            TypeResolver::getStringDataPtr(builder, ctx, strStruct);
+        outArgs.push_back({"%s", dataPtr});
+        result += "%s";
+      }
     } else {
       result += '{' + inner + '}';
     }
@@ -605,39 +710,113 @@ processPrintfString(const std::string &raw, LLVMContext &ctx,
   return result;
 }
 
+static Value *
+evaluateInterpolatedStringLiteral(const std::string &raw, LLVMContext &ctx,
+                                  IRBuilder<> &builder,
+                                  const std::map<std::string, VarInfo> &vars) {
+
+  Value *result = StringOperations::createStringFromLiteral(builder, ctx, "");
+
+  size_t i = 0;
+  std::string literal_chunk;
+
+  auto flushLiteral = [&]() {
+    if (!literal_chunk.empty()) {
+      Value *chunk = StringOperations::createStringFromLiteral(builder, ctx,
+                                                               literal_chunk);
+      result = StringOperations::concatStrings(builder, ctx, result, chunk);
+      literal_chunk.clear();
+    }
+  };
+
+  while (i < raw.size()) {
+    // \{ → literal {
+    if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '{') {
+      literal_chunk += '{';
+      i += 2;
+      continue;
+    }
+
+    if (raw[i] != '{') {
+      literal_chunk += raw[i++];
+      continue;
+    }
+
+    // {{ → literal {
+    if (i + 1 < raw.size() && raw[i + 1] == '{') {
+      literal_chunk += '{';
+      i += 2;
+      continue;
+    }
+
+    // Find }
+    size_t start = i + 1;
+    size_t depth = 1;
+    size_t j = start;
+    while (j < raw.size() && depth > 0) {
+      if (raw[j] == '{')
+        ++depth;
+      else if (raw[j] == '}')
+        --depth;
+      if (depth > 0)
+        ++j;
+      else
+        break;
+    }
+    if (j >= raw.size()) {
+      literal_chunk += raw[i++];
+      continue;
+    }
+
+    std::string inner = raw.substr(start, j - start);
+    Value *val = evalInterpolation(inner, ctx, builder, vars);
+
+    if (val) {
+      flushLiteral();
+      // Convert val to string struct
+      Value *strVal = StringOperations::valueToString(builder, ctx, val);
+      result = StringOperations::concatStrings(builder, ctx, result, strVal);
+    } else {
+      literal_chunk += '{' + inner + '}';
+    }
+
+    i = j + 1;
+  }
+
+  flushLiteral();
+  return result;
+}
+
 //------------------------------------------------------------------------------
 // CodeGenerator Implementation
 //------------------------------------------------------------------------------
 
 void CodeGenerator::declareExternalFunctions() {
-  auto *i8PtrTy = PointerType::getUnqual(context);
+  Type *ptrTy = PointerType::get(context, 0);
+  Type *i64Ty = Type::getInt64Ty(context);
+  Type *i32Ty = Type::getInt32Ty(context);
+  Type *i1Ty = Type::getInt1Ty(context);
+  Type *voidTy = Type::getVoidTy(context);
 
-  auto *sprintfTy =
-      FunctionType::get(Type::getInt32Ty(context), {i8PtrTy, i8PtrTy}, true);
-  llvm::Function::Create(sprintfTy, llvm::Function::ExternalLinkage, "sprintf",
-                         *module);
+  auto declare = [&](const std::string &name, FunctionType *ft,
+                     bool noUnwind = false) {
+    if (!module->getFunction(name)) {
+      auto *f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                                       name, *module);
+      if (noUnwind)
+        f->addFnAttr(Attribute::NoUnwind);
+    }
+  };
 
-  auto *strlenTy =
-      FunctionType::get(Type::getInt64Ty(context), {i8PtrTy}, false);
-  llvm::Function::Create(strlenTy, llvm::Function::ExternalLinkage, "strlen",
-                         *module);
-
-  auto *strcpyTy = FunctionType::get(i8PtrTy, {i8PtrTy, i8PtrTy}, false);
-  llvm::Function::Create(strcpyTy, llvm::Function::ExternalLinkage, "strcpy",
-                         *module);
-
-  auto *strcatTy = FunctionType::get(i8PtrTy, {i8PtrTy, i8PtrTy}, false);
-  llvm::Function::Create(strcatTy, llvm::Function::ExternalLinkage, "strcat",
-                         *module);
-
-  auto *mallocTy =
-      FunctionType::get(i8PtrTy, {Type::getInt64Ty(context)}, false);
-  llvm::Function::Create(mallocTy, llvm::Function::ExternalLinkage, "malloc",
-                         *module);
-
-  auto *freeTy = FunctionType::get(Type::getVoidTy(context), {i8PtrTy}, false);
-  llvm::Function::Create(freeTy, llvm::Function::ExternalLinkage, "free",
-                         *module);
+  declare("sprintf", FunctionType::get(i32Ty, {ptrTy, ptrTy}, true), true);
+  declare("printf", FunctionType::get(i32Ty, {ptrTy}, true), true);
+  declare("strlen", FunctionType::get(i64Ty, {ptrTy}, false), true);
+  declare("strcpy", FunctionType::get(ptrTy, {ptrTy, ptrTy}, false), true);
+  declare("strcat", FunctionType::get(ptrTy, {ptrTy, ptrTy}, false), true);
+  declare("malloc", FunctionType::get(ptrTy, {i64Ty}, false), true);
+  declare("free", FunctionType::get(voidTy, {ptrTy}, false), true);
+  declare("llvm.memcpy.p0.p0.i64",
+          FunctionType::get(voidTy, {ptrTy, ptrTy, i64Ty, i1Ty}, false), true);
 }
 
 CodeGenerator::CodeGenerator()
@@ -650,6 +829,68 @@ Value *CodeGenerator::logError(const char *msg) {
   return nullptr;
 }
 
+Value *CodeGenerator::visitNewArray(const NewArrayExpr &expr) {
+  Type *elemType =
+      TypeResolver::getLLVMType(context, expr.arrayType.elementType);
+  if (!elemType)
+    return logError("Unknown array element type");
+
+  Value *size = codegen(*expr.size);
+  if (!size)
+    return logError("Failed to codegen array size");
+
+  return TypeResolver::createArrayAlloca(builder, elemType, size, "arr");
+}
+
+Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &expr) {
+  std::string arrName = expr.array.token.getWord();
+  auto it = namedValues.find(arrName);
+  if (it == namedValues.end())
+    return logError(("Unknown array: " + arrName).c_str());
+
+  StructType *arrStructTy = dyn_cast<StructType>(it->second.type);
+  if (!arrStructTy || !TypeResolver::isArrayType(arrStructTy))
+    return logError(("Not an array: " + arrName).c_str());
+
+  Value *loadedStruct =
+      builder.CreateLoad(arrStructTy, it->second.alloca, "arr_load");
+  Value *dataPtr = builder.CreateExtractValue(loadedStruct, {1}, "data_ptr");
+
+  Value *idx = codegen(*expr.index);
+  if (!idx)
+    return logError("Failed to codegen array index");
+  if (idx->getType()->isIntegerTy(32))
+    idx = builder.CreateSExt(idx, Type::getInt64Ty(context), "idx_ext");
+
+  StringRef structName = arrStructTy->getName();
+  std::string elemTypeName = structName.substr(6).str();
+  Identifier elemId{Token{TokenKind::TOK_IDENTIFIER, elemTypeName, 0, 0}};
+  Type *elemType = TypeResolver::getLLVMType(context, elemId);
+  if (!elemType)
+    return logError("Cannot resolve array element type for indexing");
+
+  Value *elemPtr = builder.CreateGEP(elemType, dataPtr, idx, "elem_ptr");
+  // Composite element types (nested arrays, strings) are reference types
+  if (TypeResolver::isArrayType(elemType) || TypeResolver::isString(elemType))
+    return elemPtr;
+  return builder.CreateLoad(elemType, elemPtr, "elem");
+}
+
+Value *CodeGenerator::visitArrayLength(const ArrayLengthExpr &expr) {
+  std::string arrName = expr.array.token.getWord();
+  auto it = namedValues.find(arrName);
+  if (it == namedValues.end())
+    return logError(("Unknown array: " + arrName).c_str());
+
+  StructType *arrStructTy = dyn_cast<StructType>(it->second.type);
+  if (!arrStructTy || !TypeResolver::isArrayType(arrStructTy))
+    return logError(("Not an array: " + arrName).c_str());
+
+  Value *loadedStruct =
+      builder.CreateLoad(arrStructTy, it->second.alloca, "arr_load");
+  return builder.CreateExtractValue(loadedStruct, {0}, "length");
+}
+
 //------------------------------------------------------------------------------
 // Expression Code Generation
 //------------------------------------------------------------------------------
@@ -657,13 +898,13 @@ Value *CodeGenerator::logError(const char *msg) {
 Value *CodeGenerator::visitIdentifier(const IdentExpr &expr) {
   std::string name = expr.name.token.getWord();
   auto it = namedValues.find(name);
-
   if (it == namedValues.end())
     return logError(("Unknown variable: " + name).c_str());
-
   if (it->second.isMoved)
     return logError(("Use of moved value: " + name).c_str());
-
+  if (TypeResolver::isString(it->second.type) ||
+      TypeResolver::isArrayType(it->second.type))
+    return it->second.alloca;
   return builder.CreateLoad(it->second.type, it->second.alloca, name + "_load");
 }
 
@@ -678,12 +919,38 @@ Value *CodeGenerator::visitLiteral(const FloatLitExpr &expr) {
 }
 
 Value *CodeGenerator::visitLiteral(const StrLitExpr &expr) {
-  return builder.CreateGlobalString(expr.lit.token.getWord());
+  std::string raw = unescapeString(expr.lit.token.getWord());
+  bool hasInterp = false;
+  for (size_t i = 0; i < raw.size(); ++i) {
+    if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '{') {
+      ++i;
+      continue;
+    }
+    if (raw[i] == '{' && (i + 1 >= raw.size() || raw[i + 1] != '{')) {
+      hasInterp = true;
+      break;
+    }
+  }
+
+  if (hasInterp) {
+    return evaluateInterpolatedStringLiteral(raw, context, builder,
+                                             namedValues);
+  }
+
+  std::string processed;
+  for (size_t i = 0; i < raw.size(); ++i) {
+    if (raw[i] == '{' && i + 1 < raw.size() && raw[i + 1] == '{') {
+      processed += '{';
+      ++i;
+    } else
+      processed += raw[i];
+  }
+  return StringOperations::createStringFromLiteral(builder, context, processed);
 }
 
 Value *CodeGenerator::visitLiteral(const BoolLitExpr &expr) {
-  bool value = (expr.lit.token.getWord() == "true");
-  return ConstantInt::get(Type::getInt1Ty(context), value);
+  return ConstantInt::get(Type::getInt1Ty(context),
+                          expr.lit.token.getWord() == "true" ? 1 : 0);
 }
 
 Value *CodeGenerator::promoteToDouble(Value *val) {
@@ -703,14 +970,57 @@ Value *CodeGenerator::promoteToInt(Value *val) {
 Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
   Value *left = codegen(*expr.left);
   Value *right = codegen(*expr.right);
-
   if (!left || !right)
     return nullptr;
 
+  if (expr.op == BinaryOp::Add) {
+    std::function<bool(const Expression &)> isStrExpr =
+        [&](const Expression &e) -> bool {
+      if (dynamic_cast<const StrLitExpr *>(&e))
+        return true;
+      if (auto *id = dynamic_cast<const IdentExpr *>(&e)) {
+        auto it = namedValues.find(id->name.token.getWord());
+        if (it != namedValues.end())
+          return TypeResolver::isString(it->second.type);
+      }
+      if (auto *bin = dynamic_cast<const BinaryExpr *>(&e)) {
+        if (bin->op == BinaryOp::Add)
+          return isStrExpr(*bin->left) || isStrExpr(*bin->right);
+      }
+      return false;
+    };
+
+    bool leftIsStr = isStrExpr(*expr.left);
+    bool rightIsStr = isStrExpr(*expr.right);
+
+    if (leftIsStr || rightIsStr) {
+      Value *leftStr =
+          leftIsStr ? left
+                    : StringOperations::valueToString(builder, context, left);
+      Value *rightStr =
+          rightIsStr ? right
+                     : StringOperations::valueToString(builder, context, right);
+      return StringOperations::concatStrings(builder, context, leftStr,
+                                             rightStr);
+    }
+  }
+
+  if (left->getType()->isIntegerTy() && right->getType()->isIntegerTy()) {
+    unsigned lb = left->getType()->getIntegerBitWidth();
+    unsigned rb = right->getType()->getIntegerBitWidth();
+    if (lb < rb)
+      left = builder.CreateSExt(left, right->getType(), "lext");
+    else if (rb < lb)
+      right = builder.CreateSExt(right, left->getType(), "rext");
+  }
+
   bool leftFloat = left->getType()->isFloatingPointTy();
   bool rightFloat = right->getType()->isFloatingPointTy();
-  // bool leftBool = TypeResolver::isBool(left->getType());
-  // bool rightBool = TypeResolver::isBool(right->getType());
+
+  if (leftFloat && right->getType()->isIntegerTy())
+    right = builder.CreateSIToFP(right, Type::getDoubleTy(context), "i2d");
+  else if (rightFloat && left->getType()->isIntegerTy())
+    left = builder.CreateSIToFP(left, Type::getDoubleTy(context), "i2d");
 
   switch (expr.op) {
   case BinaryOp::Lt:
@@ -724,7 +1034,6 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
     break;
   }
 
-  // Handle arithmetic operators
   switch (expr.op) {
   case BinaryOp::Add:
     if (leftFloat || rightFloat) {
@@ -775,7 +1084,6 @@ Value *CodeGenerator::generateComparison(BinaryOp op, Value *left, Value *right,
   if (isFloat) {
     left = promoteToDouble(left);
     right = promoteToDouble(right);
-
     switch (op) {
     case BinaryOp::Lt:
       return builder.CreateFCmpOLT(left, right, "flt");
@@ -812,20 +1120,59 @@ Value *CodeGenerator::generateComparison(BinaryOp op, Value *left, Value *right,
   }
 }
 
+Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &expr) {
+  std::string arrName = expr.array.token.getWord();
+  auto it = namedValues.find(arrName);
+  if (it == namedValues.end())
+    return logError(("Unknown array: " + arrName).c_str());
+
+  StructType *arrStructTy = dyn_cast<StructType>(it->second.type);
+  if (!arrStructTy || !TypeResolver::isArrayType(arrStructTy))
+    return logError(("Not an array: " + arrName).c_str());
+
+  Value *loadedStruct =
+      builder.CreateLoad(arrStructTy, it->second.alloca, "arr_load");
+  Value *dataPtr = builder.CreateExtractValue(loadedStruct, {1}, "data_ptr");
+
+  StringRef structName = arrStructTy->getName();
+  std::string elemTypeName = structName.substr(6).str();
+  Identifier elemId{Token{TokenKind::TOK_IDENTIFIER, elemTypeName, 0, 0}};
+  Type *elemType = TypeResolver::getLLVMType(context, elemId);
+  if (!elemType)
+    return logError("Cannot resolve array element type for index assignment");
+
+  Value *idx = codegen(*expr.index);
+  if (!idx)
+    return logError("Failed to codegen index");
+  if (idx->getType()->isIntegerTy(32))
+    idx = builder.CreateSExt(idx, Type::getInt64Ty(context), "idx_ext");
+
+  Value *val = codegen(*expr.value);
+  if (!val)
+    return logError("Failed to codegen assigned value");
+
+  // Composite element types (arrays/strings) come as alloca ptrs; load struct
+  // value
+  if (TypeResolver::isArrayType(elemType) || TypeResolver::isString(elemType))
+    val = builder.CreateLoad(elemType, val, "elem_val");
+  else
+    val = TypeResolver::convertToType(builder, val, elemType);
+
+  Value *elemPtr = builder.CreateGEP(elemType, dataPtr, idx, "elem_ptr");
+  builder.CreateStore(val, elemPtr);
+  return val;
+}
+
 Value *CodeGenerator::visitUnary(const UnaryExpr &expr) {
   Value *operand = codegen(*expr.operand);
   if (!operand)
     return nullptr;
-
   switch (expr.op) {
   case UnaryOp::Negate:
-    if (operand->getType()->isFloatingPointTy())
-      return builder.CreateFNeg(operand, "fneg");
-    return builder.CreateNeg(operand, "neg");
-    // case UnaryOp::Not:
-    // return builder.CreateNot(operand, "not");
+    return operand->getType()->isFloatingPointTy()
+               ? builder.CreateFNeg(operand, "fneg")
+               : builder.CreateNeg(operand, "neg");
   }
-
   return logError("Unknown unary operator");
 }
 
@@ -838,13 +1185,34 @@ Value *CodeGenerator::visitAssignment(const AssignExpr &expr) {
   auto it = namedValues.find(targetName);
   if (it == namedValues.end())
     return logError(("Undeclared variable: " + targetName).c_str());
-
   if (it->second.isBorrowed)
     return logError(("Cannot modify borrowed variable: " + targetName).c_str());
 
   Type *targetType = it->second.type;
-  if (targetType->isIntegerTy(64) && val->getType()->isIntegerTy(32)) {
-    val = builder.CreateSExt(val, Type::getInt64Ty(context), "i32_to_i64");
+
+  // String/array: val is a ptr to struct; load the struct and store into target
+  // alloca
+  if (TypeResolver::isString(targetType) ||
+      TypeResolver::isArrayType(targetType)) {
+    Value *loaded = builder.CreateLoad(targetType, val, "ref_load");
+    builder.CreateStore(loaded, it->second.alloca);
+    return it->second.alloca;
+  }
+
+  // Auto-widen/convert scalars to target type
+  if (targetType->isIntegerTy() && val->getType()->isIntegerTy()) {
+    unsigned tb = targetType->getIntegerBitWidth();
+    unsigned sb = val->getType()->getIntegerBitWidth();
+    if (tb > sb)
+      val = builder.CreateSExt(val, targetType, "iext");
+    else if (tb < sb)
+      val = builder.CreateTrunc(val, targetType, "itrunc");
+  } else if (targetType->isFloatingPointTy() && val->getType()->isIntegerTy()) {
+    val = builder.CreateSIToFP(val, targetType, "i2f");
+  } else if (targetType->isDoubleTy() && val->getType()->isFloatTy()) {
+    val = builder.CreateFPExt(val, targetType, "f2d");
+  } else if (targetType->isFloatTy() && val->getType()->isDoubleTy()) {
+    val = builder.CreateFPTrunc(val, targetType, "d2f");
   }
 
   switch (expr.kind) {
@@ -856,17 +1224,14 @@ Value *CodeGenerator::visitAssignment(const AssignExpr &expr) {
     auto *sourceIdent = dynamic_cast<const IdentExpr *>(expr.value.get());
     if (!sourceIdent)
       return logError("Move requires variable on right-hand side");
-
     std::string sourceName = sourceIdent->name.token.getWord();
     auto srcIt = namedValues.find(sourceName);
-
     if (srcIt == namedValues.end())
       return logError(("Unknown variable: " + sourceName).c_str());
     if (srcIt->second.isMoved)
       return logError(("Already moved: " + sourceName).c_str());
     if (srcIt->second.isBorrowed)
       return logError(("Cannot move borrowed value: " + sourceName).c_str());
-
     builder.CreateStore(val, it->second.alloca);
     srcIt->second.isMoved = true;
     break;
@@ -876,21 +1241,14 @@ Value *CodeGenerator::visitAssignment(const AssignExpr &expr) {
     auto *sourceIdent = dynamic_cast<const IdentExpr *>(expr.value.get());
     if (!sourceIdent)
       return logError("Borrow requires variable on right-hand side");
-
     std::string sourceName = sourceIdent->name.token.getWord();
     auto srcIt = namedValues.find(sourceName);
-
     if (srcIt == namedValues.end())
       return logError(("Unknown variable: " + sourceName).c_str());
     if (srcIt->second.isMoved)
       return logError(("Cannot borrow moved value: " + sourceName).c_str());
-
-    // Create borrow reference (read-only)
-    namedValues[targetName] = {
-        srcIt->second.alloca, srcIt->second.type,
-        true, // isBorrowed
-        false // isMoved
-    };
+    namedValues[targetName] = {srcIt->second.alloca, srcIt->second.type, true,
+                               false};
     break;
   }
   }
@@ -911,16 +1269,21 @@ Value *CodeGenerator::generateIncrementDecrement(const std::string &varName,
   auto it = namedValues.find(varName);
   if (it == namedValues.end())
     return logError(("Unknown variable: " + varName).c_str());
-
   if (it->second.isBorrowed || it->second.isMoved)
     return logError(("Cannot modify " + varName).c_str());
 
-  Value *cur =
-      builder.CreateLoad(it->second.type, it->second.alloca, "load_" + varName);
-  Value *one = ConstantInt::get(it->second.type, 1);
-  Value *result = isInc ? builder.CreateAdd(cur, one, "inc")
-                        : builder.CreateSub(cur, one, "dec");
-
+  Type *ty = it->second.type;
+  Value *cur = builder.CreateLoad(ty, it->second.alloca, "load_" + varName);
+  Value *result;
+  if (ty->isFloatingPointTy()) {
+    Value *one = ConstantFP::get(ty, 1.0);
+    result = isInc ? builder.CreateFAdd(cur, one, "finc")
+                   : builder.CreateFSub(cur, one, "fdec");
+  } else {
+    Value *one = ConstantInt::get(ty, 1);
+    result = isInc ? builder.CreateAdd(cur, one, "inc")
+                   : builder.CreateSub(cur, one, "dec");
+  }
   builder.CreateStore(result, it->second.alloca);
   return result;
 }
@@ -930,19 +1293,15 @@ Value *CodeGenerator::visitCall(const CallExpr &expr) {
   std::string calleeName = normalizeFunctionName(rawName);
 
   if ((calleeName == "printf" || rawName == "Printf") &&
-      expr.arguments.size() == 1) {
+      expr.arguments.size() == 1)
     return handlePrintf(expr);
-  }
 
-  if (rawName == "Print" && expr.arguments.size() == 1) {
+  if (rawName == "Print" && expr.arguments.size() == 1)
     return handlePrint(expr);
-  }
 
-  // Regular function call
   llvm::Function *callee = module->getFunction(calleeName);
   if (!callee)
     return logError(("Unknown function: " + calleeName).c_str());
-
   if (!callee->isVarArg() && callee->arg_size() != expr.arguments.size())
     return logError("Incorrect number of arguments");
 
@@ -953,7 +1312,6 @@ Value *CodeGenerator::visitCall(const CallExpr &expr) {
       return nullptr;
     args.push_back(v);
   }
-
   return builder.CreateCall(callee, args, "calltmp");
 }
 
@@ -962,30 +1320,23 @@ Value *CodeGenerator::handlePrintf(const CallExpr &expr) {
   if (!strArg)
     return logError("Printf requires string literal");
 
-  std::vector<Value *> interpolated;
-  std::string fmt =
-      processPrintfString(unescapeString(strArg->lit.token.getWord()), context,
-                          builder, namedValues, interpolated);
+  std::string raw = unescapeString(strArg->lit.token.getWord());
+  raw = replaceHexColors(raw) + "\033[0m";
 
-  fmt = replaceHexColors(fmt) + "\033[0m";
+  std::vector<FmtArg> fmtArgs;
+  std::string fmt =
+      processPrintfString(raw, context, builder, namedValues, fmtArgs);
 
   Value *fmtPtr = builder.CreateGlobalString(fmt, ".fmt");
-  llvm::Function *printf = module->getFunction("printf");
-  if (!printf)
+  llvm::Function *printfF = module->getFunction("printf");
+  if (!printfF)
     return logError("printf not declared");
 
   std::vector<Value *> args = {fmtPtr};
-  for (Value *v : interpolated) {
-    if (v->getType()->isFloatTy())
-      v = builder.CreateFPExt(v, Type::getDoubleTy(context), "f2d_arg");
-    else if (v->getType()->isIntegerTy() &&
-             v->getType()->getIntegerBitWidth() < 32)
-      v = builder.CreateSExt(v, Type::getInt32Ty(context), "i_ext");
+  for (auto &fa : fmtArgs)
+    args.push_back(fa.value);
 
-    args.push_back(v);
-  }
-
-  return builder.CreateCall(printf, args, "printf_ret");
+  return builder.CreateCall(printfF, args, "printf_ret");
 }
 
 Value *CodeGenerator::handlePrint(const CallExpr &expr) {
@@ -993,20 +1344,27 @@ Value *CodeGenerator::handlePrint(const CallExpr &expr) {
   if (!strArg)
     return logError("Print requires string literal");
 
-  std::string literal = unescapeString(strArg->lit.token.getWord());
-  literal = replaceHexColors(literal) + "\033[0m\n";
+  // Print also supports interpolation; append newline
+  std::string raw = unescapeString(strArg->lit.token.getWord());
+  raw = replaceHexColors(raw) + "\033[0m\n";
 
-  Value *fmtPtr = builder.CreateGlobalString(literal, ".lit");
-  Value *strSpec = builder.CreateGlobalString("%s", ".pfmt");
-  llvm::Function *printf = module->getFunction("printf");
+  std::vector<FmtArg> fmtArgs;
+  std::string fmt =
+      processPrintfString(raw, context, builder, namedValues, fmtArgs);
 
-  if (!printf)
+  Value *fmtPtr = builder.CreateGlobalString(fmt, ".pfmt");
+  llvm::Function *printfF = module->getFunction("printf");
+  if (!printfF)
     return logError("printf not declared");
-  return builder.CreateCall(printf, {strSpec, fmtPtr}, "print_ret");
+
+  std::vector<Value *> args = {fmtPtr};
+  for (auto &fa : fmtArgs)
+    args.push_back(fa.value);
+
+  return builder.CreateCall(printfF, args, "print_ret");
 }
 
 Value *CodeGenerator::codegen(const Expression &expr) {
-  // Dispatch to appropriate visitor method
   if (auto *ie = dynamic_cast<const IdentExpr *>(&expr))
     return visitIdentifier(*ie);
   if (auto *ile = dynamic_cast<const IntLitExpr *>(&expr))
@@ -1029,7 +1387,14 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitDecrement(*dec);
   if (auto *ce = dynamic_cast<const CallExpr *>(&expr))
     return visitCall(*ce);
-
+  if (auto *na = dynamic_cast<const NewArrayExpr *>(&expr))
+    return visitNewArray(*na);
+  if (auto *ai = dynamic_cast<const ArrayIndexExpr *>(&expr))
+    return visitArrayIndex(*ai);
+  if (auto *al = dynamic_cast<const ArrayLengthExpr *>(&expr))
+    return visitArrayLength(*al);
+  if (auto *aia = dynamic_cast<const ArrayIndexAssignExpr *>(&expr))
+    return visitArrayIndexAssign(*aia);
   return logError("Unknown expression type");
 }
 
@@ -1048,13 +1413,11 @@ Value *CodeGenerator::codegen(const Statement &stmt) {
     return visitWhileStmt(*loop);
   if (auto *ret = dynamic_cast<const Return *>(&stmt))
     return visitReturn(*ret);
-
   return logError("Unknown statement type");
 }
 
 Value *CodeGenerator::visitVarDecl(const VarDecl &decl) {
   std::string varName = decl.name.token.getWord();
-
   Type *ty = TypeResolver::getLLVMType(context, decl.type);
   if (!ty)
     return logError(("Unknown type: " + varName).c_str());
@@ -1062,11 +1425,10 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &decl) {
   AllocaInst *alloc = builder.CreateAlloca(ty, nullptr, varName);
 
   if (decl.initializer) {
-    if (decl.isMove) {
+    if (decl.isMove)
       return handleMoveInitialization(decl, varName, ty, alloc);
-    } else {
+    else
       return handleCopyInitialization(decl, varName, ty, alloc);
-    }
   }
 
   namedValues[varName] = {alloc, ty, false, false};
@@ -1082,7 +1444,6 @@ Value *CodeGenerator::handleMoveInitialization(const VarDecl &decl,
 
   std::string sourceName = identExpr->name.token.getWord();
   auto srcIt = namedValues.find(sourceName);
-
   if (srcIt == namedValues.end())
     return logError(("Unknown variable: " + sourceName).c_str());
   if (srcIt->second.isMoved)
@@ -1106,19 +1467,55 @@ Value *CodeGenerator::handleCopyInitialization(const VarDecl &decl,
   if (!initVal)
     return logError(("Failed to initialize: " + varName).c_str());
 
-  // Type conversions - add i32 to i64 extension
-  if (ty->isIntegerTy(64) && initVal->getType()->isIntegerTy(32)) {
-    // Extend i32 to i64
-    initVal =
-        builder.CreateSExt(initVal, Type::getInt64Ty(context), "i32_to_i64");
-  } else if (ty->isFloatTy() && initVal->getType()->isDoubleTy())
-    initVal = builder.CreateFPTrunc(initVal, ty, "d2f");
-  else if (ty->isDoubleTy() && initVal->getType()->isFloatTy())
-    initVal = builder.CreateFPExt(initVal, ty, "f2d");
-  else if (ty->isIntegerTy() && initVal->getType()->isFloatingPointTy())
-    initVal = builder.CreateFPToSI(initVal, ty, "f2i");
-  else if (ty->isFloatingPointTy() && initVal->getType()->isIntegerTy())
+  if (TypeResolver::isString(ty)) {
+    StructType *stringTy = cast<StructType>(ty);
+    Value *loadedStr = builder.CreateLoad(stringTy, initVal, "src_str");
+    Value *srcData = builder.CreateExtractValue(loadedStr, {0}, "src_data");
+    Value *srcLen = builder.CreateExtractValue(loadedStr, {1}, "src_len");
+    Value *srcCap = builder.CreateExtractValue(loadedStr, {2}, "src_cap");
+
+    llvm::Function *mallocF = module->getFunction("malloc");
+    llvm::Function *memcpyF = module->getFunction("llvm.memcpy.p0.p0.i64");
+    if (!mallocF || !memcpyF)
+      return logError("malloc/memcpy not declared");
+
+    Value *newMem = builder.CreateCall(mallocF, {srcCap}, "string_clone");
+    builder.CreateCall(
+        memcpyF, {newMem, srcData, srcLen, ConstantInt::getFalse(context)});
+
+    builder.CreateStore(newMem, builder.CreateStructGEP(stringTy, alloc, 0));
+    builder.CreateStore(srcLen, builder.CreateStructGEP(stringTy, alloc, 1));
+    builder.CreateStore(srcCap, builder.CreateStructGEP(stringTy, alloc, 2));
+
+    namedValues[varName] = {alloc, ty, false, false};
+    return alloc;
+  }
+
+  if (TypeResolver::isArrayType(ty)) {
+    StructType *arrStructTy = cast<StructType>(ty);
+    Value *loadedArr = builder.CreateLoad(arrStructTy, initVal, "arr_copy");
+    builder.CreateStore(loadedArr, alloc);
+    namedValues[varName] = {alloc, ty, false, false};
+    return alloc;
+  }
+
+  // Type coercions for scalar initializers
+  if (ty->isIntegerTy() && initVal->getType()->isIntegerTy()) {
+    unsigned tb = ty->getIntegerBitWidth(),
+             sb = initVal->getType()->getIntegerBitWidth();
+    if (tb > sb)
+      initVal = builder.CreateSExt(initVal, ty, "iext");
+    else if (tb < sb)
+      initVal = builder.CreateTrunc(initVal, ty, "itrunc");
+  } else if (ty->isFloatingPointTy() && initVal->getType()->isIntegerTy()) {
     initVal = builder.CreateSIToFP(initVal, ty, "i2f");
+  } else if (ty->isDoubleTy() && initVal->getType()->isFloatTy()) {
+    initVal = builder.CreateFPExt(initVal, ty, "f2d");
+  } else if (ty->isFloatTy() && initVal->getType()->isDoubleTy()) {
+    initVal = builder.CreateFPTrunc(initVal, ty, "d2f");
+  } else if (ty->isIntegerTy() && initVal->getType()->isFloatingPointTy()) {
+    initVal = builder.CreateFPToSI(initVal, ty, "f2i");
+  }
 
   builder.CreateStore(initVal, alloc);
   namedValues[varName] = {alloc, ty, false, false};
@@ -1129,12 +1526,9 @@ Value *CodeGenerator::visitIfStmt(const IfStmt &stmt) {
   Value *cond = codegen(*stmt.condition);
   if (!cond)
     return nullptr;
-
-  // Convert to boolean if needed
-  if (!cond->getType()->isIntegerTy(1)) {
+  if (!cond->getType()->isIntegerTy(1))
     cond = builder.CreateICmpNE(cond, ConstantInt::get(cond->getType(), 0),
                                 "ifcond");
-  }
 
   llvm::Function *func = builder.GetInsertBlock()->getParent();
   BasicBlock *thenBB = BasicBlock::Create(context, "then", func);
@@ -1143,13 +1537,11 @@ Value *CodeGenerator::visitIfStmt(const IfStmt &stmt) {
 
   builder.CreateCondBr(cond, thenBB, elseBB);
 
-  // Then branch
   builder.SetInsertPoint(thenBB);
   codegen(*stmt.thenBranch);
   if (!builder.GetInsertBlock()->getTerminator())
     builder.CreateBr(mergeBB);
 
-  // Else branch
   func->insert(func->end(), elseBB);
   builder.SetInsertPoint(elseBB);
   if (stmt.elseBranch)
@@ -1157,10 +1549,8 @@ Value *CodeGenerator::visitIfStmt(const IfStmt &stmt) {
   if (!builder.GetInsertBlock()->getTerminator())
     builder.CreateBr(mergeBB);
 
-  // Merge point
   func->insert(func->end(), mergeBB);
   builder.SetInsertPoint(mergeBB);
-
   return nullptr;
 }
 
@@ -1173,29 +1563,23 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &stmt) {
 
   builder.CreateBr(condBB);
 
-  // Condition block
   builder.SetInsertPoint(condBB);
   Value *cond = codegen(*stmt.condition);
   if (!cond)
     return nullptr;
-
-  if (!cond->getType()->isIntegerTy(1)) {
+  if (!cond->getType()->isIntegerTy(1))
     cond = builder.CreateICmpNE(cond, ConstantInt::get(cond->getType(), 0),
                                 "cond");
-  }
   builder.CreateCondBr(cond, bodyBB, exitBB);
 
-  // Body block
   func->insert(func->end(), bodyBB);
   builder.SetInsertPoint(bodyBB);
   codegen(*stmt.doBranch);
   if (!builder.GetInsertBlock()->getTerminator())
     builder.CreateBr(condBB);
 
-  // Exit block
   func->insert(func->end(), exitBB);
   builder.SetInsertPoint(exitBB);
-
   return nullptr;
 }
 
@@ -1229,7 +1613,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 
   namedValues.clear();
 
-  // Build parameter types
   std::vector<Type *> paramTypes;
   for (const auto &p : func.params) {
     Type *t = TypeResolver::getLLVMType(context, p.type);
@@ -1238,7 +1621,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     paramTypes.push_back(t);
   }
 
-  // Create or get function
   llvm::Function *f = module->getFunction(fname);
   if (!f) {
     auto *ft = FunctionType::get(retTy, paramTypes, false);
@@ -1247,27 +1629,21 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   }
   f->addFnAttr("stackrealignment");
 
-  // Create entry block
   BasicBlock *bb = BasicBlock::Create(context, "entry", f);
   builder.SetInsertPoint(bb);
 
-  // Store parameters
   namedValues.clear();
   size_t idx = 0;
   for (auto &arg : f->args()) {
     const auto &param = func.params[idx++];
     std::string name = param.name.token.getWord();
-
     AllocaInst *alloc = builder.CreateAlloca(arg.getType(), nullptr, name);
-
     builder.CreateStore(&arg, alloc);
     namedValues[name] = {alloc, arg.getType(), false, false};
   }
 
-  // Generate body
   codegen(*func.body);
 
-  // Add default return if missing
   if (!builder.GetInsertBlock()->getTerminator()) {
     if (retTy->isVoidTy())
       builder.CreateRetVoid();
@@ -1275,7 +1651,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
       builder.CreateRet(ConstantInt::get(retTy, 0));
   }
 
-  // Verify function
   if (verifyFunction(*f, &errs())) {
     f->eraseFromParent();
     return nullptr;
@@ -1291,24 +1666,23 @@ bool CodeGenerator::generate(const Program &program,
                              const std::string &outputFilename) {
   namedValues.clear();
 
-  // Declare printf
-  auto *i8PtrTy = PointerType::get(context, 0);
-  auto *printfTy =
-      FunctionType::get(Type::getInt32Ty(context), {i8PtrTy}, true);
-  llvm::Function::Create(printfTy, llvm::Function::ExternalLinkage, "printf",
-                         *module);
+  Type *ptrTy = PointerType::get(context, 0);
+  if (!module->getFunction("printf")) {
+    auto *printfTy =
+        FunctionType::get(Type::getInt32Ty(context), {ptrTy}, true);
+    llvm::Function::Create(printfTy, llvm::Function::ExternalLinkage, "printf",
+                           *module);
+  }
 
   declareExternalFunctions();
 
-  // Generate all functions
   for (const auto &f : program.functions) {
     if (!codegen(*f))
       return false;
   }
 
-  module->print(llvm::outs(), nullptr); // test
+  module->print(llvm::outs(), nullptr); // debug dump
 
-  // Write output
   std::error_code ec;
   raw_fd_ostream out(outputFilename + ".ll", ec, sys::fs::OF_None);
   if (ec) {

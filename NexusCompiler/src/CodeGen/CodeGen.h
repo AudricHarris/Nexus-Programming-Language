@@ -33,6 +33,9 @@ private:
   // Error handling
   llvm::Value *logError(const char *msg);
   void declareExternalFunctions();
+  llvm::Value *visitNewArray(const NewArrayExpr &expr);
+  llvm::Value *visitArrayIndex(const ArrayIndexExpr &expr);
+  llvm::Value *visitArrayLength(const ArrayLengthExpr &expr);
 
   // Expression visitors
   llvm::Value *visitIdentifier(const IdentExpr &expr);
@@ -41,6 +44,7 @@ private:
   llvm::Value *visitLiteral(const StrLitExpr &expr);
   llvm::Value *visitLiteral(const BoolLitExpr &expr);
   llvm::Value *visitBinary(const BinaryExpr &expr);
+  llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &expr);
   llvm::Value *visitUnary(const UnaryExpr &expr);
   llvm::Value *visitAssignment(const AssignExpr &expr);
   llvm::Value *visitIncrement(const Increment &expr);
