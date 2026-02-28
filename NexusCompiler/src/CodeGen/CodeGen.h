@@ -32,6 +32,7 @@ private:
 
   // Error handling
   llvm::Value *logError(const char *msg);
+  void declareExternalFunctions();
 
   // Expression visitors
   llvm::Value *visitIdentifier(const IdentExpr &expr);

@@ -107,6 +107,10 @@ public:
       return Type::getInt32Ty(context);
     if (t == "i64" || t == "long")
       return Type::getInt64Ty(context);
+    if (t == "i16" || t == "short")
+      return Type::getInt16Ty(context);
+    if (t == "i8" || t == "char")
+      return Type::getInt8Ty(context);
     if (t == "f32" || t == "float")
       return Type::getFloatTy(context);
     if (t == "f64" || t == "double")
@@ -116,7 +120,7 @@ public:
     if (t == "void")
       return Type::getVoidTy(context);
     if (t == "str" || t == "string")
-      return PointerType::get(context, 0);
+      return PointerType::getUnqual(context);
 
     return nullptr;
   }
@@ -124,13 +128,27 @@ public:
   static std::string getFormatSpecifier(Type *ty) {
     if (!ty)
       return "%d";
+
     if (ty->isIntegerTy(64))
       return "%" PRId64;
-    if (ty->isIntegerTy())
+    if (ty->isIntegerTy(32))
       return "%d";
-    if (ty->isFloatTy() || ty->isDoubleTy())
+    if (ty->isIntegerTy(16))
+      return "%hd";
+    if (ty->isIntegerTy(8))
+      return "%hhd";
+    if (ty->isIntegerTy(1))
+      return "%d";
+
+    if (ty->isFloatTy())
       return "%f";
-    return "%s";
+    if (ty->isDoubleTy())
+      return "%f";
+
+    if (ty->isPointerTy())
+      return "%s";
+
+    return "%d";
   }
 
   static bool isNumeric(Type *ty) {
@@ -139,7 +157,120 @@ public:
 
   static bool isFloat(Type *ty) { return ty->isFloatingPointTy(); }
 
-  static bool isBool(Type *ty) { return ty->isIntegerTy(1); }
+  static bool isString(Type *ty) {
+    return ty->isPointerTy() && ty->getPointerAddressSpace() == 0;
+  }
+
+  static Type *getLargerType(Type *a, Type *b) {
+    if (a == b)
+      return a;
+
+    if (a->isFloatingPointTy() || b->isFloatingPointTy()) {
+      if (a->isDoubleTy() || b->isDoubleTy())
+        return Type::getDoubleTy(a->getContext());
+      return Type::getFloatTy(a->getContext());
+    }
+
+    if (a->isIntegerTy() && b->isIntegerTy()) {
+      unsigned aBits = a->getIntegerBitWidth();
+      unsigned bBits = b->getIntegerBitWidth();
+      return Type::getIntNTy(a->getContext(), std::max(aBits, bBits));
+    }
+
+    return a;
+  }
+
+  static Value *convertToType(IRBuilder<> &builder, Value *val,
+                              Type *targetTy) {
+    if (val->getType() == targetTy)
+      return val;
+
+    if (targetTy->isPointerTy()) {
+      return convertToString(builder, val);
+    }
+
+    if (targetTy->isFloatingPointTy() && val->getType()->isFloatingPointTy()) {
+      if (targetTy->isDoubleTy() && val->getType()->isFloatTy())
+        return builder.CreateFPExt(val, targetTy, "f2d");
+      if (targetTy->isFloatTy() && val->getType()->isDoubleTy())
+        return builder.CreateFPTrunc(val, targetTy, "d2f");
+    }
+
+    if (targetTy->isIntegerTy() && val->getType()->isIntegerTy()) {
+      unsigned targetBits = targetTy->getIntegerBitWidth();
+      unsigned srcBits = val->getType()->getIntegerBitWidth();
+
+      if (targetBits > srcBits)
+        return builder.CreateSExt(val, targetTy, "ext");
+      if (targetBits < srcBits)
+        return builder.CreateTrunc(val, targetTy, "trunc");
+    }
+
+    if (targetTy->isFloatingPointTy() && val->getType()->isIntegerTy())
+      return builder.CreateSIToFP(val, targetTy, "i2f");
+
+    if (targetTy->isIntegerTy() && val->getType()->isFloatingPointTy())
+      return builder.CreateFPToSI(val, targetTy, "f2i");
+
+    return val;
+  }
+
+  static Value *convertToString(IRBuilder<> &builder, Value *val) {
+    Type *ty = val->getType();
+
+    if (ty->isPointerTy())
+      return val;
+
+    std::string formatStr;
+    std::string valueStr;
+
+    if (ty->isIntegerTy(64))
+      formatStr = "%lld";
+    else if (ty->isIntegerTy(32))
+      formatStr = "%d";
+    else if (ty->isIntegerTy(16))
+      formatStr = "%hd";
+    else if (ty->isIntegerTy(8))
+      formatStr = "%hhd";
+    else if (ty->isFloatTy())
+      formatStr = "%f";
+    else if (ty->isDoubleTy())
+      formatStr = "%f";
+    else
+      formatStr = "%p";
+
+    Value *fmtPtr = builder.CreateGlobalString(formatStr, "fmt");
+
+    return createStringFormat(builder, fmtPtr, val);
+  }
+
+private:
+  static Value *createStringFormat(IRBuilder<> &builder, Value *fmtPtr,
+                                   Value *val) {
+    LLVMContext &ctx = builder.getContext();
+
+    Type *i8PtrTy = PointerType::getUnqual(ctx);
+    ArrayType *bufferTy = ArrayType::get(Type::getInt8Ty(ctx), 32);
+    AllocaInst *buffer = builder.CreateAlloca(bufferTy, nullptr, "strbuf");
+
+    Value *bufferPtr = builder.CreatePointerCast(buffer, i8PtrTy);
+
+    llvm::Function *sprintfFn =
+        builder.GetInsertBlock()->getParent()->getParent()->getFunction(
+            "sprintf");
+    if (!sprintfFn) {
+      auto *sprintfTy =
+          FunctionType::get(Type::getInt32Ty(ctx), {i8PtrTy, i8PtrTy}, true);
+      sprintfFn = llvm::Function::Create(
+          sprintfTy, llvm::Function::ExternalLinkage, "sprintf",
+          builder.GetInsertBlock()->getParent()->getParent());
+    }
+
+    std::vector<Value *> args = {bufferPtr, fmtPtr, val};
+    builder.CreateCall(sprintfFn, args);
+
+    return bufferPtr;
+  }
 };
 
 //------------------------------------------------------------------------------
@@ -444,7 +575,6 @@ processPrintfString(const std::string &raw, LLVMContext &ctx,
       continue;
     }
 
-    // Find matching closing brace
     size_t start = i + 1;
     size_t depth = 1;
     size_t j = start;
@@ -466,7 +596,6 @@ processPrintfString(const std::string &raw, LLVMContext &ctx,
       result += TypeResolver::getFormatSpecifier(val->getType());
       outExprs.push_back(val);
     } else {
-      // If parsing fails, keep the original braces
       result += '{' + inner + '}';
     }
 
@@ -479,6 +608,37 @@ processPrintfString(const std::string &raw, LLVMContext &ctx,
 //------------------------------------------------------------------------------
 // CodeGenerator Implementation
 //------------------------------------------------------------------------------
+
+void CodeGenerator::declareExternalFunctions() {
+  auto *i8PtrTy = PointerType::getUnqual(context);
+
+  auto *sprintfTy =
+      FunctionType::get(Type::getInt32Ty(context), {i8PtrTy, i8PtrTy}, true);
+  llvm::Function::Create(sprintfTy, llvm::Function::ExternalLinkage, "sprintf",
+                         *module);
+
+  auto *strlenTy =
+      FunctionType::get(Type::getInt64Ty(context), {i8PtrTy}, false);
+  llvm::Function::Create(strlenTy, llvm::Function::ExternalLinkage, "strlen",
+                         *module);
+
+  auto *strcpyTy = FunctionType::get(i8PtrTy, {i8PtrTy, i8PtrTy}, false);
+  llvm::Function::Create(strcpyTy, llvm::Function::ExternalLinkage, "strcpy",
+                         *module);
+
+  auto *strcatTy = FunctionType::get(i8PtrTy, {i8PtrTy, i8PtrTy}, false);
+  llvm::Function::Create(strcatTy, llvm::Function::ExternalLinkage, "strcat",
+                         *module);
+
+  auto *mallocTy =
+      FunctionType::get(i8PtrTy, {Type::getInt64Ty(context)}, false);
+  llvm::Function::Create(mallocTy, llvm::Function::ExternalLinkage, "malloc",
+                         *module);
+
+  auto *freeTy = FunctionType::get(Type::getVoidTy(context), {i8PtrTy}, false);
+  llvm::Function::Create(freeTy, llvm::Function::ExternalLinkage, "free",
+                         *module);
+}
 
 CodeGenerator::CodeGenerator()
     : module(std::make_unique<Module>("nexus", context)), builder(context) {
@@ -552,7 +712,6 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
   // bool leftBool = TypeResolver::isBool(left->getType());
   // bool rightBool = TypeResolver::isBool(right->getType());
 
-  // Handle comparison operators separately (they return bool)
   switch (expr.op) {
   case BinaryOp::Lt:
   case BinaryOp::Le:
@@ -683,6 +842,11 @@ Value *CodeGenerator::visitAssignment(const AssignExpr &expr) {
   if (it->second.isBorrowed)
     return logError(("Cannot modify borrowed variable: " + targetName).c_str());
 
+  Type *targetType = it->second.type;
+  if (targetType->isIntegerTy(64) && val->getType()->isIntegerTy(32)) {
+    val = builder.CreateSExt(val, Type::getInt64Ty(context), "i32_to_i64");
+  }
+
   switch (expr.kind) {
   case AssignKind::Copy:
     builder.CreateStore(val, it->second.alloca);
@@ -765,7 +929,6 @@ Value *CodeGenerator::visitCall(const CallExpr &expr) {
   std::string rawName = expr.callee.token.getWord();
   std::string calleeName = normalizeFunctionName(rawName);
 
-  // Handle special print functions
   if ((calleeName == "printf" || rawName == "Printf") &&
       expr.arguments.size() == 1) {
     return handlePrintf(expr);
@@ -815,6 +978,10 @@ Value *CodeGenerator::handlePrintf(const CallExpr &expr) {
   for (Value *v : interpolated) {
     if (v->getType()->isFloatTy())
       v = builder.CreateFPExt(v, Type::getDoubleTy(context), "f2d_arg");
+    else if (v->getType()->isIntegerTy() &&
+             v->getType()->getIntegerBitWidth() < 32)
+      v = builder.CreateSExt(v, Type::getInt32Ty(context), "i_ext");
+
     args.push_back(v);
   }
 
@@ -1131,11 +1298,15 @@ bool CodeGenerator::generate(const Program &program,
   llvm::Function::Create(printfTy, llvm::Function::ExternalLinkage, "printf",
                          *module);
 
+  declareExternalFunctions();
+
   // Generate all functions
   for (const auto &f : program.functions) {
     if (!codegen(*f))
       return false;
   }
+
+  module->print(llvm::outs(), nullptr); // test
 
   // Write output
   std::error_code ec;

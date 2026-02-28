@@ -69,6 +69,17 @@ std::vector<Token> Lexer::Tokenize() {
       lstTokens.push_back(makeToken(TokenKind::TOK_RPAREN, ")"));
       continue;
     }
+    if (this->peek() == '[') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_LBRACE, "["));
+      continue;
+    }
+    if (this->peek() == ']') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_RBRACE, "]"));
+      continue;
+    }
+
     if (this->peek() == '{') {
       this->next();
       lstTokens.push_back(makeToken(TokenKind::TOK_LBRACE, "{"));
@@ -158,6 +169,12 @@ std::vector<Token> Lexer::Tokenize() {
       lstTokens.push_back(makeToken(TokenKind::TOK_PROD, "*"));
       continue;
     }
+    if (this->peek() == ',') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_COMMA, ","));
+      continue;
+    }
+
     if (this->peek() == '%') {
       this->next();
       lstTokens.push_back(makeToken(TokenKind::TOK_MOD, "%"));
@@ -207,7 +224,37 @@ std::vector<Token> Lexer::Tokenize() {
       this->next();
       continue;
     }
+    if (this->peek() == '\'') {
+      std::string currentChar;
+      this->next();
 
+      if (this->pos >= this->codeFile.length()) {
+        std::cerr << "Undetermined character litteral.\n";
+      }
+
+      char c = this->next();
+
+      if (c == '\\') {
+        if (this->pos >= this->codeFile.length()) {
+          std::cerr << "Invalid escape sequence in character literal.\n";
+        }
+
+        char escaped = this->next();
+        currentChar += '\\';
+        currentChar += escaped;
+      } else {
+        currentChar += c;
+      }
+
+      if (this->peek() != '\'') {
+        std::cerr << "Character literal must contain exactly one character.\n";
+      }
+
+      this->next();
+
+      lstTokens.push_back(makeToken(TokenKind::TOK_CHAR, currentChar));
+      continue;
+    }
     if (std::isdigit(this->peek())) {
       std::string currentWord;
       do {
