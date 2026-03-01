@@ -71,20 +71,23 @@ struct Identifier {
   explicit Identifier(const Token &t) : token(t) {}
 };
 
-// Add after Identifier struct
 struct ArrayType {
   Identifier elementType;
   bool isArray;
+  int dimensions; // 1 = 1D, 2 = 2D, etc.
 
-  ArrayType(const Identifier &elem) : elementType(elem), isArray(true) {}
-  ArrayType(Identifier &&elem) : elementType(std::move(elem)), isArray(true) {}
+  ArrayType(const Identifier &elem, int dims = 1)
+      : elementType(elem), isArray(true), dimensions(dims) {}
+  ArrayType(Identifier &&elem, int dims = 1)
+      : elementType(std::move(elem)), isArray(true), dimensions(dims) {}
 
   void toJson(std::ostream &os, int indent = 0) const {
     std::string pad(indent, ' ');
     os << pad << "{\n";
     os << pad << "  \"kind\": \"ArrayType\",\n";
     os << pad << "  \"elementType\": "
-       << json_utils::escape(elementType.token.getWord()) << "\n";
+       << json_utils::escape(elementType.token.getWord()) << ",\n";
+    os << pad << "  \"dimensions\": " << dimensions << "\n";
     os << pad << "}";
   }
 };
@@ -114,12 +117,16 @@ struct BoolLiteral {
   explicit BoolLiteral(const Token &t) : token(t) {}
 };
 
+// Parameter now tracks whether it is a by-reference borrow (&name)
 struct Parameter {
   Identifier type;
   Identifier name;
-  Parameter(const Identifier &t, const Identifier &n) : type(t), name(n) {}
-  Parameter(Identifier &&t, Identifier &&n)
-      : type(std::move(t)), name(std::move(n)) {}
+  bool isBorrowRef; // true when declared as &name → caller's variable modified
+
+  Parameter(const Identifier &t, const Identifier &n, bool ref = false)
+      : type(t), name(n), isBorrowRef(ref) {}
+  Parameter(Identifier &&t, Identifier &&n, bool ref = false)
+      : type(std::move(t)), name(std::move(n)), isBorrowRef(ref) {}
 };
 
 struct Expression {
@@ -186,13 +193,6 @@ inline std::string toString(UnaryOp op) {
   return "Unknown";
 }
 
-// ---------------------------
-//     Assignment kinds
-// ---------------------------
-
-// Copy  : T x = value   (or x = value for reassignment)
-// Move  : T x <- value  (transfers ownership; source invalidated)
-// Borrow: T x &= value  (reference borrow; no ownership transfer)
 enum class AssignKind { Copy, Move, Borrow };
 
 // ---------------------------
@@ -216,7 +216,6 @@ struct IdentExpr : Expression {
 struct IntLitExpr : Expression {
   IntegerLiteral lit;
   explicit IntLitExpr(const IntegerLiteral &l) : lit(l) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
@@ -230,7 +229,6 @@ struct IntLitExpr : Expression {
 struct FloatLitExpr : Expression {
   FloatLiteral lit;
   explicit FloatLitExpr(const FloatLiteral &l) : lit(l) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
@@ -244,7 +242,6 @@ struct FloatLitExpr : Expression {
 struct StrLitExpr : Expression {
   StringLiteral lit;
   explicit StrLitExpr(const StringLiteral &l) : lit(l) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
@@ -258,7 +255,6 @@ struct StrLitExpr : Expression {
 struct CharLitExpr : Expression {
   CharLiteral lit;
   explicit CharLitExpr(const CharLiteral &l) : lit(l) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
@@ -272,7 +268,6 @@ struct CharLitExpr : Expression {
 struct BoolLitExpr : Expression {
   BoolLiteral lit;
   explicit BoolLitExpr(const BoolLiteral &l) : lit(l) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
@@ -347,11 +342,10 @@ struct CallExpr : Expression {
   }
 };
 
-// Copy assignment expression (reassignment, not declaration): x = expr
 struct AssignExpr : Expression {
   Identifier target;
   ExprPtr value;
-  AssignKind kind; // Copy | Move | Borrow
+  AssignKind kind;
 
   AssignExpr(Identifier tgt, ExprPtr val, AssignKind k = AssignKind::Copy)
       : target(std::move(tgt)), value(std::move(val)), kind(k) {}
@@ -376,7 +370,6 @@ struct AssignExpr : Expression {
 struct Increment : Expression {
   Identifier target;
   explicit Increment(const Identifier &tgt) : target(tgt) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
@@ -390,7 +383,6 @@ struct Increment : Expression {
 struct Decrement : Expression {
   Identifier target;
   explicit Decrement(const Identifier &tgt) : target(tgt) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
@@ -401,15 +393,16 @@ struct Decrement : Expression {
   }
 };
 
+// NewArrayExpr now supports multiple dimension sizes
 struct NewArrayExpr : Expression {
   ArrayType arrayType;
-  ExprPtr size;
+  // sizes[0] = outermost dimension, sizes[1] = inner dimension (for 2D), etc.
+  std::vector<ExprPtr> sizes;
 
-  NewArrayExpr(const ArrayType &type, ExprPtr sz)
-      : arrayType(type), size(std::move(sz)) {}
-
-  NewArrayExpr(ArrayType &&type, ExprPtr sz)
-      : arrayType(std::move(type)), size(std::move(sz)) {}
+  NewArrayExpr(const ArrayType &type, std::vector<ExprPtr> szs)
+      : arrayType(type), sizes(std::move(szs)) {}
+  NewArrayExpr(ArrayType &&type, std::vector<ExprPtr> szs)
+      : arrayType(std::move(type)), sizes(std::move(szs)) {}
 
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
@@ -417,9 +410,15 @@ struct NewArrayExpr : Expression {
     os << pad << "  \"kind\": \"NewArrayExpr\",\n";
     os << pad << "  \"elementType\": "
        << json_utils::escape(arrayType.elementType.token.getWord()) << ",\n";
-    os << pad << "  \"size\": ";
-    size->toJson(os, indent + 2);
-    os << "\n" << pad << "}";
+    os << pad << "  \"dimensions\": " << sizes.size() << ",\n";
+    os << pad << "  \"sizes\": [\n";
+    for (size_t i = 0; i < sizes.size(); ++i) {
+      if (i > 0)
+        os << ",\n";
+      sizes[i]->toJson(os, indent + 4);
+    }
+    os << "\n" << pad << "  ]\n";
+    os << pad << "}";
   }
 };
 
@@ -438,6 +437,30 @@ struct ArrayIndexExpr : Expression {
        << ",\n";
     os << pad << "  \"index\": ";
     index->toJson(os, indent + 2);
+    os << "\n" << pad << "}";
+  }
+};
+
+// 2D array index: arr[i][j]
+struct Array2DIndexExpr : Expression {
+  Identifier array;
+  ExprPtr rowIndex;
+  ExprPtr colIndex;
+
+  Array2DIndexExpr(const Identifier &arr, ExprPtr row, ExprPtr col)
+      : array(arr), rowIndex(std::move(row)), colIndex(std::move(col)) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"Array2DIndexExpr\",\n";
+    os << pad << "  \"array\": " << json_utils::escape(array.token.getWord())
+       << ",\n";
+    os << pad << "  \"row\": ";
+    rowIndex->toJson(os, indent + 2);
+    os << ",\n";
+    os << pad << "  \"col\": ";
+    colIndex->toJson(os, indent + 2);
     os << "\n" << pad << "}";
   }
 };
@@ -466,20 +489,63 @@ struct ArrayIndexAssignExpr : Expression {
   }
 };
 
-struct ArrayLengthExpr : Expression {
+// 2D array assignment: arr[i][j] = val
+struct Array2DIndexAssignExpr : Expression {
   Identifier array;
+  std::unique_ptr<Expression> rowIndex;
+  std::unique_ptr<Expression> colIndex;
+  std::unique_ptr<Expression> value;
 
-  explicit ArrayLengthExpr(const Identifier &arr) : array(arr) {}
+  Array2DIndexAssignExpr(Identifier arr, std::unique_ptr<Expression> row,
+                         std::unique_ptr<Expression> col,
+                         std::unique_ptr<Expression> val)
+      : array(std::move(arr)), rowIndex(std::move(row)),
+        colIndex(std::move(col)), value(std::move(val)) {}
 
   void toJson(std::ostream &os, int indent) const override {
     std::string pad(indent, ' ');
     os << pad << "{\n";
-    os << pad << "  \"kind\": \"ArrayLengthExpr\",\n";
+    os << pad << "  \"kind\": \"Array2DIndexAssignExpr\",\n";
     os << pad << "  \"array\": " << json_utils::escape(array.token.getWord())
+       << ",\n";
+    os << pad << "  \"row\": ";
+    rowIndex->toJson(os, indent + 2);
+    os << ",\n";
+    os << pad << "  \"col\": ";
+    colIndex->toJson(os, indent + 2);
+    os << ",\n";
+    os << pad << "  \"value\": ";
+    value->toJson(os, indent + 2);
+    os << "\n" << pad << "}";
+  }
+};
+
+struct LengthPropertyExpr : Expression {
+  Identifier name;
+  explicit LengthPropertyExpr(const Identifier &arr) : name(arr) {}
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"LengthPropertyExpr\",\n";
+    os << pad << "  \"array\": " << json_utils::escape(name.token.getWord())
        << "\n";
     os << pad << "}";
   }
 };
+
+struct StringTextExpr : Expression {
+  Identifier name;
+  explicit StringTextExpr(const Identifier &arr) : name(arr) {}
+  void toJson(std::ostream &os, int indent) const override {
+    std::string pad(indent, ' ');
+    os << pad << "{\n";
+    os << pad << "  \"kind\": \"StringTextExpr\",\n";
+    os << pad << "  \"array\": " << json_utils::escape(name.token.getWord())
+       << "\n";
+    os << pad << "}";
+  }
+};
+
 // ---------------------------
 //     Statement nodes
 // ---------------------------
@@ -489,7 +555,6 @@ struct Statement {
   virtual void toJson(std::ostream &os, int indent = 0) const = 0;
 };
 
-// Variable declaration: T name = expr  /  T name <- expr  /  T name &= expr
 struct VarDecl : Statement {
   using TypeVariant = std::variant<Identifier, ArrayType>;
   TypeVariant type;
@@ -502,17 +567,14 @@ struct VarDecl : Statement {
           AssignKind k = AssignKind::Copy, bool moved = false)
       : type(t), name(n), initializer(std::move(init)), kind(k), isMove(moved) {
   }
-
   VarDecl(const ArrayType &t, const Identifier &n, ExprPtr init,
           AssignKind k = AssignKind::Copy, bool moved = false)
       : type(t), name(n), initializer(std::move(init)), kind(k), isMove(moved) {
   }
-
   VarDecl(Identifier &&t, Identifier &&n, ExprPtr init,
           AssignKind k = AssignKind::Copy, bool moved = false)
       : type(std::move(t)), name(std::move(n)), initializer(std::move(init)),
         kind(k), isMove(moved) {}
-
   VarDecl(ArrayType &&t, Identifier &&n, ExprPtr init,
           AssignKind k = AssignKind::Copy, bool moved = false)
       : type(std::move(t)), name(std::move(n)), initializer(std::move(init)),
@@ -527,7 +589,6 @@ struct VarDecl : Statement {
            : kind == AssignKind::Move ? "Move"
                                       : "Borrow")
        << "\",\n";
-
     os << pad << "  \"type\": ";
     if (std::holds_alternative<Identifier>(type)) {
       os << json_utils::escape(std::get<Identifier>(type).token.getWord());
@@ -536,7 +597,6 @@ struct VarDecl : Statement {
          << ">\"";
     }
     os << ",\n";
-
     os << pad << "  \"name\": " << json_utils::escape(name.token.getWord())
        << ",\n";
     os << pad << "  \"initializer\": ";
@@ -565,9 +625,7 @@ struct IfStmt : Statement {
     os << pad << "  \"condition\": ";
     condition->toJson(os, indent + 4);
     os << ",\n";
-    os << pad << "  \"then\": ";
-    // thenBranch->toJson(...) — omitted for brevity like original
-    os << ",\n";
+    os << pad << "  \"then\": \"...\",\n";
     os << pad << "  \"else\": null\n";
     os << pad << "}";
   }
@@ -631,13 +689,11 @@ inline bool isArrayType(const VarDecl::TypeVariant &type) {
 }
 
 inline std::string getTypeName(const VarDecl::TypeVariant &type) {
-  if (std::holds_alternative<Identifier>(type)) {
+  if (std::holds_alternative<Identifier>(type))
     return std::get<Identifier>(type).token.getWord();
-  } else {
-    return "array<" + std::get<ArrayType>(type).elementType.token.getWord() +
-           ">";
-  }
+  return "array<" + std::get<ArrayType>(type).elementType.token.getWord() + ">";
 }
+
 // ---------------------------
 //     Block / Function / Program
 // ---------------------------
@@ -672,7 +728,6 @@ struct Function {
   Function(const Identifier &n, std::vector<Parameter> p,
            std::unique_ptr<Block> b, Identifier type)
       : name(n), params(std::move(p)), body(std::move(b)), returnType(type) {}
-
   Function(Identifier &&n, std::vector<Parameter> &&p,
            std::unique_ptr<Block> &&b, Identifier type)
       : name(std::move(n)), params(std::move(p)), body(std::move(b)),
@@ -684,7 +739,8 @@ struct Function {
     os << pad << "  \"kind\": \"Function\",\n";
     os << pad << "  \"name\": " << json_utils::escape(name.token.getWord())
        << ",\n";
-    os << pad << "  \"Return\": " << json_utils::escape(name.token.getWord())
+    os << pad
+       << "  \"return\": " << json_utils::escape(returnType.token.getWord())
        << ",\n";
     os << pad << "  \"params\": [\n";
     for (size_t i = 0; i < params.size(); ++i) {
@@ -694,7 +750,9 @@ struct Function {
       os << pad << "      \"type\": "
          << json_utils::escape(params[i].type.token.getWord()) << ",\n";
       os << pad << "      \"name\": "
-         << json_utils::escape(params[i].name.token.getWord()) << "\n";
+         << json_utils::escape(params[i].name.token.getWord()) << ",\n";
+      os << pad << "      \"borrowRef\": "
+         << (params[i].isBorrowRef ? "true" : "false") << "\n";
       os << pad << "    }";
     }
     os << "\n" << pad << "  ],\n";

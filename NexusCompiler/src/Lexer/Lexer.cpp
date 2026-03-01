@@ -179,10 +179,14 @@ std::vector<Token> Lexer::Tokenize() {
       lstTokens.push_back(makeToken(TokenKind::TOK_COMMA, ","));
       continue;
     }
-
     if (this->peek() == '%') {
       this->next();
       lstTokens.push_back(makeToken(TokenKind::TOK_MOD, "%"));
+      continue;
+    }
+    if (this->peek() == '&') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_AND, "&"));
       continue;
     }
 

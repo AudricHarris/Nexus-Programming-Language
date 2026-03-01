@@ -1,27 +1,21 @@
+Borrow(&i32 ex)
+{
+	ex = ex * 5 + 4;	
+}
+
+Copy(i32 ex)
+{
+	ex = ex * 5 + 4;	
+}
+
 Main() -> bool
 {
-	i32[][] arr1 = new i32[](5);
-	
-	i32 t = 0;
-	i32 length = arr1.length;
+	i32 ex = 8;
+	Printf("Initial : {ex}\n");
+	Copy(ex);
+	Printf("Copy    : {ex}\n");
+	Borrow(ex);
+	Printf("Borrow  : {ex}\n");
 
-	while (t < length )
-	{
-		arr1[t] = t;
-		t++;
-	}
-
-	i32 tmp = 0;
-	t = 0;
-	while (t < length )
-	{
-		tmp = arr1[t];
-		Printf("{tmp}\n");
-		t++;
-	}
-	Printf("ok\n");
-
-	string ok = "hi";
-
-	Printf("{ok}\n");
+	return true;
 }

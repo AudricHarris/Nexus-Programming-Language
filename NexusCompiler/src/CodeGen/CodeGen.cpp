@@ -18,7 +18,6 @@ static std::string normalizeFunctionName(const std::string &name) {
       {"Printf", "printf"},
       {"Print", "print_literal"},
       {"printf", "printf"}};
-
   auto it = mappings.find(name);
   return (it != mappings.end()) ? it->second : name;
 }
@@ -55,7 +54,7 @@ static std::string unescapeString(const std::string &s) {
       case '{':
         result += '{';
         ++i;
-        break; // \{ → literal {
+        break;
       default:
         result += s[i];
         break;
@@ -93,6 +92,8 @@ std::string CodeGenerator::replaceHexColors(const std::string &input) {
   return result;
 }
 
+bool CodeGenerator::isCStringPointer(Type *ty) { return ty->isPointerTy(); }
+
 //------------------------------------------------------------------------------
 // Type System
 //------------------------------------------------------------------------------
@@ -126,14 +127,19 @@ public:
       }
       return st;
     }
-    // Nested array element type: "array.i32", "array.array.i32", etc.
+
+    // "array.T" or "array.array.T" etc.
     if (t.size() > 6 && t.substr(0, 6) == "array.") {
       StructType *existing = StructType::getTypeByName(context, t);
       if (existing)
         return existing;
+
       std::string elemTypeName = t.substr(6);
       Identifier elemId{Token{TokenKind::TOK_IDENTIFIER, elemTypeName, 0, 0}};
-      getLLVMType(context, elemId); // ensure element type registered first
+      Type *elemType = getLLVMType(context, elemId);
+      if (!elemType)
+        return nullptr;
+
       StructType *st = StructType::create(context, t);
       st->setBody({Type::getInt64Ty(context), PointerType::get(context, 0)});
       return st;
@@ -145,7 +151,8 @@ public:
     Type *elemType = getLLVMType(context, arrType.elementType);
     if (!elemType)
       return nullptr;
-    std::string structName = "array." + arrType.elementType.token.getWord();
+    std::string structName = arrType.elementType.token.getWord();
+    // structName is already "array.T" or "array.array.T"
     StructType *arrayStruct = StructType::getTypeByName(context, structName);
     if (!arrayStruct) {
       arrayStruct = StructType::create(context, structName);
@@ -173,6 +180,17 @@ public:
     if (!ty || !ty->isStructTy())
       return false;
     return cast<StructType>(ty)->getName().starts_with("array.");
+  }
+
+  // Resolve element type of a 1D array struct type
+  // e.g. "array.i32" → i32,  "array.array.i32" → the inner array struct
+  static Type *getArrayElemType(LLVMContext &ctx, StructType *arrTy) {
+    StringRef name = arrTy->getName();
+    if (!name.starts_with("array."))
+      return nullptr;
+    std::string elemName = name.substr(6).str();
+    Identifier id{Token{TokenKind::TOK_IDENTIFIER, elemName, 0, 0}};
+    return getLLVMType(ctx, id);
   }
 
   static bool isNumeric(Type *ty) {
@@ -238,6 +256,7 @@ public:
     return val;
   }
 
+  // Create a 1D array alloca (struct { i64 len, ptr data })
   static AllocaInst *createArrayAlloca(IRBuilder<> &builder, Type *elemType,
                                        Value *size,
                                        const std::string &name = "array") {
@@ -269,14 +288,103 @@ public:
 
     AllocaInst *arrayStruct =
         builder.CreateAlloca(arrayStructTy, nullptr, name);
-
-    Value *lengthField = builder.CreateStructGEP(arrayStructTy, arrayStruct, 0);
-    builder.CreateStore(size, lengthField);
-
-    Value *dataField = builder.CreateStructGEP(arrayStructTy, arrayStruct, 1);
-    builder.CreateStore(rawMem, dataField);
-
+    builder.CreateStore(size,
+                        builder.CreateStructGEP(arrayStructTy, arrayStruct, 0));
+    builder.CreateStore(rawMem,
+                        builder.CreateStructGEP(arrayStructTy, arrayStruct, 1));
     return arrayStruct;
+  }
+
+  static AllocaInst *createArray2DAlloca(IRBuilder<> &builder, Type *elemType,
+                                         Value *rows, Value *cols,
+                                         const std::string &name = "arr2d") {
+    LLVMContext &ctx = builder.getContext();
+    llvm::Function *mallocF = getMallocFunction(builder, ctx);
+    if (!mallocF)
+      return nullptr;
+
+    Type *i64Ty = Type::getInt64Ty(ctx);
+
+    // Inner array struct type: array.T
+    std::string innerStructName = "array." + getTypeName(elemType);
+    StructType *innerStructTy = StructType::getTypeByName(ctx, innerStructName);
+    if (!innerStructTy) {
+      innerStructTy = StructType::create(ctx, innerStructName);
+      innerStructTy->setBody({i64Ty, PointerType::get(ctx, 0)});
+    }
+
+    // Outer array struct type: array.array.T
+    std::string outerStructName = "array." + innerStructName;
+    StructType *outerStructTy = StructType::getTypeByName(ctx, outerStructName);
+    if (!outerStructTy) {
+      outerStructTy = StructType::create(ctx, outerStructName);
+      outerStructTy->setBody({i64Ty, PointerType::get(ctx, 0)});
+    }
+
+    if (rows->getType()->isIntegerTy(32))
+      rows = builder.CreateSExt(rows, i64Ty, "rows_ext");
+    if (cols->getType()->isIntegerTy(32))
+      cols = builder.CreateSExt(cols, i64Ty, "cols_ext");
+
+    // Allocate the outer array data: rows * sizeof(inner struct)
+    uint64_t innerSize = builder.GetInsertBlock()
+                             ->getParent()
+                             ->getParent()
+                             ->getDataLayout()
+                             .getTypeAllocSize(innerStructTy);
+    Value *innerSizeVal = ConstantInt::get(i64Ty, innerSize);
+    Value *outerBytes = builder.CreateMul(rows, innerSizeVal, "outer_bytes");
+    Value *outerMem = builder.CreateCall(mallocF, {outerBytes}, "outer_mem");
+
+    llvm::Function *func = builder.GetInsertBlock()->getParent();
+    BasicBlock *initBB = BasicBlock::Create(ctx, "arr2d_init", func);
+    BasicBlock *loopBB = BasicBlock::Create(ctx, "arr2d_loop", func);
+    BasicBlock *bodyBB = BasicBlock::Create(ctx, "arr2d_body", func);
+    BasicBlock *afterBB = BasicBlock::Create(ctx, "arr2d_after", func);
+
+    builder.CreateBr(initBB);
+    builder.SetInsertPoint(initBB);
+    AllocaInst *idxAlloca = builder.CreateAlloca(i64Ty, nullptr, "row_idx");
+    builder.CreateStore(ConstantInt::get(i64Ty, 0), idxAlloca);
+    builder.CreateBr(loopBB);
+
+    builder.SetInsertPoint(loopBB);
+    Value *idx = builder.CreateLoad(i64Ty, idxAlloca, "idx");
+    Value *cond = builder.CreateICmpSLT(idx, rows, "row_cond");
+    builder.CreateCondBr(cond, bodyBB, afterBB);
+
+    builder.SetInsertPoint(bodyBB);
+    // Allocate inner row: cols * sizeof(elemType)
+    uint64_t elemSize = builder.GetInsertBlock()
+                            ->getParent()
+                            ->getParent()
+                            ->getDataLayout()
+                            .getTypeAllocSize(elemType);
+    Value *elemSizeVal = ConstantInt::get(i64Ty, elemSize);
+    Value *rowBytes = builder.CreateMul(cols, elemSizeVal, "row_bytes");
+    Value *rowMem = builder.CreateCall(mallocF, {rowBytes}, "row_mem");
+
+    Value *outerElemPtr =
+        builder.CreateGEP(innerStructTy, outerMem, idx, "outer_elem");
+    Value *lenField = builder.CreateStructGEP(innerStructTy, outerElemPtr, 0);
+    builder.CreateStore(cols, lenField);
+    Value *dataField = builder.CreateStructGEP(innerStructTy, outerElemPtr, 1);
+    builder.CreateStore(rowMem, dataField);
+
+    Value *nextIdx =
+        builder.CreateAdd(idx, ConstantInt::get(i64Ty, 1), "next_idx");
+    builder.CreateStore(nextIdx, idxAlloca);
+    builder.CreateBr(loopBB);
+
+    builder.SetInsertPoint(afterBB);
+
+    AllocaInst *outerAlloca =
+        builder.CreateAlloca(outerStructTy, nullptr, name);
+    builder.CreateStore(rows,
+                        builder.CreateStructGEP(outerStructTy, outerAlloca, 0));
+    builder.CreateStore(outerMem,
+                        builder.CreateStructGEP(outerStructTy, outerAlloca, 1));
+    return outerAlloca;
   }
 
   static Value *getArrayLength(IRBuilder<> &builder, Value *arrayStruct,
@@ -287,7 +395,6 @@ public:
     return builder.CreateExtractValue(loadedArray, {0}, "length");
   }
 
-  // Extract the raw char* data pointer from a string struct alloca
   static Value *getStringDataPtr(IRBuilder<> &builder, LLVMContext &ctx,
                                  Value *strAlloca) {
     StructType *stringTy = StructType::getTypeByName(ctx, "string");
@@ -315,6 +422,8 @@ private:
       return "f32";
     if (ty->isDoubleTy())
       return "f64";
+    if (auto *st = dyn_cast<StructType>(ty))
+      return st->getName().str();
     return "unknown";
   }
 
@@ -333,7 +442,7 @@ private:
 };
 
 //------------------------------------------------------------------------------
-// String Operations
+// String Operations  (unchanged from original)
 //------------------------------------------------------------------------------
 
 class StringOperations {
@@ -363,26 +472,21 @@ public:
 
     builder.CreateCall(memcpyF,
                        {newMem, dataPtr, length, ConstantInt::getFalse(ctx)});
-
-    // Null terminator
     Value *nullPtr = builder.CreateGEP(Type::getInt8Ty(ctx), newMem, length);
     builder.CreateStore(ConstantInt::get(Type::getInt8Ty(ctx), 0), nullPtr);
 
     StructType *stringTy = getStringType(ctx);
     AllocaInst *stringStruct =
         builder.CreateAlloca(stringTy, nullptr, "string");
-
     builder.CreateStore(newMem,
                         builder.CreateStructGEP(stringTy, stringStruct, 0));
     builder.CreateStore(length,
                         builder.CreateStructGEP(stringTy, stringStruct, 1));
     builder.CreateStore(size,
                         builder.CreateStructGEP(stringTy, stringStruct, 2));
-
     return stringStruct;
   }
 
-  // Concatenate two string struct allocas → new string struct alloca
   static Value *concatStrings(IRBuilder<> &builder, LLVMContext &ctx,
                               Value *leftStruct, Value *rightStruct) {
     StructType *stringTy = getStringType(ctx);
@@ -409,14 +513,12 @@ public:
       return nullptr;
 
     Value *newMem = builder.CreateCall(mallocF, {totalSize}, "concat_alloc");
-
     builder.CreateCall(memcpyF,
                        {newMem, leftData, leftLen, ConstantInt::getFalse(ctx)});
     Value *rightStart =
         builder.CreateGEP(Type::getInt8Ty(ctx), newMem, leftLen);
     builder.CreateCall(
         memcpyF, {rightStart, rightData, rightLen, ConstantInt::getFalse(ctx)});
-
     Value *nullPtr = builder.CreateGEP(Type::getInt8Ty(ctx), newMem, totalLen);
     builder.CreateStore(ConstantInt::get(Type::getInt8Ty(ctx), 0), nullPtr);
 
@@ -428,33 +530,24 @@ public:
                         builder.CreateStructGEP(stringTy, resultStruct, 1));
     builder.CreateStore(totalSize,
                         builder.CreateStructGEP(stringTy, resultStruct, 2));
-
     return resultStruct;
   }
 
-  // Convert any value to a string struct alloca
   static Value *valueToString(IRBuilder<> &builder, LLVMContext &ctx,
                               Value *val) {
     Type *ty = val->getType();
-
     if (TypeResolver::isString(ty))
-      return val; // already a string struct alloca
-
+      return val;
     if (ty->isIntegerTy())
       return intToString(builder, ctx, val);
-
     if (ty->isFloatingPointTy())
       return floatToString(builder, ctx, val);
-
-    // Opaque pointer — assume null-terminated char*
     if (ty->isPointerTy()) {
       Value *len = getCStringLength(builder, ctx, val);
       return createStringFromParts(builder, ctx, val, len);
     }
-
     if (TypeResolver::isArrayType(ty))
       return createStringFromLiteral(builder, ctx, "[array]");
-
     return createStringFromLiteral(builder, ctx, "[unprintable]");
   }
 
@@ -531,14 +624,11 @@ private:
     Type *i64Ty = Type::getInt64Ty(ctx);
     if (val->getType()->getIntegerBitWidth() < 64)
       val = builder.CreateSExt(val, i64Ty, "int_ext");
-
     Value *fmtPtr = builder.CreateGlobalString("%lld", "fmt");
     llvm::ArrayType *bufferTy = llvm::ArrayType::get(Type::getInt8Ty(ctx), 32);
     AllocaInst *buffer = builder.CreateAlloca(bufferTy, nullptr, "int_buf");
-
     llvm::Function *sprintfF = getSprintfFunction(builder, ctx);
     builder.CreateCall(sprintfF, {buffer, fmtPtr, val});
-
     Value *len = getCStringLength(builder, ctx, buffer);
     return createStringFromParts(builder, ctx, buffer, len);
   }
@@ -547,22 +637,23 @@ private:
                               Value *val) {
     if (val->getType()->isFloatTy())
       val = builder.CreateFPExt(val, Type::getDoubleTy(ctx), "f2d");
-
     Value *fmtPtr = builder.CreateGlobalString("%g", "fmt");
     llvm::ArrayType *bufferTy = llvm::ArrayType::get(Type::getInt8Ty(ctx), 64);
     AllocaInst *buffer = builder.CreateAlloca(bufferTy, nullptr, "float_buf");
-
     llvm::Function *sprintfF = getSprintfFunction(builder, ctx);
     builder.CreateCall(sprintfF, {buffer, fmtPtr, val});
-
     Value *len = getCStringLength(builder, ctx, buffer);
     return createStringFromParts(builder, ctx, buffer, len);
   }
 };
 
+//------------------------------------------------------------------------------
+// Printf interpolation helpers (unchanged)
+//------------------------------------------------------------------------------
+
 struct FmtArg {
-  std::string spec; // e.g. "%s", "%lld", "%g"
-  Value *value;     // the actual LLVM value to pass to printf
+  std::string spec;
+  Value *value;
 };
 
 static Value *evalInterpolation(const std::string &inner, LLVMContext &ctx,
@@ -570,7 +661,7 @@ static Value *evalInterpolation(const std::string &inner, LLVMContext &ctx,
                                 const std::map<std::string, VarInfo> &vars) {
   bool isSimpleIdent = !inner.empty();
   for (char c : inner)
-    if (!std::isalnum((unsigned char)c) && c != '_') {
+    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
       isSimpleIdent = false;
       break;
     }
@@ -580,13 +671,12 @@ static Value *evalInterpolation(const std::string &inner, LLVMContext &ctx,
     if (it != vars.end() && !it->second.isMoved) {
       if (TypeResolver::isString(it->second.type) ||
           TypeResolver::isArrayType(it->second.type))
-        return it->second.alloca;
-      return builder.CreateLoad(it->second.type, it->second.alloca,
+        return it->second.allocaInst;
+      return builder.CreateLoad(it->second.type, it->second.allocaInst,
                                 inner + "_load");
     }
     return nullptr;
   }
-
   try {
     size_t pos = 0;
     long long v = std::stoll(inner, &pos);
@@ -594,8 +684,6 @@ static Value *evalInterpolation(const std::string &inner, LLVMContext &ctx,
       return ConstantInt::get(Type::getInt32Ty(ctx), v);
   } catch (...) {
   }
-
-  // Try float literal
   try {
     size_t pos = 0;
     double v = std::stod(inner, &pos);
@@ -603,44 +691,32 @@ static Value *evalInterpolation(const std::string &inner, LLVMContext &ctx,
       return ConstantFP::get(Type::getDoubleTy(ctx), v);
   } catch (...) {
   }
-
   return nullptr;
 }
 
-// Process the raw string, returning a printf-style format string and populating
-// outArgs with (format-specifier, value) pairs.
 static std::string processPrintfString(
     const std::string &raw, LLVMContext &ctx, IRBuilder<> &builder,
     const std::map<std::string, VarInfo> &vars, std::vector<FmtArg> &outArgs) {
   std::string result;
   size_t i = 0;
-
   while (i < raw.size()) {
-    // Escaped {: \{ → literal {
     if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '{') {
       result += '{';
       i += 2;
       continue;
     }
-
     if (raw[i] != '{') {
-      // Escape any literal % for printf
       if (raw[i] == '%')
         result += '%';
       result += raw[i++];
       continue;
     }
-
     if (i + 1 < raw.size() && raw[i + 1] == '{') {
       result += '{';
       i += 2;
       continue;
     }
-
-    // Find matching }
-    size_t start = i + 1;
-    size_t depth = 1;
-    size_t j = start;
+    size_t start = i + 1, depth = 1, j = start;
     while (j < raw.size() && depth > 0) {
       if (raw[j] == '{')
         ++depth;
@@ -655,25 +731,11 @@ static std::string processPrintfString(
       result += raw[i++];
       continue;
     }
-
     std::string inner = raw.substr(start, j - start);
     Value *val = evalInterpolation(inner, ctx, builder, vars);
-
     if (val) {
       Type *ty = val->getType();
-
-      bool valIsString = false;
-      // if (isSimpleIdent) {
-      //  auto vit = vars.find(inner);
-      // if (vit != vars.end())
-      // valIsString = TypeResolver::isString(vit->second.type);
-      //}
-
-      if (valIsString) {
-        Value *dataPtr = TypeResolver::getStringDataPtr(builder, ctx, val);
-        outArgs.push_back({"%s", dataPtr});
-        result += "%s";
-      } else if (ty->isIntegerTy(1)) {
+      if (ty->isIntegerTy(1)) {
         Value *trueStr = builder.CreateGlobalString("true", "bool_t");
         Value *falseStr = builder.CreateGlobalString("false", "bool_f");
         Value *selected =
@@ -703,10 +765,8 @@ static std::string processPrintfString(
     } else {
       result += '{' + inner + '}';
     }
-
     i = j + 1;
   }
-
   return result;
 }
 
@@ -714,9 +774,7 @@ static Value *
 evaluateInterpolatedStringLiteral(const std::string &raw, LLVMContext &ctx,
                                   IRBuilder<> &builder,
                                   const std::map<std::string, VarInfo> &vars) {
-
   Value *result = StringOperations::createStringFromLiteral(builder, ctx, "");
-
   size_t i = 0;
   std::string literal_chunk;
 
@@ -730,29 +788,21 @@ evaluateInterpolatedStringLiteral(const std::string &raw, LLVMContext &ctx,
   };
 
   while (i < raw.size()) {
-    // \{ → literal {
     if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '{') {
       literal_chunk += '{';
       i += 2;
       continue;
     }
-
     if (raw[i] != '{') {
       literal_chunk += raw[i++];
       continue;
     }
-
-    // {{ → literal {
     if (i + 1 < raw.size() && raw[i + 1] == '{') {
       literal_chunk += '{';
       i += 2;
       continue;
     }
-
-    // Find }
-    size_t start = i + 1;
-    size_t depth = 1;
-    size_t j = start;
+    size_t start = i + 1, depth = 1, j = start;
     while (j < raw.size() && depth > 0) {
       if (raw[j] == '{')
         ++depth;
@@ -767,22 +817,17 @@ evaluateInterpolatedStringLiteral(const std::string &raw, LLVMContext &ctx,
       literal_chunk += raw[i++];
       continue;
     }
-
     std::string inner = raw.substr(start, j - start);
     Value *val = evalInterpolation(inner, ctx, builder, vars);
-
     if (val) {
       flushLiteral();
-      // Convert val to string struct
       Value *strVal = StringOperations::valueToString(builder, ctx, val);
       result = StringOperations::concatStrings(builder, ctx, result, strVal);
     } else {
       literal_chunk += '{' + inner + '}';
     }
-
     i = j + 1;
   }
-
   flushLiteral();
   return result;
 }
@@ -790,34 +835,6 @@ evaluateInterpolatedStringLiteral(const std::string &raw, LLVMContext &ctx,
 //------------------------------------------------------------------------------
 // CodeGenerator Implementation
 //------------------------------------------------------------------------------
-
-void CodeGenerator::declareExternalFunctions() {
-  Type *ptrTy = PointerType::get(context, 0);
-  Type *i64Ty = Type::getInt64Ty(context);
-  Type *i32Ty = Type::getInt32Ty(context);
-  Type *i1Ty = Type::getInt1Ty(context);
-  Type *voidTy = Type::getVoidTy(context);
-
-  auto declare = [&](const std::string &name, FunctionType *ft,
-                     bool noUnwind = false) {
-    if (!module->getFunction(name)) {
-      auto *f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
-                                       name, *module);
-      if (noUnwind)
-        f->addFnAttr(Attribute::NoUnwind);
-    }
-  };
-
-  declare("sprintf", FunctionType::get(i32Ty, {ptrTy, ptrTy}, true), true);
-  declare("printf", FunctionType::get(i32Ty, {ptrTy}, true), true);
-  declare("strlen", FunctionType::get(i64Ty, {ptrTy}, false), true);
-  declare("strcpy", FunctionType::get(ptrTy, {ptrTy, ptrTy}, false), true);
-  declare("strcat", FunctionType::get(ptrTy, {ptrTy, ptrTy}, false), true);
-  declare("malloc", FunctionType::get(ptrTy, {i64Ty}, false), true);
-  declare("free", FunctionType::get(voidTy, {ptrTy}, false), true);
-  declare("llvm.memcpy.p0.p0.i64",
-          FunctionType::get(voidTy, {ptrTy, ptrTy, i64Ty, i1Ty}, false), true);
-}
 
 CodeGenerator::CodeGenerator()
     : module(std::make_unique<Module>("nexus", context)), builder(context) {
@@ -829,13 +846,47 @@ Value *CodeGenerator::logError(const char *msg) {
   return nullptr;
 }
 
+//------------------------------------------------------------------------------
+// Array expressions
+//------------------------------------------------------------------------------
+
 Value *CodeGenerator::visitNewArray(const NewArrayExpr &expr) {
-  Type *elemType =
-      TypeResolver::getLLVMType(context, expr.arrayType.elementType);
+  // Determine base element type from the innermost name
+  // For "array.array.i32" dims=2, for "array.i32" dims=1
+  const std::string &typeName = expr.arrayType.elementType.token.getWord();
+  int dims = expr.arrayType.dimensions;
+
+  if (dims == 2 && expr.sizes.size() >= 2) {
+    // 2D: strip "array.array." to get base element type
+    std::string baseTypeName = typeName;
+    if (baseTypeName.substr(0, 12) == "array.array.")
+      baseTypeName = baseTypeName.substr(12);
+    else if (baseTypeName.substr(0, 6) == "array.")
+      baseTypeName = baseTypeName.substr(6);
+    Identifier baseId{Token{TokenKind::TOK_IDENTIFIER, baseTypeName, 0, 0}};
+    Type *elemType = TypeResolver::getLLVMType(context, baseId);
+    if (!elemType)
+      return logError("Unknown 2D array element type");
+
+    Value *rows = codegen(*expr.sizes[0]);
+    Value *cols = codegen(*expr.sizes[1]);
+    if (!rows || !cols)
+      return logError("Failed to codegen 2D array dimensions");
+
+    return TypeResolver::createArray2DAlloca(builder, elemType, rows, cols,
+                                             "arr2d");
+  }
+
+  // 1D
+  std::string baseTypeName = typeName;
+  if (baseTypeName.substr(0, 6) == "array.")
+    baseTypeName = baseTypeName.substr(6);
+  Identifier baseId{Token{TokenKind::TOK_IDENTIFIER, baseTypeName, 0, 0}};
+  Type *elemType = TypeResolver::getLLVMType(context, baseId);
   if (!elemType)
     return logError("Unknown array element type");
 
-  Value *size = codegen(*expr.size);
+  Value *size = codegen(*expr.sizes[0]);
   if (!size)
     return logError("Failed to codegen array size");
 
@@ -848,12 +899,18 @@ Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &expr) {
   if (it == namedValues.end())
     return logError(("Unknown array: " + arrName).c_str());
 
-  StructType *arrStructTy = dyn_cast<StructType>(it->second.type);
+  // Dereference borrow-ref if needed
+  Value *arrAlloca = it->second.allocaInst;
+  Type *arrTy = it->second.type;
+  if (it->second.isReference) {
+    arrAlloca = builder.CreateLoad(arrTy, arrAlloca, arrName + "_ref");
+  }
+
+  StructType *arrStructTy = dyn_cast<StructType>(arrTy);
   if (!arrStructTy || !TypeResolver::isArrayType(arrStructTy))
     return logError(("Not an array: " + arrName).c_str());
 
-  Value *loadedStruct =
-      builder.CreateLoad(arrStructTy, it->second.alloca, "arr_load");
+  Value *loadedStruct = builder.CreateLoad(arrStructTy, arrAlloca, "arr_load");
   Value *dataPtr = builder.CreateExtractValue(loadedStruct, {1}, "data_ptr");
 
   Value *idx = codegen(*expr.index);
@@ -862,38 +919,158 @@ Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &expr) {
   if (idx->getType()->isIntegerTy(32))
     idx = builder.CreateSExt(idx, Type::getInt64Ty(context), "idx_ext");
 
-  StringRef structName = arrStructTy->getName();
-  std::string elemTypeName = structName.substr(6).str();
-  Identifier elemId{Token{TokenKind::TOK_IDENTIFIER, elemTypeName, 0, 0}};
-  Type *elemType = TypeResolver::getLLVMType(context, elemId);
+  Type *elemType = TypeResolver::getArrayElemType(context, arrStructTy);
   if (!elemType)
     return logError("Cannot resolve array element type for indexing");
 
   Value *elemPtr = builder.CreateGEP(elemType, dataPtr, idx, "elem_ptr");
-  // Composite element types (nested arrays, strings) are reference types
   if (TypeResolver::isArrayType(elemType) || TypeResolver::isString(elemType))
     return elemPtr;
   return builder.CreateLoad(elemType, elemPtr, "elem");
 }
 
-Value *CodeGenerator::visitArrayLength(const ArrayLengthExpr &expr) {
+// 2D index: arr[row][col]
+Value *CodeGenerator::visitArray2DIndex(const Array2DIndexExpr &expr) {
   std::string arrName = expr.array.token.getWord();
   auto it = namedValues.find(arrName);
   if (it == namedValues.end())
     return logError(("Unknown array: " + arrName).c_str());
 
-  StructType *arrStructTy = dyn_cast<StructType>(it->second.type);
-  if (!arrStructTy || !TypeResolver::isArrayType(arrStructTy))
-    return logError(("Not an array: " + arrName).c_str());
+  StructType *outerStructTy = dyn_cast<StructType>(it->second.type);
+  if (!outerStructTy || !TypeResolver::isArrayType(outerStructTy))
+    return logError(("Not a 2D array: " + arrName).c_str());
 
-  Value *loadedStruct =
-      builder.CreateLoad(arrStructTy, it->second.alloca, "arr_load");
-  return builder.CreateExtractValue(loadedStruct, {0}, "length");
+  // outerStructTy = "array.array.T" → inner struct = "array.T"
+  Type *innerElemTy = TypeResolver::getArrayElemType(context, outerStructTy);
+  if (!innerElemTy)
+    return logError("Cannot resolve inner array type");
+
+  StructType *innerStructTy = dyn_cast<StructType>(innerElemTy);
+  if (!innerStructTy)
+    return logError("Inner type is not a struct");
+
+  // Base element type
+  Type *elemType = TypeResolver::getArrayElemType(context, innerStructTy);
+  if (!elemType)
+    return logError("Cannot resolve element type");
+
+  // Load outer struct
+  Value *outerLoaded =
+      builder.CreateLoad(outerStructTy, it->second.allocaInst, "outer_load");
+  Value *outerData = builder.CreateExtractValue(outerLoaded, {1}, "outer_data");
+
+  // Get row ptr
+  Value *row = codegen(*expr.rowIndex);
+  if (!row)
+    return logError("Failed to codegen row index");
+  if (row->getType()->isIntegerTy(32))
+    row = builder.CreateSExt(row, Type::getInt64Ty(context), "row_ext");
+
+  Value *rowStructPtr =
+      builder.CreateGEP(innerStructTy, outerData, row, "row_struct");
+
+  // Load inner struct for this row
+  Value *innerLoaded =
+      builder.CreateLoad(innerStructTy, rowStructPtr, "inner_load");
+  Value *innerData = builder.CreateExtractValue(innerLoaded, {1}, "inner_data");
+
+  // Get element
+  Value *col = codegen(*expr.colIndex);
+  if (!col)
+    return logError("Failed to codegen col index");
+  if (col->getType()->isIntegerTy(32))
+    col = builder.CreateSExt(col, Type::getInt64Ty(context), "col_ext");
+
+  Value *elemPtr = builder.CreateGEP(elemType, innerData, col, "elem_ptr");
+  if (TypeResolver::isArrayType(elemType) || TypeResolver::isString(elemType))
+    return elemPtr;
+  return builder.CreateLoad(elemType, elemPtr, "elem");
+}
+
+Value *
+CodeGenerator::visitArray2DIndexAssign(const Array2DIndexAssignExpr &expr) {
+  std::string arrName = expr.array.token.getWord();
+  auto it = namedValues.find(arrName);
+  if (it == namedValues.end())
+    return logError(("Unknown array: " + arrName).c_str());
+
+  StructType *outerStructTy = dyn_cast<StructType>(it->second.type);
+  if (!outerStructTy || !TypeResolver::isArrayType(outerStructTy))
+    return logError(("Not a 2D array: " + arrName).c_str());
+
+  Type *innerElemTy = TypeResolver::getArrayElemType(context, outerStructTy);
+  StructType *innerStructTy = dyn_cast<StructType>(innerElemTy);
+  if (!innerStructTy)
+    return logError("Inner type is not a struct");
+
+  Type *elemType = TypeResolver::getArrayElemType(context, innerStructTy);
+  if (!elemType)
+    return logError("Cannot resolve element type");
+
+  Value *outerLoaded =
+      builder.CreateLoad(outerStructTy, it->second.allocaInst, "outer_load");
+  Value *outerData = builder.CreateExtractValue(outerLoaded, {1}, "outer_data");
+
+  Value *row = codegen(*expr.rowIndex);
+  if (row->getType()->isIntegerTy(32))
+    row = builder.CreateSExt(row, Type::getInt64Ty(context), "row_ext");
+
+  Value *rowStructPtr =
+      builder.CreateGEP(innerStructTy, outerData, row, "row_struct");
+  Value *innerLoaded =
+      builder.CreateLoad(innerStructTy, rowStructPtr, "inner_load");
+  Value *innerData = builder.CreateExtractValue(innerLoaded, {1}, "inner_data");
+
+  Value *col = codegen(*expr.colIndex);
+  if (col->getType()->isIntegerTy(32))
+    col = builder.CreateSExt(col, Type::getInt64Ty(context), "col_ext");
+
+  Value *val = codegen(*expr.value);
+  if (!val)
+    return logError("Failed to codegen assigned value");
+  val = TypeResolver::convertToType(builder, val, elemType);
+
+  Value *elemPtr = builder.CreateGEP(elemType, innerData, col, "elem_ptr");
+  builder.CreateStore(val, elemPtr);
+  return val;
+}
+
+Value *CodeGenerator::visitLengthProperty(const LengthPropertyExpr &expr) {
+  std::string name = expr.name.token.getWord();
+  auto it = namedValues.find(name);
+  if (it == namedValues.end())
+    return logError(("Unknown variable: " + name).c_str());
+
+  if (TypeResolver::isArrayType(it->second.type)) {
+    Value *loaded = builder.CreateLoad(it->second.type, it->second.allocaInst);
+    return builder.CreateExtractValue(loaded, {0}, "length");
+  } else if (TypeResolver::isString(it->second.type)) {
+    Value *loaded = builder.CreateLoad(it->second.type, it->second.allocaInst);
+    return builder.CreateExtractValue(loaded, {1}, "str_len");
+  }
+
+  return logError("Length property not applicable to this type");
 }
 
 //------------------------------------------------------------------------------
 // Expression Code Generation
 //------------------------------------------------------------------------------
+
+Value *CodeGenerator::visitStringText(const StringTextExpr &expr) {
+  std::string varName = expr.name.token.getWord();
+  auto it = namedValues.find(varName);
+  if (it == namedValues.end())
+    return logError(("Unknown string variable: " + varName).c_str());
+
+  Type *varType = it->second.type;
+  if (!TypeResolver::isString(varType))
+    return logError(("Variable '" + varName + "' is not a string").c_str());
+
+  StructType *stringTy = cast<StructType>(varType);
+  Value *loadedStr =
+      builder.CreateLoad(stringTy, it->second.allocaInst, varName + "_load");
+  return builder.CreateExtractValue(loadedStr, {0}, varName + ".text_ptr");
+}
 
 Value *CodeGenerator::visitIdentifier(const IdentExpr &expr) {
   std::string name = expr.name.token.getWord();
@@ -902,10 +1079,28 @@ Value *CodeGenerator::visitIdentifier(const IdentExpr &expr) {
     return logError(("Unknown variable: " + name).c_str());
   if (it->second.isMoved)
     return logError(("Use of moved value: " + name).c_str());
+
+  if (it->second.isReference) {
+    // Load the pointer stored in the alloca (pointer to the actual value)
+    Value *refPtr = builder.CreateLoad(PointerType::get(context, 0),
+                                       it->second.allocaInst, name + "_ref");
+
+    Type *pointeeTy = it->second.pointeeType; // actual type being referenced
+    if (!pointeeTy)
+      pointeeTy = it->second.type;
+
+    if (TypeResolver::isString(pointeeTy) ||
+        TypeResolver::isArrayType(pointeeTy))
+      return refPtr;
+    return builder.CreateLoad(pointeeTy, refPtr, name + "_deref");
+  }
+
   if (TypeResolver::isString(it->second.type) ||
       TypeResolver::isArrayType(it->second.type))
-    return it->second.alloca;
-  return builder.CreateLoad(it->second.type, it->second.alloca, name + "_load");
+    return it->second.allocaInst;
+
+  return builder.CreateLoad(it->second.type, it->second.allocaInst,
+                            name + "_load");
 }
 
 Value *CodeGenerator::visitLiteral(const IntLitExpr &expr) {
@@ -931,11 +1126,9 @@ Value *CodeGenerator::visitLiteral(const StrLitExpr &expr) {
       break;
     }
   }
-
-  if (hasInterp) {
+  if (hasInterp)
     return evaluateInterpolatedStringLiteral(raw, context, builder,
                                              namedValues);
-  }
 
   std::string processed;
   for (size_t i = 0; i < raw.size(); ++i) {
@@ -968,42 +1161,75 @@ Value *CodeGenerator::promoteToInt(Value *val) {
 }
 
 Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
+  std::function<bool(const Expression &)> isStrExpr =
+      [&](const Expression &e) -> bool {
+    if (dynamic_cast<const StrLitExpr *>(&e))
+      return true;
+    if (auto *id = dynamic_cast<const IdentExpr *>(&e)) {
+      auto it = namedValues.find(id->name.token.getWord());
+      if (it != namedValues.end())
+        return TypeResolver::isString(it->second.type);
+    }
+    if (auto *bin = dynamic_cast<const BinaryExpr *>(&e))
+      if (bin->op == BinaryOp::Add)
+        return isStrExpr(*bin->left) || isStrExpr(*bin->right);
+    return false;
+  };
+
+  bool leftIsStr = isStrExpr(*expr.left);
+  bool rightIsStr = isStrExpr(*expr.right);
+
+  if (expr.op == BinaryOp::Add && (leftIsStr || rightIsStr)) {
+    Value *left = codegen(*expr.left);
+    Value *right = codegen(*expr.right);
+    if (!left || !right)
+      return nullptr;
+    Value *leftStr =
+        leftIsStr ? left
+                  : StringOperations::valueToString(builder, context, left);
+    Value *rightStr =
+        rightIsStr ? right
+                   : StringOperations::valueToString(builder, context, right);
+    return StringOperations::concatStrings(builder, context, leftStr, rightStr);
+  }
+
+  if ((expr.op == BinaryOp::Eq || expr.op == BinaryOp::Ne) &&
+      (leftIsStr || rightIsStr)) {
+    Value *left = codegen(*expr.left);
+    Value *right = codegen(*expr.right);
+    if (!left || !right)
+      return nullptr;
+
+    auto extractCharPtr = [&](Value *v) -> Value * {
+      if (auto *alloca = dyn_cast<AllocaInst>(v)) {
+        Type *allocTy = alloca->getAllocatedType();
+        if (TypeResolver::isString(allocTy)) {
+          StructType *stringTy = cast<StructType>(allocTy);
+          Value *loaded = builder.CreateLoad(stringTy, v, "str_load");
+          return builder.CreateExtractValue(loaded, {0}, "str_data");
+        }
+      }
+      return v;
+    };
+
+    Value *leftPtr = extractCharPtr(left);
+    Value *rightPtr = extractCharPtr(right);
+
+    llvm::Function *strcmpF = module->getFunction("strcmp");
+    if (!strcmpF)
+      return logError("strcmp not found");
+
+    Value *cmp = builder.CreateCall(strcmpF, {leftPtr, rightPtr}, "strcmp");
+    Value *isZero = builder.CreateICmpEQ(
+        cmp, ConstantInt::get(cmp->getType(), 0), "str_eq");
+    return expr.op == BinaryOp::Eq ? isZero
+                                   : builder.CreateNot(isZero, "str_ne");
+  }
+
   Value *left = codegen(*expr.left);
   Value *right = codegen(*expr.right);
   if (!left || !right)
     return nullptr;
-
-  if (expr.op == BinaryOp::Add) {
-    std::function<bool(const Expression &)> isStrExpr =
-        [&](const Expression &e) -> bool {
-      if (dynamic_cast<const StrLitExpr *>(&e))
-        return true;
-      if (auto *id = dynamic_cast<const IdentExpr *>(&e)) {
-        auto it = namedValues.find(id->name.token.getWord());
-        if (it != namedValues.end())
-          return TypeResolver::isString(it->second.type);
-      }
-      if (auto *bin = dynamic_cast<const BinaryExpr *>(&e)) {
-        if (bin->op == BinaryOp::Add)
-          return isStrExpr(*bin->left) || isStrExpr(*bin->right);
-      }
-      return false;
-    };
-
-    bool leftIsStr = isStrExpr(*expr.left);
-    bool rightIsStr = isStrExpr(*expr.right);
-
-    if (leftIsStr || rightIsStr) {
-      Value *leftStr =
-          leftIsStr ? left
-                    : StringOperations::valueToString(builder, context, left);
-      Value *rightStr =
-          rightIsStr ? right
-                     : StringOperations::valueToString(builder, context, right);
-      return StringOperations::concatStrings(builder, context, leftStr,
-                                             rightStr);
-    }
-  }
 
   if (left->getType()->isIntegerTy() && right->getType()->isIntegerTy()) {
     unsigned lb = left->getType()->getIntegerBitWidth();
@@ -1042,7 +1268,6 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
       return builder.CreateFAdd(left, right, "fadd");
     }
     return builder.CreateAdd(left, right, "add");
-
   case BinaryOp::Sub:
     if (leftFloat || rightFloat) {
       left = promoteToDouble(left);
@@ -1050,7 +1275,6 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
       return builder.CreateFSub(left, right, "fsub");
     }
     return builder.CreateSub(left, right, "sub");
-
   case BinaryOp::Mul:
     if (leftFloat || rightFloat) {
       left = promoteToDouble(left);
@@ -1058,22 +1282,18 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
       return builder.CreateFMul(left, right, "fmul");
     }
     return builder.CreateMul(left, right, "mul");
-
   case BinaryOp::Div:
     left = promoteToDouble(left);
     right = promoteToDouble(right);
     return builder.CreateFDiv(left, right, "fdiv");
-
   case BinaryOp::DivFloor:
     left = promoteToInt(left);
     right = promoteToInt(right);
     return builder.CreateSDiv(left, right, "divfloor");
-
   case BinaryOp::Mod:
     left = promoteToInt(left);
     right = promoteToInt(right);
     return builder.CreateSRem(left, right, "mod");
-
   default:
     return logError("Unknown binary operator");
   }
@@ -1126,18 +1346,23 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &expr) {
   if (it == namedValues.end())
     return logError(("Unknown array: " + arrName).c_str());
 
-  StructType *arrStructTy = dyn_cast<StructType>(it->second.type);
+  // Support borrow-ref arrays
+  Value *arrAlloca = it->second.allocaInst;
+  Type *arrTy = it->second.type;
+  if (it->second.isReference) {
+    arrAlloca = builder.CreateLoad(PointerType::get(context, 0), arrAlloca,
+                                   arrName + "_ref");
+    arrTy = it->second.pointeeType ? it->second.pointeeType : arrTy;
+  }
+
+  StructType *arrStructTy = dyn_cast<StructType>(arrTy);
   if (!arrStructTy || !TypeResolver::isArrayType(arrStructTy))
     return logError(("Not an array: " + arrName).c_str());
 
-  Value *loadedStruct =
-      builder.CreateLoad(arrStructTy, it->second.alloca, "arr_load");
+  Value *loadedStruct = builder.CreateLoad(arrStructTy, arrAlloca, "arr_load");
   Value *dataPtr = builder.CreateExtractValue(loadedStruct, {1}, "data_ptr");
 
-  StringRef structName = arrStructTy->getName();
-  std::string elemTypeName = structName.substr(6).str();
-  Identifier elemId{Token{TokenKind::TOK_IDENTIFIER, elemTypeName, 0, 0}};
-  Type *elemType = TypeResolver::getLLVMType(context, elemId);
+  Type *elemType = TypeResolver::getArrayElemType(context, arrStructTy);
   if (!elemType)
     return logError("Cannot resolve array element type for index assignment");
 
@@ -1151,8 +1376,6 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &expr) {
   if (!val)
     return logError("Failed to codegen assigned value");
 
-  // Composite element types (arrays/strings) come as alloca ptrs; load struct
-  // value
   if (TypeResolver::isArrayType(elemType) || TypeResolver::isString(elemType))
     val = builder.CreateLoad(elemType, val, "elem_val");
   else
@@ -1178,31 +1401,56 @@ Value *CodeGenerator::visitUnary(const UnaryExpr &expr) {
 
 Value *CodeGenerator::visitAssignment(const AssignExpr &expr) {
   std::string targetName = expr.target.token.getWord();
+  auto it = namedValues.find(targetName);
+  if (it == namedValues.end())
+    return logError(("Undeclared variable: " + targetName).c_str());
+
+  // If the target is a borrow-ref param, write through the pointer
+  if (it->second.isReference) {
+    Value *val = codegen(*expr.value);
+    if (!val)
+      return nullptr;
+
+    Type *pointeeTy = it->second.pointeeType;
+    if (!pointeeTy)
+      pointeeTy = it->second.type;
+
+    // Load the reference pointer
+    Value *refPtr =
+        builder.CreateLoad(PointerType::get(context, 0), it->second.allocaInst,
+                           targetName + "_ref");
+
+    if (TypeResolver::isString(pointeeTy) ||
+        TypeResolver::isArrayType(pointeeTy)) {
+      Value *loaded = builder.CreateLoad(pointeeTy, val, "ref_load");
+      builder.CreateStore(loaded, refPtr);
+    } else {
+      val = TypeResolver::convertToType(builder, val, pointeeTy);
+      builder.CreateStore(val, refPtr);
+    }
+    return val;
+  }
+
+  if (it->second.isBorrowed)
+    return logError(("Cannot modify borrowed variable: " + targetName).c_str());
+
   Value *val = codegen(*expr.value);
   if (!val)
     return nullptr;
 
-  auto it = namedValues.find(targetName);
-  if (it == namedValues.end())
-    return logError(("Undeclared variable: " + targetName).c_str());
-  if (it->second.isBorrowed)
-    return logError(("Cannot modify borrowed variable: " + targetName).c_str());
-
   Type *targetType = it->second.type;
 
-  // String/array: val is a ptr to struct; load the struct and store into target
-  // alloca
   if (TypeResolver::isString(targetType) ||
       TypeResolver::isArrayType(targetType)) {
     Value *loaded = builder.CreateLoad(targetType, val, "ref_load");
-    builder.CreateStore(loaded, it->second.alloca);
-    return it->second.alloca;
+    builder.CreateStore(loaded, it->second.allocaInst);
+    return it->second.allocaInst;
   }
 
-  // Auto-widen/convert scalars to target type
+  // Scalar coercions
   if (targetType->isIntegerTy() && val->getType()->isIntegerTy()) {
-    unsigned tb = targetType->getIntegerBitWidth();
-    unsigned sb = val->getType()->getIntegerBitWidth();
+    unsigned tb = targetType->getIntegerBitWidth(),
+             sb = val->getType()->getIntegerBitWidth();
     if (tb > sb)
       val = builder.CreateSExt(val, targetType, "iext");
     else if (tb < sb)
@@ -1217,7 +1465,7 @@ Value *CodeGenerator::visitAssignment(const AssignExpr &expr) {
 
   switch (expr.kind) {
   case AssignKind::Copy:
-    builder.CreateStore(val, it->second.alloca);
+    builder.CreateStore(val, it->second.allocaInst);
     break;
 
   case AssignKind::Move: {
@@ -1232,7 +1480,7 @@ Value *CodeGenerator::visitAssignment(const AssignExpr &expr) {
       return logError(("Already moved: " + sourceName).c_str());
     if (srcIt->second.isBorrowed)
       return logError(("Cannot move borrowed value: " + sourceName).c_str());
-    builder.CreateStore(val, it->second.alloca);
+    builder.CreateStore(val, it->second.allocaInst);
     srcIt->second.isMoved = true;
     break;
   }
@@ -1247,8 +1495,8 @@ Value *CodeGenerator::visitAssignment(const AssignExpr &expr) {
       return logError(("Unknown variable: " + sourceName).c_str());
     if (srcIt->second.isMoved)
       return logError(("Cannot borrow moved value: " + sourceName).c_str());
-    namedValues[targetName] = {srcIt->second.alloca, srcIt->second.type, true,
-                               false};
+    namedValues[targetName] = {srcIt->second.allocaInst, srcIt->second.type,
+                               true, false};
     break;
   }
   }
@@ -1269,11 +1517,33 @@ Value *CodeGenerator::generateIncrementDecrement(const std::string &varName,
   auto it = namedValues.find(varName);
   if (it == namedValues.end())
     return logError(("Unknown variable: " + varName).c_str());
+
+  // Support borrow-ref: modify through pointer
+  if (it->second.isReference) {
+    Type *pointeeTy =
+        it->second.pointeeType ? it->second.pointeeType : it->second.type;
+    Value *refPtr = builder.CreateLoad(PointerType::get(context, 0),
+                                       it->second.allocaInst, varName + "_ref");
+    Value *cur = builder.CreateLoad(pointeeTy, refPtr, "ref_load");
+    Value *result;
+    if (pointeeTy->isFloatingPointTy()) {
+      Value *one = ConstantFP::get(pointeeTy, 1.0);
+      result = isInc ? builder.CreateFAdd(cur, one, "finc")
+                     : builder.CreateFSub(cur, one, "fdec");
+    } else {
+      Value *one = ConstantInt::get(pointeeTy, 1);
+      result = isInc ? builder.CreateAdd(cur, one, "inc")
+                     : builder.CreateSub(cur, one, "dec");
+    }
+    builder.CreateStore(result, refPtr);
+    return result;
+  }
+
   if (it->second.isBorrowed || it->second.isMoved)
     return logError(("Cannot modify " + varName).c_str());
 
   Type *ty = it->second.type;
-  Value *cur = builder.CreateLoad(ty, it->second.alloca, "load_" + varName);
+  Value *cur = builder.CreateLoad(ty, it->second.allocaInst, "load_" + varName);
   Value *result;
   if (ty->isFloatingPointTy()) {
     Value *one = ConstantFP::get(ty, 1.0);
@@ -1284,7 +1554,7 @@ Value *CodeGenerator::generateIncrementDecrement(const std::string &varName,
     result = isInc ? builder.CreateAdd(cur, one, "inc")
                    : builder.CreateSub(cur, one, "dec");
   }
-  builder.CreateStore(result, it->second.alloca);
+  builder.CreateStore(result, it->second.allocaInst);
   return result;
 }
 
@@ -1295,7 +1565,6 @@ Value *CodeGenerator::visitCall(const CallExpr &expr) {
   if ((calleeName == "printf" || rawName == "Printf") &&
       expr.arguments.size() == 1)
     return handlePrintf(expr);
-
   if (rawName == "Print" && expr.arguments.size() == 1)
     return handlePrint(expr);
 
@@ -1306,13 +1575,40 @@ Value *CodeGenerator::visitCall(const CallExpr &expr) {
     return logError("Incorrect number of arguments");
 
   std::vector<Value *> args;
+  size_t paramIdx = 0;
+
+  auto refIt = borrowRefParams.find(calleeName);
+
   for (auto &arg : expr.arguments) {
-    Value *v = codegen(*arg);
-    if (!v)
-      return nullptr;
-    args.push_back(v);
+    bool isBorrowRefParam =
+        (refIt != borrowRefParams.end() && paramIdx < refIt->second.size() &&
+         refIt->second[paramIdx]);
+
+    if (isBorrowRefParam) {
+      auto *identArg = dynamic_cast<const IdentExpr *>(arg.get());
+      if (!identArg)
+        return logError("Borrow-ref parameter requires a variable (identifier) "
+                        "as argument");
+
+      std::string srcName = identArg->name.token.getWord();
+      auto srcIt = namedValues.find(srcName);
+      if (srcIt == namedValues.end())
+        return logError(
+            ("Unknown variable for borrow-ref arg: " + srcName).c_str());
+
+      // Pass the alloca address directly
+      args.push_back(srcIt->second.allocaInst);
+    } else {
+      Value *v = codegen(*arg);
+      if (!v)
+        return nullptr;
+      args.push_back(v);
+    }
+    ++paramIdx;
   }
-  return builder.CreateCall(callee, args, "calltmp");
+
+  bool isVoid = callee->getReturnType()->isVoidTy();
+  return builder.CreateCall(callee, args, isVoid ? "" : "calltmp");
 }
 
 Value *CodeGenerator::handlePrintf(const CallExpr &expr) {
@@ -1333,35 +1629,60 @@ Value *CodeGenerator::handlePrintf(const CallExpr &expr) {
     return logError("printf not declared");
 
   std::vector<Value *> args = {fmtPtr};
-  for (auto &fa : fmtArgs)
+  for (auto &fa : fmtArgs) {
+    if (fa.spec == "%s") {
+      if (auto *structPtr = dyn_cast<AllocaInst>(fa.value)) {
+        if (structPtr->getAllocatedType()->isStructTy() &&
+            structPtr->getAllocatedType()->getStructName() == "string") {
+          StructType *stringTy =
+              cast<StructType>(structPtr->getAllocatedType());
+          Value *loadedStr =
+              builder.CreateLoad(stringTy, structPtr, "str_load");
+          Value *dataPtr =
+              builder.CreateExtractValue(loadedStr, {0}, "str_data");
+          args.push_back(dataPtr);
+          continue;
+        }
+      }
+    }
     args.push_back(fa.value);
-
+  }
   return builder.CreateCall(printfF, args, "printf_ret");
 }
 
 Value *CodeGenerator::handlePrint(const CallExpr &expr) {
-  auto *strArg = dynamic_cast<const StrLitExpr *>(expr.arguments[0].get());
-  if (!strArg)
-    return logError("Print requires string literal");
+  Value *val = codegen(*expr.arguments[0]);
+  if (!val)
+    return logError("Failed to codegen Print argument");
 
-  // Print also supports interpolation; append newline
-  std::string raw = unescapeString(strArg->lit.token.getWord());
-  raw = replaceHexColors(raw) + "\033[0m\n";
-
-  std::vector<FmtArg> fmtArgs;
-  std::string fmt =
-      processPrintfString(raw, context, builder, namedValues, fmtArgs);
-
-  Value *fmtPtr = builder.CreateGlobalString(fmt, ".pfmt");
   llvm::Function *printfF = module->getFunction("printf");
   if (!printfF)
     return logError("printf not declared");
 
-  std::vector<Value *> args = {fmtPtr};
-  for (auto &fa : fmtArgs)
-    args.push_back(fa.value);
+  Value *fmtPtr = builder.CreateGlobalString("%s\033[0m\n", ".pfmt_var");
+  Value *charPtr = nullptr;
 
-  return builder.CreateCall(printfF, args, "print_ret");
+  if (auto *allocaV = dyn_cast<AllocaInst>(val)) {
+    Type *allocTy = allocaV->getAllocatedType();
+    if (TypeResolver::isString(allocTy)) {
+      StructType *stringTy = cast<StructType>(allocTy);
+      Value *loaded = builder.CreateLoad(stringTy, allocaV, "str_load");
+      charPtr = builder.CreateExtractValue(loaded, {0}, "str_data");
+    }
+  }
+
+  if (!charPtr) {
+    Value *strVal = StringOperations::valueToString(builder, context, val);
+    if (auto *allocaV = dyn_cast<AllocaInst>(strVal)) {
+      StructType *stringTy = cast<StructType>(allocaV->getAllocatedType());
+      Value *loaded = builder.CreateLoad(stringTy, allocaV, "str_load");
+      charPtr = builder.CreateExtractValue(loaded, {0}, "str_data");
+    } else {
+      charPtr = strVal;
+    }
+  }
+
+  return builder.CreateCall(printfF, {fmtPtr, charPtr}, "print_ret");
 }
 
 Value *CodeGenerator::codegen(const Expression &expr) {
@@ -1391,10 +1712,16 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitNewArray(*na);
   if (auto *ai = dynamic_cast<const ArrayIndexExpr *>(&expr))
     return visitArrayIndex(*ai);
-  if (auto *al = dynamic_cast<const ArrayLengthExpr *>(&expr))
-    return visitArrayLength(*al);
+  if (auto *ai2 = dynamic_cast<const Array2DIndexExpr *>(&expr))
+    return visitArray2DIndex(*ai2);
+  if (auto *al = dynamic_cast<const LengthPropertyExpr *>(&expr))
+    return visitLengthProperty(*al);
   if (auto *aia = dynamic_cast<const ArrayIndexAssignExpr *>(&expr))
     return visitArrayIndexAssign(*aia);
+  if (auto *aia2 = dynamic_cast<const Array2DIndexAssignExpr *>(&expr))
+    return visitArray2DIndexAssign(*aia2);
+  if (auto *st = dynamic_cast<const StringTextExpr *>(&expr))
+    return visitStringText(*st);
   return logError("Unknown expression type");
 }
 
@@ -1425,13 +1752,15 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &decl) {
   AllocaInst *alloc = builder.CreateAlloca(ty, nullptr, varName);
 
   if (decl.initializer) {
-    if (decl.isMove)
+    if (decl.kind == AssignKind::Move)
       return handleMoveInitialization(decl, varName, ty, alloc);
+    else if (decl.kind == AssignKind::Borrow)
+      return handleBorrowInitialization(decl, varName, alloc);
     else
       return handleCopyInitialization(decl, varName, ty, alloc);
   }
 
-  namedValues[varName] = {alloc, ty, false, false};
+  namedValues[varName] = {alloc, ty, false, false, false, ""};
   return alloc;
 }
 
@@ -1451,8 +1780,8 @@ Value *CodeGenerator::handleMoveInitialization(const VarDecl &decl,
   if (srcIt->second.isBorrowed)
     return logError(("Cannot move borrowed value: " + sourceName).c_str());
 
-  Value *srcVal = builder.CreateLoad(srcIt->second.type, srcIt->second.alloca,
-                                     sourceName + "_load");
+  Value *srcVal = builder.CreateLoad(
+      srcIt->second.type, srcIt->second.allocaInst, sourceName + "_load");
   builder.CreateStore(srcVal, alloc);
   srcIt->second.isMoved = true;
 
@@ -1499,7 +1828,7 @@ Value *CodeGenerator::handleCopyInitialization(const VarDecl &decl,
     return alloc;
   }
 
-  // Type coercions for scalar initializers
+  // Scalar coercions
   if (ty->isIntegerTy() && initVal->getType()->isIntegerTy()) {
     unsigned tb = ty->getIntegerBitWidth(),
              sb = initVal->getType()->getIntegerBitWidth();
@@ -1519,6 +1848,29 @@ Value *CodeGenerator::handleCopyInitialization(const VarDecl &decl,
 
   builder.CreateStore(initVal, alloc);
   namedValues[varName] = {alloc, ty, false, false};
+  return alloc;
+}
+
+Value *CodeGenerator::handleBorrowInitialization(const VarDecl &decl,
+                                                 const std::string &varName,
+                                                 AllocaInst *alloc) {
+  auto *identExpr = dynamic_cast<const IdentExpr *>(decl.initializer.get());
+  if (!identExpr)
+    return logError("Borrow requires variable on right-hand side");
+
+  std::string sourceName = identExpr->name.token.getWord();
+  auto srcIt = namedValues.find(sourceName);
+  if (srcIt == namedValues.end())
+    return logError(("Unknown variable: " + sourceName).c_str());
+  if (srcIt->second.isMoved)
+    return logError(("Cannot borrow moved value: " + sourceName).c_str());
+
+  Value *srcAddr = srcIt->second.allocaInst;
+  builder.CreateStore(srcAddr, alloc);
+  srcIt->second.isBorrowed = true;
+
+  Type *refType = PointerType::get(context, 0);
+  namedValues[varName] = {alloc, refType, false, false, true, sourceName};
   return alloc;
 }
 
@@ -1556,7 +1908,6 @@ Value *CodeGenerator::visitIfStmt(const IfStmt &stmt) {
 
 Value *CodeGenerator::visitWhileStmt(const WhileStmt &stmt) {
   llvm::Function *func = builder.GetInsertBlock()->getParent();
-
   BasicBlock *condBB = BasicBlock::Create(context, "while.cond", func);
   BasicBlock *bodyBB = BasicBlock::Create(context, "while.body");
   BasicBlock *exitBB = BasicBlock::Create(context, "while.end");
@@ -1590,6 +1941,7 @@ Value *CodeGenerator::visitReturn(const Return &stmt) {
       return nullptr;
     builder.CreateRet(v);
   } else {
+    // Explicit void return
     builder.CreateRetVoid();
   }
   return nullptr;
@@ -1613,13 +1965,23 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 
   namedValues.clear();
 
+  // Build parameter type list; borrow-ref params become ptr types
   std::vector<Type *> paramTypes;
+  std::vector<bool> paramIsRef;
   for (const auto &p : func.params) {
     Type *t = TypeResolver::getLLVMType(context, p.type);
     if (!t)
       return nullptr;
-    paramTypes.push_back(t);
+    if (p.isBorrowRef) {
+      // Pass as pointer-to-T so the callee can write back
+      paramTypes.push_back(PointerType::get(context, 0));
+    } else {
+      paramTypes.push_back(t);
+    }
+    paramIsRef.push_back(p.isBorrowRef);
   }
+
+  borrowRefParams[fname] = paramIsRef;
 
   llvm::Function *f = module->getFunction(fname);
   if (!f) {
@@ -1635,18 +1997,41 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   namedValues.clear();
   size_t idx = 0;
   for (auto &arg : f->args()) {
-    const auto &param = func.params[idx++];
+    const auto &param = func.params[idx];
     std::string name = param.name.token.getWord();
-    AllocaInst *alloc = builder.CreateAlloca(arg.getType(), nullptr, name);
-    builder.CreateStore(&arg, alloc);
-    namedValues[name] = {alloc, arg.getType(), false, false};
+
+    if (param.isBorrowRef) {
+      // Alloca to store the incoming pointer
+      AllocaInst *ptrAlloca = builder.CreateAlloca(PointerType::get(context, 0),
+                                                   nullptr, name + "_refptr");
+      builder.CreateStore(&arg, ptrAlloca);
+
+      // Determine the pointee type
+      Type *pointeeTy = TypeResolver::getLLVMType(context, param.type);
+
+      VarInfo vi;
+      vi.allocaInst = ptrAlloca;
+      vi.type = PointerType::get(context, 0); // the stored type is ptr
+      vi.isBorrowed = false;
+      vi.isMoved = false;
+      vi.isReference = true;
+      vi.pointeeType = pointeeTy;
+      vi.sourceName = "";
+      namedValues[name] = vi;
+    } else {
+      AllocaInst *alloc = builder.CreateAlloca(arg.getType(), nullptr, name);
+      builder.CreateStore(&arg, alloc);
+      namedValues[name] = {alloc, arg.getType(), false, false};
+    }
+    ++idx;
   }
 
   codegen(*func.body);
 
+  // Auto-insert terminator if missing
   if (!builder.GetInsertBlock()->getTerminator()) {
     if (retTy->isVoidTy())
-      builder.CreateRetVoid();
+      builder.CreateRetVoid(); // FIX: void return
     else
       builder.CreateRet(ConstantInt::get(retTy, 0));
   }
@@ -1673,15 +2058,18 @@ bool CodeGenerator::generate(const Program &program,
     llvm::Function::Create(printfTy, llvm::Function::ExternalLinkage, "printf",
                            *module);
   }
-
-  declareExternalFunctions();
+  if (!module->getFunction("strcmp")) {
+    auto *strcmpTy = FunctionType::get(
+        Type::getInt32Ty(context),
+        {PointerType::get(context, 0), PointerType::get(context, 0)}, false);
+    llvm::Function::Create(strcmpTy, llvm::Function::ExternalLinkage, "strcmp",
+                           *module);
+  }
 
   for (const auto &f : program.functions) {
     if (!codegen(*f))
       return false;
   }
-
-  module->print(llvm::outs(), nullptr); // debug dump
 
   std::error_code ec;
   raw_fd_ostream out(outputFilename + ".ll", ec, sys::fs::OF_None);
@@ -1689,7 +2077,6 @@ bool CodeGenerator::generate(const Program &program,
     errs() << "Could not open output: " << ec.message() << "\n";
     return false;
   }
-
   module->print(out, nullptr);
   return true;
 }

@@ -12,16 +12,27 @@
 #include <vector>
 
 struct VarInfo {
-  llvm::AllocaInst *alloca;
-  llvm::Type *type;
+  llvm::AllocaInst *allocaInst = nullptr;
+  llvm::Type *type = nullptr;
   bool isBorrowed = false;
   bool isMoved = false;
+  bool isReference = false;
+  llvm::Type *pointeeType = nullptr;
+  std::string sourceName;
+
+  VarInfo() = default;
+
+  VarInfo(llvm::AllocaInst *inst, llvm::Type *t, bool borrowed, bool moved,
+          bool ref = false, std::string src = "")
+      : allocaInst(inst), type(t), isBorrowed(borrowed), isMoved(moved),
+        isReference(ref), pointeeType(nullptr), sourceName(std::move(src)) {}
 };
 
 class CodeGenerator {
 public:
   CodeGenerator();
   bool generate(const Program &program, const std::string &outputFilename);
+  static bool isCStringPointer(llvm::Type *ty);
 
 private:
   // Core LLVM components
@@ -29,22 +40,25 @@ private:
   std::unique_ptr<llvm::Module> module;
   llvm::IRBuilder<> builder;
   std::map<std::string, VarInfo> namedValues;
+  std::map<std::string, std::vector<bool>> borrowRefParams;
 
   // Error handling
   llvm::Value *logError(const char *msg);
-  void declareExternalFunctions();
   llvm::Value *visitNewArray(const NewArrayExpr &expr);
   llvm::Value *visitArrayIndex(const ArrayIndexExpr &expr);
-  llvm::Value *visitArrayLength(const ArrayLengthExpr &expr);
+  llvm::Value *visitLengthProperty(const LengthPropertyExpr &expr);
 
   // Expression visitors
   llvm::Value *visitIdentifier(const IdentExpr &expr);
+  llvm::Value *visitStringText(const StringTextExpr &expr);
   llvm::Value *visitLiteral(const IntLitExpr &expr);
   llvm::Value *visitLiteral(const FloatLitExpr &expr);
   llvm::Value *visitLiteral(const StrLitExpr &expr);
   llvm::Value *visitLiteral(const BoolLitExpr &expr);
   llvm::Value *visitBinary(const BinaryExpr &expr);
   llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &expr);
+  llvm::Value *visitArray2DIndex(const Array2DIndexExpr &expr);
+  llvm::Value *visitArray2DIndexAssign(const Array2DIndexAssignExpr &expr);
   llvm::Value *visitUnary(const UnaryExpr &expr);
   llvm::Value *visitAssignment(const AssignExpr &expr);
   llvm::Value *visitIncrement(const Increment &expr);
@@ -82,6 +96,10 @@ private:
                                         const std::string &varName,
                                         llvm::Type *ty,
                                         llvm::AllocaInst *alloc);
+
+  llvm::Value *handleBorrowInitialization(const VarDecl &decl,
+                                          const std::string &varName,
+                                          llvm::AllocaInst *alloc);
 
   // Print function helpers
   llvm::Value *handlePrintf(const CallExpr &expr);

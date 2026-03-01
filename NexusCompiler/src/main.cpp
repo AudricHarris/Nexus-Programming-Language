@@ -24,8 +24,8 @@ int main(int argc, char *argv[]) {
   std::cout << "Tokenizing Errors : \n";
   Lexer l(code);
   std::vector<Token> lst = l.Tokenize();
-  for (size_t i = 0; i < lst.size(); i++)
-    std::cout << lst[i].toString();
+  // for (size_t i = 0; i < lst.size(); i++)
+  // std::cout << lst[i].toString();
 
   std::cout << "\nParsing Errors : \n";
   Parser parser(lst);
