@@ -1,80 +1,75 @@
 #include "Parser.h"
 #include "../Dictionary/TokenType.h"
 #include "ParserError.h"
-
 #include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
-// -------------------------- //
-//      Private methods       //
-// -------------------------- //
+// ─────────────────────────────────────────────────────────────────────────────
+// Token navigation
+// ─────────────────────────────────────────────────────────────────────────────
 
 const Token &Parser::peek() const {
-  if (this->currentIndex >= this->tokens.size()) {
+  if (currentIndex >= tokens.size()) {
     static const Token EOF_TOKEN{TokenKind::TOK_EOF, "", 0, 0};
     return EOF_TOKEN;
   }
-  return this->tokens[this->currentIndex];
+  return tokens[currentIndex];
 }
 
 const Token &Parser::peekAt(size_t offset) const {
-  size_t idx = this->currentIndex + offset;
-  if (idx >= this->tokens.size()) {
+  size_t idx = currentIndex + offset;
+  if (idx >= tokens.size()) {
     static const Token EOF_TOKEN{TokenKind::TOK_EOF, "", 0, 0};
     return EOF_TOKEN;
   }
-  return this->tokens[idx];
+  return tokens[idx];
 }
 
 const Token Parser::consume() {
-  if (this->currentIndex >= this->tokens.size()) {
+  if (currentIndex >= tokens.size()) {
     static const Token EOF_TOKEN{TokenKind::TOK_EOF, "", 0, 0};
     return EOF_TOKEN;
   }
-  return this->tokens[this->currentIndex++];
+  return tokens[currentIndex++];
 }
 
 bool Parser::match(TokenKind k) {
-  if (this->peek().getKind() == k) {
-    this->consume();
+  if (peek().getKind() == k) {
+    consume();
     return true;
   }
   return false;
 }
 
 bool Parser::check(TokenKind kind) const {
-  return !this->isAtEnd() && peek().getKind() == kind;
+  return !isAtEnd() && peek().getKind() == kind;
 }
 
 Token Parser::expect(TokenKind kind, std::string_view errorMsg) {
-  if (this->peek().getKind() == kind) {
-    return this->consume();
-  }
-
+  if (peek().getKind() == kind)
+    return consume();
   std::string msg;
-  Token tmp(kind, "", 0, 0);
-  msg = "Expected : " + tmp.toString() + ", got : `" + this->peek().getWord() +
-        "`";
-  throw ParseError(this->peek().getLine(), this->peek().getColumn(),
-                   errorMsg.empty() ? msg : std::string(errorMsg));
+  if (errorMsg.empty()) {
+    Token tmp(kind, "", 0, 0);
+    msg = "Expected: " + tmp.toString() + ", got: `" + peek().getWord() + "`";
+  } else {
+    msg = std::string(errorMsg);
+  }
+  throw ParseError(peek().getLine(), peek().getColumn(), msg);
 }
 
 bool Parser::isAtEnd() const {
-  return this->currentIndex >= this->tokens.size() ||
-         this->peek().getKind() == TokenKind::TOK_EOF;
+  return currentIndex >= tokens.size() ||
+         peek().getKind() == TokenKind::TOK_EOF;
 }
-
-// -------------------------- //
-//      protected methods     //
-// -------------------------- //
 
 void Parser::synchronize() {
   consume();
-  while (!this->isAtEnd()) {
-    if (this->peek().getKind() == TokenKind::TOK_SEMI) {
+  while (!isAtEnd()) {
+    if (peek().getKind() == TokenKind::TOK_SEMI) {
       consume();
       return;
     }
@@ -88,140 +83,145 @@ void Parser::synchronize() {
   }
 }
 
-static bool looksLikeType(const Token &tok) {
-  const std::string &w = tok.getWord();
-  return w == "i32" || w == "i64" || w == "f32" || w == "f64" || w == "bool" ||
-         w == "void" || w == "int" || w == "float" || w == "double" ||
-         w == "long" || w == "integer" || w == "string" || w == "str";
+// ─────────────────────────────────────────────────────────────────────────────
+// Type-keyword detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+static bool isScalarTypeName(const std::string &w) {
+  return w == "i32" || w == "i64" || w == "i16" || w == "i8" || w == "f32" ||
+         w == "f64" || w == "bool" || w == "void" || w == "int" ||
+         w == "integer" || w == "long" || w == "short" || w == "float" ||
+         w == "double" || w == "string" || w == "str";
 }
 
-// -------------------------- //
-//      public methods        //
-// -------------------------- //
+static bool looksLikeType(const Token &tok) {
+  return tok.getKind() == TokenKind::TOK_IDENTIFIER &&
+         isScalarTypeName(tok.getWord());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Top-level parse
+// ─────────────────────────────────────────────────────────────────────────────
 
 std::unique_ptr<Program> Parser::parse() {
   auto prog = std::make_unique<Program>();
-
-  while (!this->isAtEnd()) {
+  while (!isAtEnd()) {
     try {
-      auto func = this->parseFunctionDecl();
-      prog->functions.push_back(std::move(func));
-    } catch (const ParseError &e) {
-      this->synchronize();
-    }
-  }
-
-  return prog;
-}
-
-std::unique_ptr<Function> Parser::parseFunctionDecl() {
-  Token nameToken = this->expect(TokenKind::TOK_IDENTIFIER,
-                                 "Expected function name at top level");
-
-  this->expect(TokenKind::TOK_LPAREN, "Expected '(' after function name");
-
-  std::vector<Parameter> params;
-  if (!this->match(TokenKind::TOK_RPAREN)) {
-    do {
-      bool isBorrowRef = false;
-      if ((this->peek().getKind() == TokenKind::TOK_AND)) {
-        this->consume();
-        isBorrowRef = true;
-      }
-
-      Token typeToken =
-          this->expect(TokenKind::TOK_IDENTIFIER, "Expected parameter type");
-      Token nameTokenParam = this->expect(TokenKind::TOK_IDENTIFIER,
-                                          "Expected parameter name after type");
-      Parameter p{Identifier{typeToken}, Identifier{nameTokenParam},
-                  isBorrowRef};
-      params.push_back(std::move(p));
-    } while (match(TokenKind::TOK_COMMA));
-
-    this->expect(TokenKind::TOK_RPAREN, "Expected ')' after parameter list");
-  }
-
-  // Return type (defaults to void)
-  if (this->match(TokenKind::TOK_RETURN_TYPE)) {
-    Token retTypeToken =
-        this->expect(TokenKind::TOK_IDENTIFIER, "expected a type");
-    Identifier returnType = Identifier{retTypeToken};
-    auto body = parseBlock();
-    return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
-                                      std::move(body), returnType);
-  } else {
-    Identifier returnType = Identifier{
-        Token{TokenKind::TOK_IDENTIFIER, "void", nameToken.getLine(), 0}};
-    auto body = parseBlock();
-    return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
-                                      std::move(body), returnType);
-  }
-}
-
-std::unique_ptr<Block> Parser::parseBlock(bool uni) {
-  auto block = std::make_unique<Block>();
-  if (this->check(TokenKind::TOK_LBRACE)) {
-    this->expect(TokenKind::TOK_LBRACE, "Expected `{` at start of block");
-
-    while (!this->check(TokenKind::TOK_RBRACE) && !isAtEnd()) {
-      try {
-        auto stmt = this->parseStatement();
-        if (stmt) {
-          block->statements.push_back(std::move(stmt));
-        }
-      } catch (const ParseError &e) {
-        synchronize();
-      }
-    }
-
-    this->expect(TokenKind::TOK_RBRACE, "Expected `}` to close the block");
-  } else if (uni) {
-    try {
-      auto stmt = this->parseStatement();
-      if (stmt) {
-        block->statements.push_back(std::move(stmt));
-      }
-    } catch (const ParseError &e) {
+      prog->functions.push_back(parseFunctionDecl());
+    } catch (const ParseError &) {
       synchronize();
     }
   }
+  return prog;
+}
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Function declaration
+// ─────────────────────────────────────────────────────────────────────────────
+
+std::unique_ptr<Function> Parser::parseFunctionDecl() {
+  Token nameToken = expect(TokenKind::TOK_IDENTIFIER, "Expected function name");
+  expect(TokenKind::TOK_LPAREN, "Expected '(' after function name");
+
+  std::vector<Parameter> params;
+  if (!match(TokenKind::TOK_RPAREN)) {
+    do {
+      bool isBorrowRef = false, isConst = false;
+      if (peek().getKind() == TokenKind::TOK_AND) {
+        consume();
+        isBorrowRef = true;
+      }
+      if (peek().getKind() == TokenKind::TOK_CONST) {
+        consume();
+        isConst = true;
+      }
+      Token typeTok =
+          expect(TokenKind::TOK_IDENTIFIER, "Expected parameter type");
+      Token nameTok =
+          expect(TokenKind::TOK_IDENTIFIER, "Expected parameter name");
+      params.emplace_back(TypeDesc(Identifier{typeTok}), Identifier{nameTok},
+                          isBorrowRef, isConst);
+    } while (match(TokenKind::TOK_COMMA));
+    expect(TokenKind::TOK_RPAREN, "Expected ')'");
+  }
+
+  if (match(TokenKind::TOK_RETURN_TYPE)) {
+    Token retTok = expect(TokenKind::TOK_IDENTIFIER, "Expected return type");
+    auto body = parseBlock();
+    return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
+                                      std::move(body),
+                                      TypeDesc(Identifier{retTok}));
+  }
+  Token voidTok{TokenKind::TOK_IDENTIFIER, "void", nameToken.getLine(), 0};
+  auto body = parseBlock();
+  return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
+                                    std::move(body),
+                                    TypeDesc(Identifier{voidTok}));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Block
+// ─────────────────────────────────────────────────────────────────────────────
+
+std::unique_ptr<Block> Parser::parseBlock(bool allowSingleStmt) {
+  auto block = std::make_unique<Block>();
+  if (check(TokenKind::TOK_LBRACE)) {
+    expect(TokenKind::TOK_LBRACE, "Expected '{'");
+    while (!check(TokenKind::TOK_RBRACE) && !isAtEnd()) {
+      try {
+        auto s = parseStatement();
+        if (s)
+          block->statements.push_back(std::move(s));
+      } catch (const ParseError &) {
+        synchronize();
+      }
+    }
+    expect(TokenKind::TOK_RBRACE, "Expected '}'");
+  } else if (allowSingleStmt) {
+    try {
+      auto s = parseStatement();
+      if (s)
+        block->statements.push_back(std::move(s));
+    } catch (const ParseError &) {
+      synchronize();
+    }
+  }
   return block;
 }
 
-std::unique_ptr<Statement> Parser::parseStatement() {
-  if (this->match(TokenKind::TOK_RETURN)) {
-    return this->parseReturnStatement();
-  }
-  if (this->match(TokenKind::TOK_IF)) {
-    return this->parseIfStatement();
-  }
-  if (this->match(TokenKind::TOK_WHILE)) {
-    return this->parseWhileLoop();
-  }
+// ─────────────────────────────────────────────────────────────────────────────
+// Statement dispatch
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // -------------------------------------------------------
-  // Array element assignment detection: ident[...][...] =
-  // -------------------------------------------------------
+std::unique_ptr<Statement> Parser::parseStatement() {
+  if (match(TokenKind::TOK_RETURN))
+    return parseReturnStatement();
+  if (match(TokenKind::TOK_IF))
+    return parseIfStatement();
+  if (match(TokenKind::TOK_WHILE))
+    return parseWhileLoop();
+
+  // const var decl
+  if (peek().getKind() == TokenKind::TOK_CONST)
+    return parseVarDeclStatement(AssignKind::Copy);
+
+  // Array element assignment lookahead
   {
     size_t identOff = 0;
-    bool isTypedArrayAssign = false;
-
+    bool typePrefix = false;
     if (peekAt(0).getKind() == TokenKind::TOK_IDENTIFIER &&
-        peekAt(1).getKind() == TokenKind::TOK_LBRACKET) {
+        peekAt(1).getKind() == TokenKind::TOK_LBRACKET)
       identOff = 0;
-    } else if (looksLikeType(peekAt(0)) &&
-               peekAt(1).getKind() == TokenKind::TOK_IDENTIFIER &&
-               peekAt(2).getKind() == TokenKind::TOK_LBRACKET) {
+    else if (looksLikeType(peekAt(0)) &&
+             peekAt(1).getKind() == TokenKind::TOK_IDENTIFIER &&
+             peekAt(2).getKind() == TokenKind::TOK_LBRACKET) {
       identOff = 1;
-      isTypedArrayAssign = true;
+      typePrefix = true;
     }
 
-    if (identOff == 0 || isTypedArrayAssign) {
-      // Scan past first [...]
-      size_t k = identOff + 2;
-      int depth = 1;
-      while (depth > 0 && this->currentIndex + k < this->tokens.size()) {
+    if (identOff == 0 || typePrefix) {
+      size_t k = identOff + 2, depth = 1;
+      while (depth > 0 && currentIndex + k < tokens.size()) {
         TokenKind kk = peekAt(k).getKind();
         if (kk == TokenKind::TOK_LBRACKET)
           ++depth;
@@ -232,407 +232,269 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         else
           break;
       }
-      // k now points at the closing ']' of first dimension
-      // Check if a second '[' follows (2D) or assignment op follows
-      size_t afterFirst = k + 1;
-      if (peekAt(afterFirst).getKind() == TokenKind::TOK_LBRACKET) {
-        // Possible 2D: scan past second [...]
-        size_t k2 = afterFirst + 1;
-        int depth2 = 1;
-        while (depth2 > 0 && this->currentIndex + k2 < this->tokens.size()) {
+      size_t after = k + 1;
+      // 2-D assign
+      if (peekAt(after).getKind() == TokenKind::TOK_LBRACKET) {
+        size_t k2 = after + 1;
+        size_t d2 = 1;
+        while (d2 > 0 && currentIndex + k2 < tokens.size()) {
           TokenKind kk = peekAt(k2).getKind();
           if (kk == TokenKind::TOK_LBRACKET)
-            ++depth2;
+            ++d2;
           else if (kk == TokenKind::TOK_RBRACKET)
-            --depth2;
-          if (depth2 > 0)
+            --d2;
+          if (d2 > 0)
             ++k2;
           else
             break;
         }
-        TokenKind opAfter2D = peekAt(k2 + 1).getKind();
-        if (opAfter2D == TokenKind::TOK_ASSIGN ||
-            opAfter2D == TokenKind::TOK_MOVE ||
-            opAfter2D == TokenKind::TOK_BORROW) {
-          if (isTypedArrayAssign)
-            this->consume();
-          return this->parseArray2DElementAssignStatement();
+        TokenKind op = peekAt(k2 + 1).getKind();
+        if (op == TokenKind::TOK_ASSIGN || op == TokenKind::TOK_MOVE ||
+            op == TokenKind::TOK_BORROW) {
+          if (typePrefix)
+            consume();
+          return parseArray2DElementAssign();
         }
       }
-
-      TokenKind opAfter = peekAt(k + 1).getKind();
-      if (opAfter == TokenKind::TOK_ASSIGN || opAfter == TokenKind::TOK_MOVE ||
-          opAfter == TokenKind::TOK_BORROW) {
-        if (isTypedArrayAssign)
-          this->consume();
-        return this->parseArrayElementAssignStatement();
+      // 1-D assign
+      TokenKind op = peekAt(k + 1).getKind();
+      if (op == TokenKind::TOK_ASSIGN || op == TokenKind::TOK_MOVE ||
+          op == TokenKind::TOK_BORROW) {
+        if (typePrefix)
+          consume();
+        return parseArrayElementAssign();
       }
     }
   }
 
   // Variable declaration
   if (looksLikeType(peekAt(0))) {
-    bool isArrayType2D = peekAt(1).getKind() == TokenKind::TOK_LBRACKET &&
-                         peekAt(2).getKind() == TokenKind::TOK_RBRACKET &&
-                         peekAt(3).getKind() == TokenKind::TOK_LBRACKET &&
-                         peekAt(4).getKind() == TokenKind::TOK_RBRACKET &&
-                         peekAt(5).getKind() == TokenKind::TOK_IDENTIFIER;
+    bool is2D = peekAt(1).getKind() == TokenKind::TOK_LBRACKET &&
+                peekAt(2).getKind() == TokenKind::TOK_RBRACKET &&
+                peekAt(3).getKind() == TokenKind::TOK_LBRACKET &&
+                peekAt(4).getKind() == TokenKind::TOK_RBRACKET &&
+                peekAt(5).getKind() == TokenKind::TOK_IDENTIFIER;
+    bool is1D = !is2D && peekAt(1).getKind() == TokenKind::TOK_LBRACKET &&
+                peekAt(2).getKind() == TokenKind::TOK_RBRACKET &&
+                peekAt(3).getKind() == TokenKind::TOK_IDENTIFIER;
+    bool isScalar =
+        !is1D && !is2D && peekAt(1).getKind() == TokenKind::TOK_IDENTIFIER;
 
-    bool isArrayType1D = !isArrayType2D &&
-                         peekAt(1).getKind() == TokenKind::TOK_LBRACKET &&
-                         peekAt(2).getKind() == TokenKind::TOK_RBRACKET &&
-                         peekAt(3).getKind() == TokenKind::TOK_IDENTIFIER;
-
-    bool isScalarType = !isArrayType1D && !isArrayType2D &&
-                        peekAt(1).getKind() == TokenKind::TOK_IDENTIFIER;
-
-    size_t assignOffset = isArrayType2D ? 6 : (isArrayType1D ? 4 : 2);
-    TokenKind nextOp = peekAt(assignOffset).getKind();
-
-    if (isArrayType2D || isArrayType1D || isScalarType) {
-      if (nextOp == TokenKind::TOK_ASSIGN)
-        return this->parseVarDeclStatement(AssignKind::Copy);
-      if (nextOp == TokenKind::TOK_MOVE)
-        return this->parseVarDeclStatement(AssignKind::Move);
-      if (nextOp == TokenKind::TOK_BORROW)
-        return this->parseVarDeclStatement(AssignKind::Borrow);
-      if (nextOp == TokenKind::TOK_SEMI)
-        throw ParseError(this->peek().getLine(), this->peek().getColumn(),
-                         "Cannot have a null object, Var decl must have value");
+    if (is2D || is1D || isScalar) {
+      size_t opOff = is2D ? 6 : (is1D ? 4 : 2);
+      TokenKind op = peekAt(opOff).getKind();
+      if (op == TokenKind::TOK_ASSIGN)
+        return parseVarDeclStatement(AssignKind::Copy);
+      if (op == TokenKind::TOK_MOVE)
+        return parseVarDeclStatement(AssignKind::Move);
+      if (op == TokenKind::TOK_BORROW)
+        return parseVarDeclStatement(AssignKind::Borrow);
+      if (op == TokenKind::TOK_SEMI)
+        throw ParseError(peek().getLine(), peek().getColumn(),
+                         "Variables must be initialised at declaration");
     }
   }
 
-  auto expr = this->parseExpression();
-  this->expect(TokenKind::TOK_SEMI, "Expected ';' after expression statement");
+  auto expr = parseExpression();
+  expect(TokenKind::TOK_SEMI, "Expected ';'");
   return std::make_unique<ExprStmt>(std::move(expr));
 }
 
-std::unique_ptr<Statement> Parser::parseArrayElementAssignStatement() {
-  Token arrTok = this->consume(); // identifier
-  this->expect(TokenKind::TOK_LBRACKET, "Expected '[' for array index");
-  auto index = this->parseExpression();
-  this->expect(TokenKind::TOK_RBRACKET, "Expected ']' after index");
+// ─────────────────────────────────────────────────────────────────────────────
+// Array assignment helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
-  this->consume(); // TOK_ASSIGN / TOK_MOVE / TOK_BORROW
-
-  auto value = this->parseExpression();
-  this->expect(TokenKind::TOK_SEMI,
-               "Expected ';' after array element assignment");
-
-  Identifier arrIdent{arrTok};
-  auto assignExpr = std::make_unique<ArrayIndexAssignExpr>(
-      arrIdent, std::move(index), std::move(value));
-  return std::make_unique<ExprStmt>(std::move(assignExpr));
+std::unique_ptr<Statement> Parser::parseArrayElementAssign() {
+  Token arrTok = consume();
+  expect(TokenKind::TOK_LBRACKET, "Expected '['");
+  auto index = parseExpression();
+  expect(TokenKind::TOK_RBRACKET, "Expected ']'");
+  consume(); // assignment op
+  auto value = parseExpression();
+  expect(TokenKind::TOK_SEMI, "Expected ';'");
+  auto e = std::make_unique<ArrayIndexAssignExpr>(
+      Identifier{arrTok}, std::move(index), std::move(value));
+  return std::make_unique<ExprStmt>(std::move(e));
 }
 
-// New: parse arr[i][j] = value
-std::unique_ptr<Statement> Parser::parseArray2DElementAssignStatement() {
-  Token arrTok = this->consume(); // identifier
-  this->expect(TokenKind::TOK_LBRACKET, "Expected '[' for row index");
-  auto rowIdx = this->parseExpression();
-  this->expect(TokenKind::TOK_RBRACKET, "Expected ']' after row index");
-  this->expect(TokenKind::TOK_LBRACKET, "Expected '[' for col index");
-  auto colIdx = this->parseExpression();
-  this->expect(TokenKind::TOK_RBRACKET, "Expected ']' after col index");
-
-  this->consume(); // assignment op
-
-  auto value = this->parseExpression();
-  this->expect(TokenKind::TOK_SEMI,
-               "Expected ';' after 2D array element assignment");
-
-  Identifier arrIdent{arrTok};
-  auto assignExpr = std::make_unique<Array2DIndexAssignExpr>(
-      arrIdent, std::move(rowIdx), std::move(colIdx), std::move(value));
-  return std::make_unique<ExprStmt>(std::move(assignExpr));
+std::unique_ptr<Statement> Parser::parseArray2DElementAssign() {
+  Token arrTok = consume();
+  expect(TokenKind::TOK_LBRACKET, "Expected '['");
+  auto row = parseExpression();
+  expect(TokenKind::TOK_RBRACKET, "Expected ']'");
+  expect(TokenKind::TOK_LBRACKET, "Expected '['");
+  auto col = parseExpression();
+  expect(TokenKind::TOK_RBRACKET, "Expected ']'");
+  consume(); // assignment op
+  auto value = parseExpression();
+  expect(TokenKind::TOK_SEMI, "Expected ';'");
+  auto e = std::make_unique<Array2DIndexAssignExpr>(
+      Identifier{arrTok}, std::move(row), std::move(col), std::move(value));
+  return std::make_unique<ExprStmt>(std::move(e));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Control flow
+// ─────────────────────────────────────────────────────────────────────────────
 
 std::unique_ptr<IfStmt> Parser::parseIfStatement() {
-  this->expect(TokenKind::TOK_LPAREN, "Expected '(' to start comparison");
-  auto condition = this->parseExpression();
-  this->expect(TokenKind::TOK_RPAREN, "Expected ')' after comparison");
-  auto thenBlock = this->parseBlock(true);
-
-  std::unique_ptr<Block> elseBlock = nullptr;
-  if (this->match(TokenKind::TOK_ElSE)) {
-    if (this->match(TokenKind::TOK_IF)) {
-      auto elseIf = this->parseIfStatement();
+  expect(TokenKind::TOK_LPAREN, "Expected '('");
+  auto cond = parseExpression();
+  expect(TokenKind::TOK_RPAREN, "Expected ')'");
+  auto thenBlock = parseBlock(true);
+  std::unique_ptr<Block> elseBlock;
+  if (match(TokenKind::TOK_ElSE)) {
+    if (match(TokenKind::TOK_IF)) {
+      auto ei = parseIfStatement();
       elseBlock = std::make_unique<Block>();
-      elseBlock->statements.push_back(std::move(elseIf));
+      elseBlock->statements.push_back(std::move(ei));
     } else {
-      elseBlock = this->parseBlock(true);
+      elseBlock = parseBlock(true);
     }
   }
-
-  return std::make_unique<IfStmt>(std::move(condition), std::move(thenBlock),
+  return std::make_unique<IfStmt>(std::move(cond), std::move(thenBlock),
                                   std::move(elseBlock));
 }
 
 std::unique_ptr<WhileStmt> Parser::parseWhileLoop() {
-  this->expect(TokenKind::TOK_LPAREN, "Expected '(' to start comparison");
-  auto condition = this->parseExpression();
-  this->expect(TokenKind::TOK_RPAREN, "Expected ')' after comparison");
-  auto doBlock = this->parseBlock();
-
-  return std::make_unique<WhileStmt>(std::move(condition), std::move(doBlock));
+  expect(TokenKind::TOK_LPAREN, "Expected '('");
+  auto cond = parseExpression();
+  expect(TokenKind::TOK_RPAREN, "Expected ')'");
+  auto body = parseBlock();
+  return std::make_unique<WhileStmt>(std::move(cond), std::move(body));
 }
 
 std::unique_ptr<Return> Parser::parseReturnStatement() {
   auto ret = std::make_unique<Return>();
-
-  // void return: just a semicolon
-  if (this->match(TokenKind::TOK_SEMI)) {
+  if (match(TokenKind::TOK_SEMI))
     return ret;
-  }
-
-  ret->value = this->parseExpression();
-  this->expect(TokenKind::TOK_SEMI, "Expected ';' after return value");
+  ret->value = parseExpression();
+  expect(TokenKind::TOK_SEMI, "Expected ';'");
   return ret;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Variable declaration:  [const] T [[][]] name (= | <- | &=) expr ;
+// ─────────────────────────────────────────────────────────────────────────────
+
 std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
-  Token firstTok = this->consume(); // type token
-  int arrayDepth = 0;
-
-  // Count [] pairs for array dimensions
-  while (this->peek().getKind() == TokenKind::TOK_LBRACKET) {
-    this->expect(TokenKind::TOK_LBRACKET, "Expected '['");
-    this->expect(TokenKind::TOK_RBRACKET, "Expected ']'");
-    arrayDepth++;
+  bool isConst = false;
+  if (peek().getKind() == TokenKind::TOK_CONST) {
+    consume();
+    isConst = true;
   }
 
-  Token nameTok =
-      this->expect(TokenKind::TOK_IDENTIFIER, "Expected variable name");
+  Token typeTok = consume();
+  int dims = 0;
+  while (peek().getKind() == TokenKind::TOK_LBRACKET) {
+    expect(TokenKind::TOK_LBRACKET, "");
+    expect(TokenKind::TOK_RBRACKET, "");
+    ++dims;
+  }
+  Token nameTok = expect(TokenKind::TOK_IDENTIFIER, "Expected variable name");
 
-  if (this->match(TokenKind::TOK_ASSIGN)) {
+  if (match(TokenKind::TOK_ASSIGN))
     kind = AssignKind::Copy;
-  } else if (this->match(TokenKind::TOK_MOVE)) {
+  else if (match(TokenKind::TOK_MOVE))
     kind = AssignKind::Move;
-  } else if (this->match(TokenKind::TOK_BORROW)) {
+  else if (match(TokenKind::TOK_BORROW))
     kind = AssignKind::Borrow;
-  } else {
-    throw ParseError(this->peek().getLine(), this->peek().getColumn(),
-                     "Expected '=', '<-', or '&=' after variable name");
-  }
+  else
+    throw ParseError(peek().getLine(), peek().getColumn(),
+                     "Expected '=', '<-', or '&='");
 
-  auto init = this->parseExpression();
-  this->expect(TokenKind::TOK_SEMI, "Expected ';' after variable declaration");
+  auto init = parseExpression();
+  expect(TokenKind::TOK_SEMI, "Expected ';'");
 
-  if (arrayDepth > 0) {
-    std::string baseTypeName = firstTok.getWord();
-    // Build nested "array.array.T" name for N-dimensional arrays
-    std::string typeName = baseTypeName;
-    for (int i = 0; i < arrayDepth; i++) {
-      typeName = "array." + typeName;
-    }
-    ArrayType arrType(
-        Identifier{Token{TokenKind::TOK_IDENTIFIER, typeName,
-                         firstTok.getLine(), firstTok.getColumn()}},
-        arrayDepth);
-    return std::make_unique<VarDecl>(arrType, Identifier{nameTok},
-                                     std::move(init), kind,
-                                     kind == AssignKind::Move);
-  } else {
-    return std::make_unique<VarDecl>(Identifier{firstTok}, Identifier{nameTok},
-                                     std::move(init), kind,
-                                     kind == AssignKind::Move);
-  }
+  TypeDesc td(Identifier{Token{TokenKind::TOK_IDENTIFIER, typeTok.getWord(),
+                               typeTok.getLine(), typeTok.getColumn()}},
+              dims, isConst);
+  return std::make_unique<VarDecl>(std::move(td), Identifier{nameTok},
+                                   std::move(init), kind, isConst);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Expressions  (precedence climbing)
+// ─────────────────────────────────────────────────────────────────────────────
 
 std::unique_ptr<Expression> Parser::parseExpression() {
   return parseAssignment();
 }
 
-std::unique_ptr<Expression> Parser::parsePrimary() {
-  Token tok = consume();
-
-  switch (tok.getKind()) {
-  case TokenKind::TOK_INT:
-    return std::make_unique<IntLitExpr>(IntLitExpr{IntegerLiteral{tok}});
-
-  case TokenKind::TOK_FLOAT:
-    return std::make_unique<FloatLitExpr>(FloatLitExpr{FloatLiteral{tok}});
-
-  case TokenKind::TOK_NEW: {
-    this->currentIndex--;
-    return parseNewArray();
-  }
-
-  case TokenKind::TOK_STRING:
-    return std::make_unique<StrLitExpr>(StrLitExpr{StringLiteral{tok}});
-
-  case TokenKind::TOK_CHAR:
-    return std::make_unique<CharLitExpr>(CharLitExpr{CharLiteral{tok}});
-
-  case TokenKind::TOK_BOOL:
-    return std::make_unique<BoolLitExpr>(BoolLitExpr{BoolLiteral{tok}});
-
-  case TokenKind::TOK_IDENTIFIER: {
-    Identifier id{tok};
-
-    if (match(TokenKind::TOK_LPAREN)) {
-      auto call =
-          std::make_unique<CallExpr>(CallExpr{id, std::vector<ExprPtr>()});
-
-      if (!match(TokenKind::TOK_RPAREN)) {
-        do {
-          call->arguments.push_back(parseExpression());
-        } while (match(TokenKind::TOK_COMMA));
-        expect(TokenKind::TOK_RPAREN, "Expected ')' after call arguments");
-      }
-      return call;
-    }
-
-    return std::make_unique<IdentExpr>(IdentExpr{id});
-  }
-
-  default:
-    throw ParseError(tok.getLine(), tok.getColumn(),
-                     "Expected expression, got `" + tok.getWord() + "`");
-  }
-}
-
-std::unique_ptr<Expression> Parser::parseNewArray() {
-  this->expect(TokenKind::TOK_NEW, "Expected 'new' for array allocation");
-
-  Token elemTypeTok =
-      this->expect(TokenKind::TOK_IDENTIFIER, "Expected element type");
-
-  // First dimension
-  this->expect(TokenKind::TOK_LBRACKET, "Expected '[' after array type");
-  auto size1 = parseExpression();
-  this->expect(TokenKind::TOK_RBRACKET, "Expected ']' after array size");
-
-  // Optional second dimension: new T[rows][cols]
-  std::unique_ptr<Expression> size2 = nullptr;
-  if (this->peek().getKind() == TokenKind::TOK_LBRACKET) {
-    this->consume(); // '['
-    size2 = parseExpression();
-    this->expect(TokenKind::TOK_RBRACKET,
-                 "Expected ']' after second dimension");
-  }
-  // Legacy "size[N]" syntax kept for backward compat
-  else if (this->peek().getKind() == TokenKind::TOK_IDENTIFIER &&
-           this->peek().getWord() == "size") {
-    this->consume(); // 'size'
-    this->expect(TokenKind::TOK_LBRACKET, "Expected '[' after size");
-    size2 = parseExpression();
-    this->expect(TokenKind::TOK_RBRACKET,
-                 "Expected ']' after second dimension");
-  }
-
-  std::string baseTypeName = elemTypeTok.getWord();
-  std::vector<ExprPtr> sizes;
-
-  if (size2) {
-    // 2D: array type is "array.array.T"
-    std::string typeName = "array.array." + baseTypeName;
-    ArrayType arrType(
-        Identifier{Token{TokenKind::TOK_IDENTIFIER, typeName,
-                         elemTypeTok.getLine(), elemTypeTok.getColumn()}},
-        2);
-    sizes.push_back(std::move(size1));
-    sizes.push_back(std::move(size2));
-    return std::make_unique<NewArrayExpr>(std::move(arrType), std::move(sizes));
-  } else {
-    // 1D
-    std::string typeName = "array." + baseTypeName;
-    ArrayType arrType(
-        Identifier{Token{TokenKind::TOK_IDENTIFIER, typeName,
-                         elemTypeTok.getLine(), elemTypeTok.getColumn()}},
-        1);
-    sizes.push_back(std::move(size1));
-    return std::make_unique<NewArrayExpr>(std::move(arrType), std::move(sizes));
-  }
-}
-
 std::unique_ptr<Expression> Parser::parseAssignment() {
-  auto left = this->parseEquality();
+  auto left = parseEquality();
 
   if (match(TokenKind::TOK_ASSIGN)) {
-    auto value = parseAssignment();
     if (auto *id = dynamic_cast<IdentExpr *>(left.get())) {
-      return std::make_unique<AssignExpr>(id->name, std::move(value),
+      auto val = parseAssignment();
+      return std::make_unique<AssignExpr>(id->name, std::move(val),
                                           AssignKind::Copy);
     }
     if (auto *ai = dynamic_cast<ArrayIndexExpr *>(left.get())) {
+      auto val = parseAssignment();
       return std::make_unique<ArrayIndexAssignExpr>(
-          ai->array, std::move(ai->index), std::move(value));
+          ai->array, std::move(ai->index), std::move(val));
     }
     if (auto *ai2 = dynamic_cast<Array2DIndexExpr *>(left.get())) {
+      auto val = parseAssignment();
       return std::make_unique<Array2DIndexAssignExpr>(
           ai2->array, std::move(ai2->rowIndex), std::move(ai2->colIndex),
-          std::move(value));
+          std::move(val));
     }
-    throw ParseError(
-        peek().getLine(), peek().getColumn(),
-        "Left-hand side of assignment must be an identifier or array index");
+    throw ParseError(peek().getLine(), peek().getColumn(),
+                     "Invalid assignment target");
   }
-
   if (match(TokenKind::TOK_MOVE)) {
-    auto value = parseAssignment();
     if (auto *id = dynamic_cast<IdentExpr *>(left.get())) {
-      return std::make_unique<AssignExpr>(id->name, std::move(value),
+      auto val = parseAssignment();
+      return std::make_unique<AssignExpr>(id->name, std::move(val),
                                           AssignKind::Move);
     }
     throw ParseError(peek().getLine(), peek().getColumn(),
-                     "Left-hand side of move assignment must be an identifier");
+                     "'<-' requires an identifier");
   }
-
   if (match(TokenKind::TOK_BORROW)) {
-    auto value = parseAssignment();
     if (auto *id = dynamic_cast<IdentExpr *>(left.get())) {
-      return std::make_unique<AssignExpr>(id->name, std::move(value),
+      auto val = parseAssignment();
+      return std::make_unique<AssignExpr>(id->name, std::move(val),
                                           AssignKind::Borrow);
     }
-    throw ParseError(
-        peek().getLine(), peek().getColumn(),
-        "Left-hand side of borrow assignment must be an identifier");
+    throw ParseError(peek().getLine(), peek().getColumn(),
+                     "'&=' requires an identifier");
   }
-
   return left;
 }
 
 std::unique_ptr<Expression> Parser::parseEquality() {
-  auto expr = this->parseComparison();
+  auto expr = parseComparison();
   while (true) {
-    if (this->match(TokenKind::TOK_EQ)) {
-      auto right = this->parseComparison();
+    if (match(TokenKind::TOK_EQ)) {
       expr = std::make_unique<BinaryExpr>(BinaryOp::Eq, std::move(expr),
-                                          std::move(right));
-    } else if (this->match(TokenKind::TOK_NE)) {
-      auto right = this->parseComparison();
+                                          parseComparison());
+    } else if (match(TokenKind::TOK_NE)) {
       expr = std::make_unique<BinaryExpr>(BinaryOp::Ne, std::move(expr),
-                                          std::move(right));
-    } else {
+                                          parseComparison());
+    } else
       break;
-    }
   }
   return expr;
 }
 
 std::unique_ptr<Expression> Parser::parseComparison() {
-  auto expr = this->parseAdditive();
+  auto expr = parseAdditive();
   while (true) {
-    if (this->match(TokenKind::TOK_LT)) {
-      auto right = this->parseAdditive();
-      expr = std::make_unique<BinaryExpr>(BinaryOp::Lt, std::move(expr),
-                                          std::move(right));
-    } else if (this->match(TokenKind::TOK_GT)) {
-      auto right = this->parseAdditive();
-      expr = std::make_unique<BinaryExpr>(BinaryOp::Gt, std::move(expr),
-                                          std::move(right));
-    } else if (this->match(TokenKind::TOK_LE)) {
-      auto right = this->parseAdditive();
-      expr = std::make_unique<BinaryExpr>(BinaryOp::Le, std::move(expr),
-                                          std::move(right));
-    } else if (this->match(TokenKind::TOK_GE)) {
-      auto right = this->parseAdditive();
-      expr = std::make_unique<BinaryExpr>(BinaryOp::Ge, std::move(expr),
-                                          std::move(right));
-    } else {
+    BinaryOp op;
+    if (match(TokenKind::TOK_LT))
+      op = BinaryOp::Lt;
+    else if (match(TokenKind::TOK_GT))
+      op = BinaryOp::Gt;
+    else if (match(TokenKind::TOK_LE))
+      op = BinaryOp::Le;
+    else if (match(TokenKind::TOK_GE))
+      op = BinaryOp::Ge;
+    else
       break;
-    }
+    expr = std::make_unique<BinaryExpr>(op, std::move(expr), parseAdditive());
   }
   return expr;
 }
@@ -640,17 +502,14 @@ std::unique_ptr<Expression> Parser::parseComparison() {
 std::unique_ptr<Expression> Parser::parseAdditive() {
   auto expr = parseMultiplicative();
   while (true) {
-    if (match(TokenKind::TOK_ADD)) {
-      auto right = parseMultiplicative();
+    if (match(TokenKind::TOK_ADD))
       expr = std::make_unique<BinaryExpr>(BinaryOp::Add, std::move(expr),
-                                          std::move(right));
-    } else if (match(TokenKind::TOK_SUB)) {
-      auto right = parseMultiplicative();
+                                          parseMultiplicative());
+    else if (match(TokenKind::TOK_SUB))
       expr = std::make_unique<BinaryExpr>(BinaryOp::Sub, std::move(expr),
-                                          std::move(right));
-    } else {
+                                          parseMultiplicative());
+    else
       break;
-    }
   }
   return expr;
 }
@@ -658,33 +517,25 @@ std::unique_ptr<Expression> Parser::parseAdditive() {
 std::unique_ptr<Expression> Parser::parseMultiplicative() {
   auto expr = parseUnary();
   while (true) {
-    if (match(TokenKind::TOK_PROD)) {
-      auto right = parseUnary();
-      expr = std::make_unique<BinaryExpr>(BinaryOp::Mul, std::move(expr),
-                                          std::move(right));
-    } else if (match(TokenKind::TOK_DIV_FLOOR)) {
-      auto right = parseUnary();
-      expr = std::make_unique<BinaryExpr>(BinaryOp::DivFloor, std::move(expr),
-                                          std::move(right));
-    } else if (match(TokenKind::TOK_DIV)) {
-      auto right = parseUnary();
-      expr = std::make_unique<BinaryExpr>(BinaryOp::Div, std::move(expr),
-                                          std::move(right));
-    } else if (match(TokenKind::TOK_MOD)) {
-      auto right = parseUnary();
-      expr = std::make_unique<BinaryExpr>(BinaryOp::Mod, std::move(expr),
-                                          std::move(right));
-    } else {
+    BinaryOp op;
+    if (match(TokenKind::TOK_PROD))
+      op = BinaryOp::Mul;
+    else if (match(TokenKind::TOK_DIV_FLOOR))
+      op = BinaryOp::DivFloor;
+    else if (match(TokenKind::TOK_DIV))
+      op = BinaryOp::Div;
+    else if (match(TokenKind::TOK_MOD))
+      op = BinaryOp::Mod;
+    else
       break;
-    }
+    expr = std::make_unique<BinaryExpr>(op, std::move(expr), parseUnary());
   }
   return expr;
 }
 
 std::unique_ptr<Expression> Parser::parseUnary() {
   if (match(TokenKind::TOK_SUB)) {
-    auto operand = parseUnary();
-    return std::make_unique<UnaryExpr>(UnaryOp::Negate, std::move(operand));
+    return std::make_unique<UnaryExpr>(UnaryOp::Negate, parseUnary());
   }
   return parsePostfix();
 }
@@ -692,62 +543,116 @@ std::unique_ptr<Expression> Parser::parseUnary() {
 std::unique_ptr<Expression> Parser::parsePostfix() {
   auto expr = parsePrimary();
 
-  // Support chained indexing: arr[i] or arr[i][j]
+  // arr[i] or arr[i][j]
   if (match(TokenKind::TOK_LBRACKET)) {
     auto index = parseExpression();
-    this->expect(TokenKind::TOK_RBRACKET, "Expected ']' after index");
-
+    expect(TokenKind::TOK_RBRACKET, "Expected ']'");
     if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
-      // Check for second dimension: arr[i][j]
       if (peek().getKind() == TokenKind::TOK_LBRACKET) {
-        this->consume(); // '['
-        auto colIdx = parseExpression();
-        this->expect(TokenKind::TOK_RBRACKET,
-                     "Expected ']' after second index");
+        consume();
+        auto col = parseExpression();
+        expect(TokenKind::TOK_RBRACKET, "Expected ']'");
         return std::make_unique<Array2DIndexExpr>(id->name, std::move(index),
-                                                  std::move(colIdx));
+                                                  std::move(col));
       }
       return std::make_unique<ArrayIndexExpr>(id->name, std::move(index));
     }
     throw ParseError(peek().getLine(), peek().getColumn(),
-                     "Array indexing requires an identifier");
+                     "Indexing requires an identifier");
   }
 
+  // .length  or  .text
   if (match(TokenKind::TOK_DOT)) {
-    Token prop =
-        this->expect(TokenKind::TOK_IDENTIFIER, "Expected property name");
-    if (prop.getWord() == "length") {
-      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+    Token prop = expect(TokenKind::TOK_IDENTIFIER, "Expected property name");
+    if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+      if (prop.getWord() == "length")
         return std::make_unique<LengthPropertyExpr>(id->name);
-      }
-      throw ParseError(peek().getLine(), peek().getColumn(),
-                       "Property access requires an identifier");
-    }
-    if (prop.getWord() == "text") {
-      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+      if (prop.getWord() == "text")
         return std::make_unique<StringTextExpr>(id->name);
-      }
-      throw ParseError(peek().getLine(), peek().getColumn(),
-                       "Property access requires an identifier");
     }
     throw ParseError(peek().getLine(), peek().getColumn(),
                      "Unknown property: " + prop.getWord());
   }
 
   if (match(TokenKind::TOK_INCREMENT)) {
-    if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+    if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
       return std::make_unique<Increment>(id->name);
-    }
     throw ParseError(peek().getLine(), peek().getColumn(),
-                     "++ can only follow an identifier");
+                     "'++' requires an identifier");
   }
   if (match(TokenKind::TOK_DECREMENT)) {
-    if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+    if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
       return std::make_unique<Decrement>(id->name);
-    }
     throw ParseError(peek().getLine(), peek().getColumn(),
-                     "-- can only follow an identifier");
+                     "'--' requires an identifier");
+  }
+  return expr;
+}
+
+std::unique_ptr<Expression> Parser::parsePrimary() {
+  Token tok = consume();
+  switch (tok.getKind()) {
+  case TokenKind::TOK_INT:
+    return std::make_unique<IntLitExpr>(tok);
+  case TokenKind::TOK_FLOAT:
+    return std::make_unique<FloatLitExpr>(tok);
+  case TokenKind::TOK_STRING:
+    return std::make_unique<StrLitExpr>(tok);
+  case TokenKind::TOK_CHAR:
+    return std::make_unique<CharLitExpr>(tok);
+  case TokenKind::TOK_BOOL:
+    return std::make_unique<BoolLitExpr>(tok);
+  case TokenKind::TOK_NEW:
+    --currentIndex;
+    return parseNewArray();
+  case TokenKind::TOK_IDENTIFIER: {
+    Identifier id{tok};
+    if (match(TokenKind::TOK_LPAREN)) {
+      std::vector<ExprPtr> args;
+      if (!match(TokenKind::TOK_RPAREN)) {
+        do {
+          args.push_back(parseExpression());
+        } while (match(TokenKind::TOK_COMMA));
+        expect(TokenKind::TOK_RPAREN, "Expected ')'");
+      }
+      return std::make_unique<CallExpr>(id, std::move(args));
+    }
+    return std::make_unique<IdentExpr>(id);
+  }
+  default:
+    throw ParseError(tok.getLine(), tok.getColumn(),
+                     "Unexpected token: `" + tok.getWord() + "`");
+  }
+}
+
+std::unique_ptr<Expression> Parser::parseNewArray() {
+  expect(TokenKind::TOK_NEW, "Expected 'new'");
+  Token elemTok = expect(TokenKind::TOK_IDENTIFIER, "Expected element type");
+  expect(TokenKind::TOK_LBRACKET, "Expected '['");
+  auto size1 = parseExpression();
+  expect(TokenKind::TOK_RBRACKET, "Expected ']'");
+
+  std::unique_ptr<Expression> size2;
+  if (peek().getKind() == TokenKind::TOK_LBRACKET) {
+    consume();
+    size2 = parseExpression();
+    expect(TokenKind::TOK_RBRACKET, "Expected ']'");
   }
 
-  return expr;
+  const std::string &baseName = elemTok.getWord();
+  std::vector<ExprPtr> sizes;
+
+  if (size2) {
+    TypeDesc td(Identifier{Token{TokenKind::TOK_IDENTIFIER, baseName,
+                                 elemTok.getLine(), elemTok.getColumn()}},
+                2);
+    sizes.push_back(std::move(size1));
+    sizes.push_back(std::move(size2));
+    return std::make_unique<NewArrayExpr>(std::move(td), std::move(sizes));
+  }
+  TypeDesc td(Identifier{Token{TokenKind::TOK_IDENTIFIER, baseName,
+                               elemTok.getLine(), elemTok.getColumn()}},
+              1);
+  sizes.push_back(std::move(size1));
+  return std::make_unique<NewArrayExpr>(std::move(td), std::move(sizes));
 }

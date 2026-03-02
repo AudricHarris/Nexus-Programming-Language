@@ -85,8 +85,8 @@ public:
   std::unique_ptr<Return> parseReturnStatement();
   std::unique_ptr<Expression> parsePrimary();
   std::unique_ptr<Expression> parseNewArray();
-  std::unique_ptr<Statement> parseArrayElementAssignStatement();
-  std::unique_ptr<Statement> parseArray2DElementAssignStatement();
+  std::unique_ptr<Statement> parseArrayElementAssign();
+  std::unique_ptr<Statement> parseArray2DElementAssign();
   std::unique_ptr<Expression> parseAssignment();
   std::unique_ptr<Expression> parseEquality();
   std::unique_ptr<Expression> parseComparison();

@@ -38,7 +38,9 @@ int main(int argc, char *argv[]) {
   }
 
   std::cout << "\nNow run:\n";
-  std::string cmd = "clang out.ll -o " + std::string(argv[2]);
+
+  std::string cmd = "clang -fsanitize=address -fsanitize=leak -g out.ll -o " +
+                    std::string(argv[2]);
   system(cmd.c_str());
   system("rm -rf out.ll");
   std::cout << "./" << argv[2] << "\n";

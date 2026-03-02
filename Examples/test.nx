@@ -1,7 +1,3 @@
-/!import "test"; /* Imports all
-import "test::Borrow"; /* imports all method with Borrow
-import "test::Borrow(&i32)"; /* imports all method with that definition
-!/
 Borrow(&i32 ex, &f32 ok)
 {
 	ex = ex * 5 + 4;
@@ -13,12 +9,23 @@ Copy(i32 ex)
 	ex = ex * 5 + 4;	
 }
 
-Main() -> bool
+Main() -> i32
 {
 	i32 ex = 8;
 	f32 ex2 = 4.0;
 	Borrow(ex, ex2);
 	Printf("Borrow  : {ex} & {ex2}\n");
 
-	return true;
+	i32[][] tab = new i32[5][5];
+	tab[0][0] = 5;
+	i32 tmp = tab[0][0];
+	i32 tmp2 = tab[0][1];
+	i32 tmp3 = tab[0][2];
+	Printf("tab : {tmp} vs {tmp2} vs {tmp3}\n");
+
+	/*string t = "I am testing";
+	/!tmp = t.length;
+	/*char c = t[0];
+	Printf("Size : {tmp}");!/
+	return ex;
 }

@@ -32,6 +32,7 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_ELSE", "else"},
     {"TOK_WHILE", "while"},
     {"TOK_RETURN", "return"},
+    {"TOK_RETURN", "const"},
     {"TOK_INT", nullptr},
     {"TOK_FLOAT", nullptr},
     {"TOK_STRING", nullptr},
@@ -82,6 +83,8 @@ std::string Token::toString() {
     return "TOK_WHILE  ";
   case TokenKind::TOK_RETURN:
     return "TOK_RETURN  ";
+  case TokenKind::TOK_CONST:
+    return "TOK_CONST  ";
   case TokenKind::TOK_INT:
     return "TOK_INT  ";
   case TokenKind::TOK_FLOAT:

@@ -43,6 +43,7 @@ enum class TokenKind {
   TOK_ElSE,
   TOK_WHILE,
   TOK_RETURN,
+  TOK_CONST,
 
   // Litterals
   TOK_INT,
