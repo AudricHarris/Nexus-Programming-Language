@@ -19,10 +19,11 @@ struct VarInfo {
   llvm::Type *type = nullptr;
   bool isBorrowed = false;
   bool isMoved = false;
-  bool isReference = false;          // alloca stores ptr-to-T
-  bool isConst = false;              // immutable after initialisation
-  llvm::Type *pointeeType = nullptr; // T when isReference == true
-  std::string sourceName;            // source variable for borrows
+  bool isReference = false;
+  bool isConst = false;
+  llvm::Type *pointeeType = nullptr;
+  std::string sourceName;
+  bool ownsHeap = false;
 
   VarInfo() = default;
 
@@ -38,8 +39,7 @@ struct VarInfo {
 class CodeGenerator {
 public:
   CodeGenerator();
-
-  /// Compile `program` and emit LLVM IR to `<outputFilename>.ll`.
+  std::vector<std::vector<std::string>> scopeStack;
   bool generate(const Program &program, const std::string &outputFilename);
 
   static bool isCStringPointer(llvm::Type *ty);
@@ -72,10 +72,8 @@ private:
 
   // Array / string indexing
   llvm::Value *visitNewArray(const NewArrayExpr &e);
-  llvm::Value *visitArrayIndex(const ArrayIndexExpr &e);     // arr[i] or str[i]
-  llvm::Value *visitArray2DIndex(const Array2DIndexExpr &e); // arr[i][j]
+  llvm::Value *visitArrayIndex(const ArrayIndexExpr &e);
   llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &e);
-  llvm::Value *visitArray2DIndexAssign(const Array2DIndexAssignExpr &e);
 
   // Property access
   llvm::Value *visitLengthProperty(const LengthPropertyExpr &e);
@@ -116,6 +114,9 @@ private:
   // ── Colour helpers ───────────────────────────────────────────────────────
   std::string hexToAnsi(const std::string &hex);
   std::string replaceHexColors(const std::string &input);
+
+  void emitScopeDestructors();
+  void emitDestructor(VarInfo &vi);
 };
 
 #endif // CodeGen_H
