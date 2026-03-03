@@ -4,6 +4,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
 #include <regex>
+#include <string>
 #include <unordered_map>
 
 using namespace llvm;
@@ -632,21 +633,26 @@ static AllocaInst *makeND(IRBuilder<> &B, LLVMContext &ctx, Module *M,
   Value *currentDataPtr = nullptr;
   Value *currentLength = nullptr;
   Type *currentSlotType = leafElementType;
+  std::vector<Value *> dimensionValues(dimensions.begin(), dimensions.end());
 
+  // Build from innermost to outermost
   for (int level = dimensions.size() - 1; level >= 0; --level) {
-    Value *len = dimensions[level];
+    Value *len = dimensionValues[level];
     if (len->getType()->isIntegerTy(32))
       len = B.CreateSExt(len, i64, "len.sext");
 
+    // Calculate total size for this level
     uint64_t slotByteSize =
         M->getDataLayout().getTypeAllocSize(currentSlotType);
     Value *totalBytes =
         B.CreateMul(len, ConstantInt::get(i64, slotByteSize), "bytes");
 
+    // Allocate data block
     Value *dataBlock =
         B.CreateCall(RTDecl::malloc_(M, ctx), {totalBytes}, "data.lvl");
 
-    if (static_cast<size_t>(level) < dimensions.size() - 1) {
+    // If this is not the leaf level, initialize each slot with a sub-array
+    if (level < static_cast<int>(dimensions.size()) - 1) {
       llvm::Function *func = B.GetInsertBlock()->getParent();
 
       BasicBlock *initBB = BasicBlock::Create(ctx, "init.lvl", func);
@@ -668,12 +674,19 @@ static AllocaInst *makeND(IRBuilder<> &B, LLVMContext &ctx, Module *M,
 
       B.SetInsertPoint(bodyBB);
 
+      // Get pointer to current slot
       Value *slotPtr = B.CreateGEP(currentSlotType, dataBlock, i, "slot");
 
-      Value *lenGEP = B.CreateStructGEP(arrayStruct, slotPtr, 0);
-      Value *dataGEP = B.CreateStructGEP(arrayStruct, slotPtr, 1);
-      B.CreateStore(currentLength, lenGEP);
-      B.CreateStore(currentDataPtr, dataGEP);
+      // Create sub-array struct for this slot
+      StructType *subArrayStruct = cast<StructType>(currentSlotType);
+      Value *subArrayData = currentDataPtr;
+      Value *subArrayLen = dimensionValues[level + 1];
+
+      // Store sub-array metadata
+      Value *lenGEP = B.CreateStructGEP(subArrayStruct, slotPtr, 0);
+      Value *dataGEP = B.CreateStructGEP(subArrayStruct, slotPtr, 1);
+      B.CreateStore(subArrayLen, lenGEP);
+      B.CreateStore(subArrayData, dataGEP);
 
       Value *next = B.CreateAdd(i, ConstantInt::get(i64, 1));
       B.CreateStore(next, idxAlloca);
@@ -687,9 +700,12 @@ static AllocaInst *makeND(IRBuilder<> &B, LLVMContext &ctx, Module *M,
     currentSlotType = arrayStruct;
   }
 
+  // Create top-level array descriptor
   AllocaInst *descriptor = B.CreateAlloca(arrayStruct, nullptr, varName);
-  B.CreateStore(currentLength, B.CreateStructGEP(arrayStruct, descriptor, 0));
-  B.CreateStore(currentDataPtr, B.CreateStructGEP(arrayStruct, descriptor, 1));
+  Value *lenGEP = B.CreateStructGEP(arrayStruct, descriptor, 0);
+  Value *dataGEP = B.CreateStructGEP(arrayStruct, descriptor, 1);
+  B.CreateStore(currentLength, lenGEP);
+  B.CreateStore(currentDataPtr, dataGEP);
 
   return descriptor;
 }
@@ -1204,6 +1220,7 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
       ty = it->second.pointeeType;
   }
 
+  // For multi-dimensional arrays, we need to traverse correctly
   for (size_t d = 0; d < e.indices.size(); ++d) {
     Value *idx = codegen(*e.indices[d]);
     if (!idx)
@@ -1215,6 +1232,7 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
     if (!arrSt || !TypeResolver::isArray(arrSt))
       return logError(("Not an array: " + name).c_str());
 
+    // Load the array descriptor
     Value *loaded = builder.CreateLoad(arrSt, ptr, "arr.load");
     Value *dataPtr = builder.CreateExtractValue(loaded, {1}, "arr.data");
 
@@ -1222,19 +1240,26 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
     if (!elemTy)
       return logError("Cannot resolve element type");
 
+    // Calculate element pointer
     Value *elemPtr = builder.CreateGEP(elemTy, dataPtr, idx, "elem.ptr");
 
+    // In visitArrayIndexAssign, after calculating elemPtr but before assigning:
     if (d == e.indices.size() - 1) {
+      // Check if we're trying to assign an integer to an array slot
+      if (TypeResolver::isArray(elemTy) || TypeResolver::isString(elemTy)) {
+        return logError("Cannot assign scalar to array slot");
+      }
+
       Value *val = codegen(*e.value);
       if (!val)
         return nullptr;
 
       val = TypeResolver::coerce(builder, val, elemTy);
-
       builder.CreateStore(val, elemPtr);
       return val;
     }
 
+    // For intermediate dimensions, load the sub-array
     ptr = elemPtr;
     ty = elemTy;
   }
@@ -1382,35 +1407,19 @@ Value *CodeGenerator::handlePrintf(const CallExpr &e) {
 }
 
 Value *CodeGenerator::handlePrint(const CallExpr &e) {
-  Value *val = codegen(*e.arguments[0]);
-  if (!val)
-    return logError("Failed to evaluate Print argument");
+  auto *strArg = dynamic_cast<const StrLitExpr *>(e.arguments[0].get());
+  if (!strArg)
+    return logError("Printf requires a string literal argument");
 
   llvm::Function *printfF = module->getFunction("printf");
   if (!printfF)
     return logError("printf not declared");
 
-  Value *fmt = builder.CreateGlobalString("%s\033[0m\n", ".pfmt");
-  Value *charPtr = nullptr;
+  std::string fmt = strArg->lit.getWord() + "\n";
 
-  if (auto *ai = dyn_cast<AllocaInst>(val)) {
-    Type *at = ai->getAllocatedType();
-    if (TypeResolver::isString(at)) {
-      Value *loaded = builder.CreateLoad(cast<StructType>(at), ai);
-      charPtr = builder.CreateExtractValue(loaded, {0});
-    }
-  }
-  if (!charPtr) {
-    Value *sv = StringOps::fromValue(builder, context, module.get(), val);
-    if (auto *ai = dyn_cast<AllocaInst>(sv)) {
-      Value *loaded =
-          builder.CreateLoad(cast<StructType>(ai->getAllocatedType()), ai);
-      charPtr = builder.CreateExtractValue(loaded, {0});
-    } else {
-      charPtr = sv;
-    }
-  }
-  return builder.CreateCall(printfF, {fmt, charPtr}, "print.ret");
+  Value *fmtPtr = builder.CreateGlobalString(fmt, ".fmt");
+  std::vector<Value *> args = {fmtPtr};
+  return builder.CreateCall(printfF, args, "printf.ret");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

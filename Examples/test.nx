@@ -1,7 +1,6 @@
-Borrow(&i32 ex, &f32 ok)
+Borrow(&i32 ex, i32 ok)
 {
-	ex = ex * 5 + 4;
-	ok = ok * 5.0;
+	ex = ex + ok;
 }
 
 Copy(i32 ex)
@@ -12,20 +11,64 @@ Copy(i32 ex)
 Main() -> i32
 {
 	i32 ex = 8;
-	f32 ex2 = 4.0;
+	i32 ex2 = 4;
 	Borrow(ex, ex2);
 	Printf("Borrow  : {ex} & {ex2}\n");
 
-	i32[][] tab = new i32[5][5];
-	tab[0][0] = 5;
-	i32 tmp = tab[0][0];
-	i32 tmp2 = tab[0][1];
-	i32 tmp3 = tab[0][2];
-	Printf("tab : {tmp} vs {tmp2} vs {tmp3}\n");
+	i32[][][] tab = new i32[5][5][5];
 
-	/*string t = "I am testing";
-	/!tmp = t.length;
-	/*char c = t[0];
-	Printf("Size : {tmp}");!/
+	i32 x = 0;
+	i32 y = 0;
+	i32 z = 0;
+
+	Printf("Generating Array:\n");
+	while (x<5)
+	{
+		while (y<5)
+		{
+			while (z<5)
+			{
+				i32 nb = x + y + z;
+				Borrow(ex, nb);
+				Printf("\t{ex}\n");
+
+				tab[x][y][z] = ex;
+				z++;
+			}
+			z = 0;
+			y++;
+		}
+		y = 0;
+		x++;
+	}
+
+	tab[3][3][2] = 8;
+	tab[2] = 5;
+	Print("Reading Array {x}:");
+	x = 0;
+	while (x<5)
+	{
+		Printf("Line {x}:\n");
+		while (y<5)
+		{
+			while (z<5)
+			{
+				i32 tmp = tab[x][y][z];
+				Printf("[x:{x}, y:{y}, z:{z} = {tmp}] ");
+				z++;
+			}
+			Printf("\n");
+			z = 0;
+			y++;
+		}
+		Printf("\n");
+		y = 0;
+		x++;
+	}
+	
+	i32 rdm = tab[3][2][1];
+	Printf("{rdm}\n");
+	Printf("Final value of ex: \t\t{ex}\n");
+	
 	return ex;
 }

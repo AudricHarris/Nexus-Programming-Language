@@ -4,23 +4,11 @@ Five() -> i32 {return 5;}
 
 Main() -> void
 {
-	f64 pi = Pi();
-	Printf("#AA00AAPi is roughtly {pi}. \n");
-	i32 five = Five();
-	Printf("Just to be clear 5 = {five}\n");
-	
-	i32 max = 2147483647;
-	Printf("Max : #CC0000{max}\n");
-	max++;
-	Printf("Max : #CC0000{max}\n");
+	i32 cpt = 0;
+	while (cpt < 10)
+	{
+		Printf("Test {cpt}\n");
+		cpt++;
+	}
 
-	i64 max = 2147483650;
-	i64 one = 1;
-	Printf("Max : #CC0000{max}\n");
-	i64 max = max + one;
-	Printf("Max : #CC0000{max}\n");
-
-	i32 small = 5;
-	Printf("Small : {small}");
-	return;
 }
