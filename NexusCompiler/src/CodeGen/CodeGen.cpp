@@ -2,16 +2,13 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include <iostream>
 #include <memory>
 #include <regex>
 #include <string>
 #include <unordered_map>
 
 using namespace llvm;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Static helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 static std::string normalizeFunctionName(const std::string &name) {
   static const std::unordered_map<std::string, std::string> kMap = {
@@ -68,9 +65,6 @@ static std::string unescapeString(const std::string &s) {
   return out;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TypeResolver  –  converts language type names to LLVM types
-// ─────────────────────────────────────────────────────────────────────────────
 class TypeResolver {
 public:
   static Type *fromName(LLVMContext &ctx, const std::string &t) {
@@ -253,9 +247,6 @@ private:
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Runtime function declarations
-// ─────────────────────────────────────────────────────────────────────────────
 namespace RTDecl {
 
 static llvm::Function *malloc_(Module *M, LLVMContext &ctx) {
@@ -307,12 +298,8 @@ static llvm::Function *strlen_(Module *M, LLVMContext &ctx) {
 
 } // namespace RTDecl
 
-// ─────────────────────────────────────────────────────────────────────────────
-// StringOps  –  LLVM-IR level string operations
-// ─────────────────────────────────────────────────────────────────────────────
 class StringOps {
 public:
-  /// Build a heap-allocated string struct from a C-string literal.
   static Value *fromLiteral(IRBuilder<> &B, LLVMContext &ctx, Module *M,
                             const std::string &literal) {
     Value *ptr = B.CreateGlobalString(literal, "strl");
@@ -320,7 +307,6 @@ public:
     return fromParts(B, ctx, M, ptr, len);
   }
 
-  /// Build a string struct from raw ptr + length (deep-copies into malloc).
   static Value *fromParts(IRBuilder<> &B, LLVMContext &ctx, Module *M,
                           Value *dataPtr, Value *length) {
     Type *i64 = Type::getInt64Ty(ctx);
@@ -329,7 +315,6 @@ public:
 
     B.CreateCall(RTDecl::memcpy_(M, ctx),
                  {mem, dataPtr, length, ConstantInt::getFalse(ctx)});
-    // null-terminate
     Value *nullPos = B.CreateGEP(Type::getInt8Ty(ctx), mem, length);
     B.CreateStore(ConstantInt::get(Type::getInt8Ty(ctx), 0), nullPos);
 
@@ -341,7 +326,6 @@ public:
     return s;
   }
 
-  /// Concatenate two string structs.
   static Value *concat(IRBuilder<> &B, LLVMContext &ctx, Module *M,
                        Value *leftStruct, Value *rightStruct) {
     StructType *st = TypeResolver::getStringType(ctx);
@@ -371,7 +355,6 @@ public:
     return res;
   }
 
-  /// Convert any scalar value to a string struct.
   static Value *fromValue(IRBuilder<> &B, LLVMContext &ctx, Module *M,
                           Value *val) {
     Type *ty = val->getType();
@@ -414,16 +397,11 @@ private:
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// String-interpolation helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
 struct FmtArg {
   std::string spec;
   Value *value;
 };
 
-/// Try to evaluate a simple {ident} or {number} interpolation expression.
 static Value *evalInterp(const std::string &inner, LLVMContext &ctx,
                          IRBuilder<> &B,
                          const std::map<std::string, VarInfo> &vars) {
@@ -455,7 +433,6 @@ static Value *evalInterp(const std::string &inner, LLVMContext &ctx,
       return ConstantInt::get(Type::getInt32Ty(ctx), v);
   } catch (...) {
   }
-  // Float constant
   try {
     size_t pos;
     double v = std::stod(inner, &pos);
@@ -465,9 +442,13 @@ static Value *evalInterp(const std::string &inner, LLVMContext &ctx,
   }
   return nullptr;
 }
-
-/// Process a Printf format string with {expr} interpolations.
-/// Writes printf format specifiers into `fmt` and argument values into `args`.
+void CodeGenerator::scheduleStringFree(Value *strAlloca) {
+  // strAlloca is an AllocaInst* holding a %string struct
+  StructType *st = TypeResolver::getStringType(context);
+  Value *loaded = builder.CreateLoad(st, strAlloca);
+  Value *dataPtr = builder.CreateExtractValue(loaded, {0}, "tmp.data");
+  pendingFrees.push_back(dataPtr);
+}
 static std::string buildPrintfFmt(const std::string &raw, LLVMContext &ctx,
                                   IRBuilder<> &B,
                                   const std::map<std::string, VarInfo> &vars,
@@ -550,8 +531,6 @@ static std::string buildPrintfFmt(const std::string &raw, LLVMContext &ctx,
   return fmt;
 }
 
-/// Evaluate a string literal that may contain {expr} interpolations,
-/// producing a string struct.
 static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
                          IRBuilder<> &B,
                          const std::map<std::string, VarInfo> &vars,
@@ -614,108 +593,110 @@ static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
   return result;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Array allocation helpers
-// ─────────────────────────────────────────────────────────────────────────────
 namespace ArrayAlloc {
 
-static AllocaInst *makeND(IRBuilder<> &B, LLVMContext &ctx, Module *M,
-                          Type *leafElementType, ArrayRef<Value *> dimensions,
-                          const std::string &varName = "arr") {
+using namespace llvm;
 
-  if (dimensions.empty())
-    return nullptr;
+static Value *emitMalloc(IRBuilder<> &B, LLVMContext &C, Module &M,
+                         Type *allocTy, Value *count) {
+  const DataLayout &DL = M.getDataLayout();
+  uint64_t size = DL.getTypeAllocSize(allocTy);
 
-  Type *i64 = Type::getInt64Ty(ctx);
-  StructType *arrayStruct =
-      TypeResolver::getOrCreateArrayStruct(ctx, leafElementType);
+  Type *i64Ty = Type::getInt64Ty(C);
 
-  Value *currentDataPtr = nullptr;
-  Value *currentLength = nullptr;
-  Type *currentSlotType = leafElementType;
-  std::vector<Value *> dimensionValues(dimensions.begin(), dimensions.end());
+  Value *elemSize = ConstantInt::get(i64Ty, size);
+  Value *count64 = B.CreateZExt(count, i64Ty);
+  Value *total = B.CreateMul(elemSize, count64);
 
-  // Build from innermost to outermost
-  for (int level = dimensions.size() - 1; level >= 0; --level) {
-    Value *len = dimensionValues[level];
-    if (len->getType()->isIntegerTy(32))
-      len = B.CreateSExt(len, i64, "len.sext");
+  // malloc must return ptr
+  FunctionCallee mallocFn = M.getOrInsertFunction(
+      "malloc", FunctionType::get(PointerType::get(C, 0), {i64Ty}, false));
 
-    // Calculate total size for this level
-    uint64_t slotByteSize =
-        M->getDataLayout().getTypeAllocSize(currentSlotType);
-    Value *totalBytes =
-        B.CreateMul(len, ConstantInt::get(i64, slotByteSize), "bytes");
+  return B.CreateCall(mallocFn, {total}); // already ptr
+}
 
-    // Allocate data block
-    Value *dataBlock =
-        B.CreateCall(RTDecl::malloc_(M, ctx), {totalBytes}, "data.lvl");
+static StructType *getArrayStructTy(LLVMContext &C) {
+  // { i64, ptr }
+  return StructType::get(Type::getInt64Ty(C), PointerType::get(C, 0));
+}
 
-    // If this is not the leaf level, initialize each slot with a sub-array
-    if (level < static_cast<int>(dimensions.size()) - 1) {
-      llvm::Function *func = B.GetInsertBlock()->getParent();
+static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
+                         Type *elementType, ArrayRef<Value *> dims,
+                         unsigned depth) {
+  Type *i64Ty = Type::getInt64Ty(C);
+  StructType *arrTy = getArrayStructTy(C);
 
-      BasicBlock *initBB = BasicBlock::Create(ctx, "init.lvl", func);
-      BasicBlock *condBB = BasicBlock::Create(ctx, "cond.lvl", func);
-      BasicBlock *bodyBB = BasicBlock::Create(ctx, "body.lvl", func);
-      BasicBlock *afterBB = BasicBlock::Create(ctx, "after.lvl", func);
+  Value *len = dims[depth];
 
-      B.CreateBr(initBB);
+  // allocate descriptor on stack
+  Value *descriptor = B.CreateAlloca(arrTy);
 
-      B.SetInsertPoint(initBB);
-      AllocaInst *idxAlloca = B.CreateAlloca(i64, nullptr, "i");
-      B.CreateStore(ConstantInt::get(i64, 0), idxAlloca);
-      B.CreateBr(condBB);
+  // store length
+  Value *lenPtr = B.CreateStructGEP(arrTy, descriptor, 0);
+  B.CreateStore(B.CreateZExt(len, i64Ty), lenPtr);
 
-      B.SetInsertPoint(condBB);
-      Value *i = B.CreateLoad(i64, idxAlloca, "i");
-      Value *cond = B.CreateICmpULT(i, len, "i.lt.len");
-      B.CreateCondBr(cond, bodyBB, afterBB);
+  Value *dataPtr = B.CreateStructGEP(arrTy, descriptor, 1);
 
-      B.SetInsertPoint(bodyBB);
+  bool isLeaf = (depth == dims.size() - 1);
 
-      // Get pointer to current slot
-      Value *slotPtr = B.CreateGEP(currentSlotType, dataBlock, i, "slot");
+  if (isLeaf) {
+    // allocate element buffer
+    Value *buffer = emitMalloc(B, C, M, elementType, len);
+    B.CreateStore(buffer, dataPtr); // store ptr directly
+  } else {
+    StructType *childTy = getArrayStructTy(C);
 
-      // Create sub-array struct for this slot
-      StructType *subArrayStruct = cast<StructType>(currentSlotType);
-      Value *subArrayData = currentDataPtr;
-      Value *subArrayLen = dimensionValues[level + 1];
+    // allocate array of child descriptors
+    Value *childArray = emitMalloc(B, C, M, childTy, len);
 
-      // Store sub-array metadata
-      Value *lenGEP = B.CreateStructGEP(subArrayStruct, slotPtr, 0);
-      Value *dataGEP = B.CreateStructGEP(subArrayStruct, slotPtr, 1);
-      B.CreateStore(subArrayLen, lenGEP);
-      B.CreateStore(subArrayData, dataGEP);
+    // store pointer to children
+    B.CreateStore(childArray, dataPtr);
 
-      Value *next = B.CreateAdd(i, ConstantInt::get(i64, 1));
-      B.CreateStore(next, idxAlloca);
-      B.CreateBr(condBB);
+    llvm::Function *fn = B.GetInsertBlock()->getParent();
 
-      B.SetInsertPoint(afterBB);
-    }
+    BasicBlock *loopBB = BasicBlock::Create(C, "nd.loop", fn);
+    BasicBlock *bodyBB = BasicBlock::Create(C, "nd.body", fn);
+    BasicBlock *afterBB = BasicBlock::Create(C, "nd.after", fn);
 
-    currentDataPtr = dataBlock;
-    currentLength = len;
-    currentSlotType = arrayStruct;
+    Value *index = B.CreateAlloca(i64Ty);
+    B.CreateStore(ConstantInt::get(i64Ty, 0), index);
+
+    B.CreateBr(loopBB);
+    B.SetInsertPoint(loopBB);
+
+    Value *iVal = B.CreateLoad(i64Ty, index);
+    Value *cond = B.CreateICmpULT(iVal, B.CreateZExt(len, i64Ty));
+
+    B.CreateCondBr(cond, bodyBB, afterBB);
+
+    // ---- BODY ----
+    B.SetInsertPoint(bodyBB);
+
+    Value *slot = B.CreateGEP(childTy, childArray, iVal);
+
+    Value *childDesc = buildLevel(B, C, M, elementType, dims, depth + 1);
+
+    Value *childVal = B.CreateLoad(childTy, childDesc);
+    B.CreateStore(childVal, slot);
+
+    Value *next = B.CreateAdd(iVal, ConstantInt::get(i64Ty, 1));
+
+    B.CreateStore(next, index);
+    B.CreateBr(loopBB);
+
+    // ---- AFTER ----
+    B.SetInsertPoint(afterBB);
   }
-
-  // Create top-level array descriptor
-  AllocaInst *descriptor = B.CreateAlloca(arrayStruct, nullptr, varName);
-  Value *lenGEP = B.CreateStructGEP(arrayStruct, descriptor, 0);
-  Value *dataGEP = B.CreateStructGEP(arrayStruct, descriptor, 1);
-  B.CreateStore(currentLength, lenGEP);
-  B.CreateStore(currentDataPtr, dataGEP);
 
   return descriptor;
 }
 
+static Value *makeND(IRBuilder<> &B, LLVMContext &C, Module &M,
+                     Type *elementType, ArrayRef<Value *> dims) {
+  return buildLevel(B, C, M, elementType, dims, 0);
+}
+
 } // namespace ArrayAlloc
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Colour helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
 std::string CodeGenerator::hexToAnsi(const std::string &hex) {
   if (hex.size() != 7 || hex[0] != '#')
     return hex;
@@ -740,9 +721,6 @@ std::string CodeGenerator::replaceHexColors(const std::string &input) {
   return result + input.substr(last);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CodeGenerator constructor
-// ─────────────────────────────────────────────────────────────────────────────
 CodeGenerator::CodeGenerator()
     : module(std::make_unique<Module>("nexus", context)), builder(context) {
   module->setTargetTriple(Triple(LLVM_HOST_TRIPLE));
@@ -755,9 +733,6 @@ Value *CodeGenerator::logError(const char *msg) {
   return nullptr;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Arithmetic helpers
-// ─────────────────────────────────────────────────────────────────────────────
 Value *CodeGenerator::promoteToDouble(Value *v) {
   if (v->getType()->isDoubleTy())
     return v;
@@ -813,10 +788,6 @@ Value *CodeGenerator::generateComparison(BinaryOp op, Value *l, Value *r,
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Expression visitors
-// ─────────────────────────────────────────────────────────────────────────────
-
 Value *CodeGenerator::visitIntLit(const IntLitExpr &e) {
   return ConstantInt::get(Type::getInt32Ty(context),
                           std::stoll(e.lit.getWord()));
@@ -835,7 +806,6 @@ Value *CodeGenerator::visitBoolLit(const BoolLitExpr &e) {
 Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
   std::string raw = unescapeString(e.lit.getWord());
 
-  // Detect interpolations (skip escaped \{ )
   bool hasInterp = false;
   for (size_t i = 0; i < raw.size(); ++i) {
     if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '{') {
@@ -850,7 +820,6 @@ Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
   if (hasInterp)
     return evalStrLit(raw, context, builder, namedValues, module.get());
 
-  // No interpolation – collapse {{ → {
   std::string processed;
   for (size_t i = 0; i < raw.size(); ++i) {
     if (raw[i] == '{' && i + 1 < raw.size() && raw[i + 1] == '{') {
@@ -889,9 +858,16 @@ Value *CodeGenerator::visitIdentifier(const IdentExpr &e) {
   return builder.CreateLoad(it->second.type, it->second.allocaInst,
                             name + ".load");
 }
-
+static llvm::Function *free_(Module *M, LLVMContext &ctx) {
+  llvm::Function *f = M->getFunction("free");
+  if (!f) {
+    auto *ft = FunctionType::get(Type::getVoidTy(ctx),
+                                 {PointerType::get(ctx, 0)}, false);
+    f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "free", M);
+  }
+  return f;
+}
 Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
-  // ── String concatenation and comparison ──────────────────────────────────
   std::function<bool(const Expression &)> isStrExpr =
       [&](const Expression &ex) -> bool {
     if (dynamic_cast<const StrLitExpr *>(&ex))
@@ -916,13 +892,35 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
     Value *l = codegen(*e.left), *r = codegen(*e.right);
     if (!l || !r)
       return nullptr;
+
     Value *lstr =
         ls ? l : StringOps::fromValue(builder, context, module.get(), l);
     Value *rstr =
         rs ? r : StringOps::fromValue(builder, context, module.get(), r);
-    return StringOps::concat(builder, context, module.get(), lstr, rstr);
-  }
 
+    Value *concatRes =
+        StringOps::concat(builder, context, module.get(), lstr, rstr);
+
+    // Free RHS temporary if it wasn't a named variable
+    bool rhsIsNamed = dynamic_cast<const IdentExpr *>(e.right.get()) != nullptr;
+    if (!rhsIsNamed) {
+      StructType *st = TypeResolver::getStringType(context);
+      Value *loaded = builder.CreateLoad(st, rstr);
+      Value *dataPtr = builder.CreateExtractValue(loaded, {0}, "rhs.tmp.data");
+      builder.CreateCall(free_(module.get(), context), {dataPtr});
+    }
+
+    // Free LHS temporary if it wasn't a named variable either
+    bool lhsIsNamed = dynamic_cast<const IdentExpr *>(e.left.get()) != nullptr;
+    if (!lhsIsNamed && ls) {
+      StructType *st = TypeResolver::getStringType(context);
+      Value *loaded = builder.CreateLoad(st, lstr);
+      Value *dataPtr = builder.CreateExtractValue(loaded, {0}, "lhs.tmp.data");
+      builder.CreateCall(free_(module.get(), context), {dataPtr});
+    }
+
+    return concatRes;
+  }
   if ((e.op == BinaryOp::Eq || e.op == BinaryOp::Ne) && (ls || rs)) {
     Value *l = codegen(*e.left), *r = codegen(*e.right);
     if (!l || !r)
@@ -946,12 +944,10 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
     return e.op == BinaryOp::Eq ? eq : builder.CreateNot(eq, "sne");
   }
 
-  // ── Numeric ──────────────────────────────────────────────────────────────
   Value *l = codegen(*e.left), *r = codegen(*e.right);
   if (!l || !r)
     return nullptr;
 
-  // Widen integers to same width
   if (l->getType()->isIntegerTy() && r->getType()->isIntegerTy()) {
     unsigned lb = l->getType()->getIntegerBitWidth();
     unsigned rb = r->getType()->getIntegerBitWidth();
@@ -1020,11 +1016,9 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
   if (it == namedValues.end())
     return logError(("Undeclared variable: " + tgt).c_str());
 
-  // Const check
   if (it->second.isConst)
     return logError(("Cannot reassign const variable: " + tgt).c_str());
 
-  // Borrow-ref: write through the pointer
   if (it->second.isReference) {
     Value *val = codegen(*e.value);
     if (!val)
@@ -1050,14 +1044,19 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
     return nullptr;
   Type *targetTy = it->second.type;
 
-  // String / array: store the whole struct
-  if (TypeResolver::isString(targetTy) || TypeResolver::isArray(targetTy)) {
+  if (TypeResolver::isString(targetTy)) {
+    // Free old buffer before overwriting
+    Value *oldVal =
+        builder.CreateLoad(targetTy, it->second.allocaInst, tgt + ".old");
+    Value *oldData = builder.CreateExtractValue(oldVal, {0}, "old.data");
+    builder.CreateCall(free_(module.get(), context), {oldData});
+
+    // Now store the new value
     Value *loaded = builder.CreateLoad(targetTy, val);
     builder.CreateStore(loaded, it->second.allocaInst);
     return it->second.allocaInst;
   }
 
-  // Scalar coercion
   val = TypeResolver::coerce(builder, val, targetTy);
 
   switch (e.kind) {
@@ -1146,9 +1145,6 @@ Value *CodeGenerator::generateIncrDecr(const std::string &name, bool isInc) {
   return res;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Array / string indexing
-// ─────────────────────────────────────────────────────────────────────────────
 Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
   const std::string &name = e.array.token.getWord();
   auto it = namedValues.find(name);
@@ -1185,16 +1181,14 @@ Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
     Value *elemPtr = builder.CreateGEP(elemTy, dataPtr, idx, "elem.ptr");
 
     if (d == e.indices.size() - 1) {
-      // Last dimension
       if (TypeResolver::isArray(elemTy) || TypeResolver::isString(elemTy))
-        return elemPtr;                 // return sub-array / string
-      if (TypeResolver::isString(ty)) { // string char access (old 1D path)
+        return elemPtr;
+      if (TypeResolver::isString(ty)) {
         return builder.CreateLoad(Type::getInt8Ty(context), elemPtr, "char");
       }
       return builder.CreateLoad(elemTy, elemPtr, "elem");
     }
 
-    // Descend to next nested array level
     ptr = elemPtr;
     ty = elemTy;
   }
@@ -1220,7 +1214,6 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
       ty = it->second.pointeeType;
   }
 
-  // For multi-dimensional arrays, we need to traverse correctly
   for (size_t d = 0; d < e.indices.size(); ++d) {
     Value *idx = codegen(*e.indices[d]);
     if (!idx)
@@ -1232,7 +1225,6 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
     if (!arrSt || !TypeResolver::isArray(arrSt))
       return logError(("Not an array: " + name).c_str());
 
-    // Load the array descriptor
     Value *loaded = builder.CreateLoad(arrSt, ptr, "arr.load");
     Value *dataPtr = builder.CreateExtractValue(loaded, {1}, "arr.data");
 
@@ -1240,12 +1232,9 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
     if (!elemTy)
       return logError("Cannot resolve element type");
 
-    // Calculate element pointer
     Value *elemPtr = builder.CreateGEP(elemTy, dataPtr, idx, "elem.ptr");
 
-    // In visitArrayIndexAssign, after calculating elemPtr but before assigning:
     if (d == e.indices.size() - 1) {
-      // Check if we're trying to assign an integer to an array slot
       if (TypeResolver::isArray(elemTy) || TypeResolver::isString(elemTy)) {
         return logError("Cannot assign scalar to array slot");
       }
@@ -1259,16 +1248,11 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
       return val;
     }
 
-    // For intermediate dimensions, load the sub-array
     ptr = elemPtr;
     ty = elemTy;
   }
   return nullptr;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Property access
-// ─────────────────────────────────────────────────────────────────────────────
 
 Value *CodeGenerator::visitLengthProperty(const LengthPropertyExpr &e) {
   const std::string &name = e.name.token.getWord();
@@ -1301,15 +1285,10 @@ Value *CodeGenerator::visitStringText(const StringTextExpr &e) {
   return builder.CreateExtractValue(loaded, {0}, "text");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Array allocation
-// ─────────────────────────────────────────────────────────────────────────────
-
 Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   std::string typeName = e.arrayType.base.token.getWord();
   Type *elemType = TypeResolver::fromName(context, typeName);
   if (!elemType) {
-    // your error reporting
     return nullptr;
   }
 
@@ -1320,14 +1299,8 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
       return nullptr;
     dimValues.push_back(v);
   }
-
-  return ArrayAlloc::makeND(builder, context, module.get(), elemType, dimValues,
-                            "newarr");
+  return ArrayAlloc::makeND(builder, context, *module, elemType, dimValues);
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Function calls
-// ─────────────────────────────────────────────────────────────────────────────
 
 Value *CodeGenerator::visitCall(const CallExpr &e) {
   const std::string rawName = e.callee.token.getWord();
@@ -1422,9 +1395,6 @@ Value *CodeGenerator::handlePrint(const CallExpr &e) {
   return builder.CreateCall(printfF, args, "printf.ret");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Expression dispatch
-// ─────────────────────────────────────────────────────────────────────────────
 Value *CodeGenerator::codegen(const Expression &expr) {
   if (auto *p = dynamic_cast<const IdentExpr *>(&expr))
     return visitIdentifier(*p);
@@ -1461,9 +1431,8 @@ Value *CodeGenerator::codegen(const Expression &expr) {
   return logError("Unknown expression node");
 }
 
-// Destroyer
-
 void CodeGenerator::emitScopeDestructors() {
+  std::cout << "Scope size: " << scopeStack.back().size() << "\n";
   for (auto it = scopeStack.back().rbegin(); it != scopeStack.back().rend();
        ++it) {
 
@@ -1473,7 +1442,12 @@ void CodeGenerator::emitScopeDestructors() {
 
     VarInfo &vi = nv->second;
 
-    if (!vi.ownsHeap)
+    std::cout << TypeResolver::isArray(vi.type) << "Array | string "
+              << TypeResolver::isString(vi.type) << "\n";
+
+    std::cout << !vi.ownsHeap << " heap\n";
+    if (!TypeResolver::isArray(vi.type) && !TypeResolver::isString(vi.type) &&
+        !vi.ownsHeap)
       continue;
     if (vi.isMoved || vi.isBorrowed || vi.isReference)
       continue;
@@ -1482,14 +1456,46 @@ void CodeGenerator::emitScopeDestructors() {
   }
 }
 
-static llvm::Function *free_(Module *M, LLVMContext &ctx) {
-  llvm::Function *f = M->getFunction("free");
-  if (!f) {
-    auto *ft = FunctionType::get(Type::getVoidTy(ctx),
-                                 {PointerType::get(ctx, 0)}, false);
-    f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "free", M);
+void CodeGenerator::emitArrayFree(Value *arrPtr, StructType *arrSt, int depth) {
+  Type *i64 = Type::getInt64Ty(context);
+  llvm::Function *freeF = free_(module.get(), context);
+  llvm::Function *fn = builder.GetInsertBlock()->getParent();
+
+  Value *loaded = builder.CreateLoad(arrSt, arrPtr);
+  Value *dataPtr = builder.CreateExtractValue(loaded, {1}, "data");
+  Value *len = builder.CreateExtractValue(loaded, {0}, "len");
+
+  Type *elemTy = TypeResolver::elemType(context, arrSt);
+
+  // If elements are sub-arrays, recurse into each slot first.
+  if (elemTy && TypeResolver::isArray(elemTy)) {
+    StructType *elemSt = cast<StructType>(elemTy);
+    std::string sfx = std::to_string(depth);
+
+    BasicBlock *loopBB = BasicBlock::Create(context, "free.loop" + sfx, fn);
+    BasicBlock *bodyBB = BasicBlock::Create(context, "free.body" + sfx, fn);
+    BasicBlock *afterBB = BasicBlock::Create(context, "free.after" + sfx, fn);
+
+    AllocaInst *idx = builder.CreateAlloca(i64, nullptr, "fi" + sfx);
+    builder.CreateStore(ConstantInt::get(i64, 0), idx);
+    builder.CreateBr(loopBB);
+
+    builder.SetInsertPoint(loopBB);
+    Value *cur = builder.CreateLoad(i64, idx);
+    Value *cond = builder.CreateICmpULT(cur, len);
+    builder.CreateCondBr(cond, bodyBB, afterBB);
+
+    builder.SetInsertPoint(bodyBB);
+    Value *slotPtr = builder.CreateGEP(elemSt, dataPtr, cur, "slot" + sfx);
+    emitArrayFree(slotPtr, elemSt, depth + 1); // recurse
+    Value *next = builder.CreateAdd(cur, ConstantInt::get(i64, 1));
+    builder.CreateStore(next, idx);
+    builder.CreateBr(loopBB);
+
+    builder.SetInsertPoint(afterBB);
   }
-  return f;
+
+  builder.CreateCall(freeF, {dataPtr});
 }
 
 void CodeGenerator::emitDestructor(VarInfo &vi) {
@@ -1499,24 +1505,16 @@ void CodeGenerator::emitDestructor(VarInfo &vi) {
     StructType *st = cast<StructType>(ty);
     Value *loaded = builder.CreateLoad(st, vi.allocaInst);
     Value *data = builder.CreateExtractValue(loaded, {0});
-
     builder.CreateCall(free_(module.get(), context), {data});
     return;
   }
 
   if (TypeResolver::isArray(ty)) {
     StructType *st = cast<StructType>(ty);
-    Value *loaded = builder.CreateLoad(st, vi.allocaInst);
-    Value *data = builder.CreateExtractValue(loaded, {1});
-
-    builder.CreateCall(free_(module.get(), context), {data});
+    emitArrayFree(vi.allocaInst, st, 0);
     return;
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// VarDecl initialisation
-// ─────────────────────────────────────────────────────────────────────────────
 
 Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   const std::string &name = d.name.token.getWord();
@@ -1526,9 +1524,9 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
 
   AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
 
+  scopeStack.back().push_back(name);
   if (!d.initializer) {
     namedValues[name] = VarInfo(alloca, ty, false, false, false, d.isConst);
-    scopeStack.back().push_back(name);
     return alloca;
   }
 
@@ -1557,13 +1555,27 @@ Value *CodeGenerator::initCopy(const VarDecl &d, const std::string &name,
 
     llvm::Function *mallocF = RTDecl::malloc_(module.get(), context);
     llvm::Function *memcpyF = RTDecl::memcpy_(module.get(), context);
+
     Value *newMem = builder.CreateCall(mallocF, {srcCap});
+
+    // Copy FIRST...
     builder.CreateCall(
         memcpyF, {newMem, srcData, srcLen, ConstantInt::getFalse(context)});
+
+    Value *nullPos =
+        builder.CreateGEP(Type::getInt8Ty(context), newMem, srcLen);
+    builder.CreateStore(ConstantInt::get(Type::getInt8Ty(context), 0), nullPos);
 
     builder.CreateStore(newMem, builder.CreateStructGEP(st, alloca, 0));
     builder.CreateStore(srcLen, builder.CreateStructGEP(st, alloca, 1));
     builder.CreateStore(srcCap, builder.CreateStructGEP(st, alloca, 2));
+
+    // ...THEN free the temporary source buffer
+    bool isTempSource =
+        namedValues.find(init->getName().str()) == namedValues.end();
+    if (isTempSource)
+      builder.CreateCall(free_(module.get(), context), {srcData});
+
     namedValues[name] = VarInfo(alloca, ty, false, false, false, d.isConst);
     namedValues[name].ownsHeap = true;
     return alloca;
@@ -1634,16 +1646,20 @@ Value *CodeGenerator::initBorrow(const VarDecl &d, const std::string &name,
   namedValues[name] = vi;
   return alloca;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Statement visitors
-// ─────────────────────────────────────────────────────────────────────────────
-
+void CodeGenerator::flushPendingFrees() {
+  llvm::Function *freeF = free_(module.get(), context);
+  for (Value *ptr : pendingFrees)
+    builder.CreateCall(freeF, {ptr});
+  pendingFrees.clear();
+}
 Value *CodeGenerator::codegen(const Statement &stmt) {
   if (auto *p = dynamic_cast<const VarDecl *>(&stmt))
     return visitVarDecl(*p);
-  if (auto *p = dynamic_cast<const ExprStmt *>(&stmt))
-    return codegen(*p->expr);
+  if (auto *p = dynamic_cast<const ExprStmt *>(&stmt)) {
+    Value *v = codegen(*p->expr);
+    flushPendingFrees(); // emit free() for all temporaries
+    return v;
+  }
   if (auto *p = dynamic_cast<const IfStmt *>(&stmt))
     return visitIfStmt(*p);
   if (auto *p = dynamic_cast<const WhileStmt *>(&stmt))
@@ -1661,9 +1677,6 @@ void CodeGenerator::codegen(const Block &block) {
       break;
     codegen(*s);
   }
-
-  emitScopeDestructors(); // NEW
-  scopeStack.pop_back();  // pop
 }
 
 Value *CodeGenerator::visitIfStmt(const IfStmt &s) {
@@ -1731,7 +1744,10 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 }
 
 Value *CodeGenerator::visitReturn(const Return &s) {
-  emitScopeDestructors();
+  while (!scopeStack.empty()) {
+    emitScopeDestructors();
+    scopeStack.pop_back();
+  }
   if (s.value) {
     Value *v = codegen(**s.value);
     if (!v)
@@ -1744,17 +1760,12 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   return nullptr;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Function compilation
-// ─────────────────────────────────────────────────────────────────────────────
-
 llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   const std::string fname = normalizeFunctionName(func.name.token.getWord());
   Type *retTy = TypeResolver::fromTypeDesc(context, func.returnType);
   if (!retTy)
     return nullptr;
 
-  // Build parameter types
   std::vector<Type *> paramTypes;
   std::vector<bool> paramIsRef;
   for (const auto &p : func.params) {
@@ -1767,7 +1778,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 
   borrowRefParams[fname] = paramIsRef;
 
-  // Get-or-create function
   llvm::Function *f = module->getFunction(fname);
   if (!f) {
     auto *ft = FunctionType::get(retTy, paramTypes, false);
@@ -1806,8 +1816,9 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 
   codegen(*func.body);
 
-  // Ensure a terminator exists
   if (!builder.GetInsertBlock()->getTerminator()) {
+    emitScopeDestructors(); // ← ADD THIS
+    scopeStack.pop_back();
     if (retTy->isVoidTy())
       builder.CreateRetVoid();
     else
@@ -1821,15 +1832,10 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   return f;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Program entry point
-// ─────────────────────────────────────────────────────────────────────────────
-
 bool CodeGenerator::generate(const Program &program,
                              const std::string &outputFilename) {
   namedValues.clear();
 
-  // Pre-declare runtime functions
   Type *ptrTy = PointerType::get(context, 0);
   Type *i32 = Type::getInt32Ty(context);
 

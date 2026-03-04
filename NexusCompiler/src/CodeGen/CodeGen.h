@@ -40,6 +40,7 @@ class CodeGenerator {
 public:
   CodeGenerator();
   std::vector<std::vector<std::string>> scopeStack;
+  std::vector<llvm::Value *> pendingFrees;
   bool generate(const Program &program, const std::string &outputFilename);
 
   static bool isCStringPointer(llvm::Type *ty);
@@ -71,6 +72,7 @@ private:
   llvm::Value *visitCall(const CallExpr &e);
 
   // Array / string indexing
+  void emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt, int depth);
   llvm::Value *visitNewArray(const NewArrayExpr &e);
   llvm::Value *visitArrayIndex(const ArrayIndexExpr &e);
   llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &e);
@@ -78,6 +80,8 @@ private:
   // Property access
   llvm::Value *visitLengthProperty(const LengthPropertyExpr &e);
   llvm::Value *visitStringText(const StringTextExpr &e);
+  void scheduleStringFree(llvm::Value *strAlloca);
+  void flushPendingFrees();
 
   // ── Expression dispatch ──────────────────────────────────────────────────
   llvm::Value *codegen(const Expression &expr);

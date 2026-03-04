@@ -4,11 +4,10 @@ Five() -> i32 {return 5;}
 
 Main() -> void
 {
-	i32 cpt = 0;
-	while (cpt < 10)
-	{
-		Printf("Test {cpt}\n");
-		cpt++;
-	}
-
+	string test = "hello";
+	test = test + " ok";
+	test = test + " Now if you read this";
+	test = test + " then you gay";
+	Printf("{test}\n");
+	return;
 }

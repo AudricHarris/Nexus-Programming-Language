@@ -21,6 +21,7 @@ Main() -> i32
 	i32 y = 0;
 	i32 z = 0;
 
+	tab[0][0][0] = 8;
 	Printf("Generating Array:\n");
 	while (x<5)
 	{
@@ -30,7 +31,6 @@ Main() -> i32
 			{
 				i32 nb = x + y + z;
 				Borrow(ex, nb);
-				Printf("\t{ex}\n");
 
 				tab[x][y][z] = ex;
 				z++;
@@ -43,7 +43,7 @@ Main() -> i32
 	}
 
 	tab[3][3][2] = 8;
-	tab[2] = 5;
+	/*tab[2] = 5;
 	Print("Reading Array {x}:");
 	x = 0;
 	while (x<5)
@@ -68,7 +68,7 @@ Main() -> i32
 	
 	i32 rdm = tab[3][2][1];
 	Printf("{rdm}\n");
-	Printf("Final value of ex: \t\t{ex}\n");
+	Printf("Final value of ex: \t\t {ex}\n");
 	
 	return ex;
 }
