@@ -749,6 +749,7 @@ Value *CodeGenerator::promoteToInt(Value *v) {
 
 Value *CodeGenerator::generateComparison(BinaryOp op, Value *l, Value *r,
                                          bool isFloat) {
+  TypeResolver::getStringType(l->getContext());
   if (isFloat) {
     l = promoteToDouble(l);
     r = promoteToDouble(r);
@@ -926,13 +927,27 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
     if (!l || !r)
       return nullptr;
     auto charPtr = [&](Value *v) -> Value * {
-      if (auto *ai = dyn_cast<AllocaInst>(v)) {
-        Type *at = ai->getAllocatedType();
-        if (TypeResolver::isString(at)) {
-          Value *loaded = builder.CreateLoad(cast<StructType>(at), v);
-          return builder.CreateExtractValue(loaded, {0});
+      Type *ty = v->getType();
+
+      // Case 1: pointer to a string struct (AllocaInst or any ptr)
+      if (ty->isPointerTy()) {
+        if (auto *ai = dyn_cast<AllocaInst>(v)) {
+          if (TypeResolver::isString(ai->getAllocatedType())) {
+            Value *loaded = builder.CreateLoad(
+                cast<StructType>(ai->getAllocatedType()), v, "str.load");
+            return builder.CreateExtractValue(loaded, {0}, "str.data");
+          }
         }
+        // Already a char* (e.g. from a prior ExtractValue)
+        return v;
       }
+
+      // Case 2: string struct value (e.g. returned from a call or load)
+      if (TypeResolver::isString(ty)) {
+        return builder.CreateExtractValue(v, {0}, "str.data");
+      }
+
+      // Case 3: already a raw pointer (i8* / opaque ptr)
       return v;
     };
     llvm::Function *strcmpF = module->getFunction("strcmp");
@@ -941,6 +956,26 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
     Value *cmp = builder.CreateCall(strcmpF, {charPtr(l), charPtr(r)}, "scmp");
     Value *eq =
         builder.CreateICmpEQ(cmp, ConstantInt::get(cmp->getType(), 0), "seq");
+    bool lIsNamed = dynamic_cast<const IdentExpr *>(e.left.get()) != nullptr;
+    bool rIsNamed = dynamic_cast<const IdentExpr *>(e.right.get()) != nullptr;
+
+    auto freeStringStruct = [&](Value *v) {
+      // v is a ptr to a %string alloca — load it and free the data ptr
+      if (auto *ai = dyn_cast<AllocaInst>(v)) {
+        if (TypeResolver::isString(ai->getAllocatedType())) {
+          StructType *st = cast<StructType>(ai->getAllocatedType());
+          Value *loaded = builder.CreateLoad(st, ai);
+          Value *data = builder.CreateExtractValue(loaded, {0}, "cmp.tmp.data");
+          builder.CreateCall(free_(module.get(), context), {data});
+        }
+      }
+    };
+
+    if (!lIsNamed && ls)
+      freeStringStruct(l);
+    if (!rIsNamed && rs)
+      freeStringStruct(r);
+
     return e.op == BinaryOp::Eq ? eq : builder.CreateNot(eq, "sne");
   }
 
@@ -1272,19 +1307,6 @@ Value *CodeGenerator::visitLengthProperty(const LengthPropertyExpr &e) {
   return logError((".length not applicable to this type"));
 }
 
-Value *CodeGenerator::visitStringText(const StringTextExpr &e) {
-  const std::string &name = e.name.token.getWord();
-  auto it = namedValues.find(name);
-  if (it == namedValues.end())
-    return logError(("Unknown variable: " + name).c_str());
-  if (!TypeResolver::isString(it->second.type))
-    return logError(".text used on non-string variable");
-
-  StructType *st = cast<StructType>(it->second.type);
-  Value *loaded = builder.CreateLoad(st, it->second.allocaInst);
-  return builder.CreateExtractValue(loaded, {0}, "text");
-}
-
 Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   std::string typeName = e.arrayType.base.token.getWord();
   Type *elemType = TypeResolver::fromName(context, typeName);
@@ -1426,13 +1448,10 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitArrayIndexAssign(*p);
   if (auto *p = dynamic_cast<const LengthPropertyExpr *>(&expr))
     return visitLengthProperty(*p);
-  if (auto *p = dynamic_cast<const StringTextExpr *>(&expr))
-    return visitStringText(*p);
   return logError("Unknown expression node");
 }
 
 void CodeGenerator::emitScopeDestructors() {
-  std::cout << "Scope size: " << scopeStack.back().size() << "\n";
   for (auto it = scopeStack.back().rbegin(); it != scopeStack.back().rend();
        ++it) {
 
@@ -1442,10 +1461,6 @@ void CodeGenerator::emitScopeDestructors() {
 
     VarInfo &vi = nv->second;
 
-    std::cout << TypeResolver::isArray(vi.type) << "Array | string "
-              << TypeResolver::isString(vi.type) << "\n";
-
-    std::cout << !vi.ownsHeap << " heap\n";
     if (!TypeResolver::isArray(vi.type) && !TypeResolver::isString(vi.type) &&
         !vi.ownsHeap)
       continue;
@@ -1856,8 +1871,8 @@ bool CodeGenerator::generate(const Program &program,
       return false;
   }
 
-  module->print(llvm::outs(), nullptr);
-  // Write LLVM IR
+  // module->print(llvm::outs(), nullptr);
+
   std::error_code ec;
   raw_fd_ostream out(outputFilename + ".ll", ec, sys::fs::OF_None);
   if (ec) {

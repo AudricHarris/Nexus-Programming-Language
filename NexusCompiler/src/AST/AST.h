@@ -419,15 +419,6 @@ struct LengthPropertyExpr : Expression {
   }
 };
 
-struct StringTextExpr : Expression {
-  Identifier name;
-  explicit StringTextExpr(const Identifier &n) : name(n) {}
-  void toJson(std::ostream &os, int indent) const override {
-    os << std::string(indent, ' ') << "{\"kind\":\"StringTextExpr\",\"name\":"
-       << json_utils::escape(name.token.getWord()) << "}";
-  }
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Statement base
 // ─────────────────────────────────────────────────────────────────────────────

@@ -479,8 +479,6 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
     if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
       if (prop.getWord() == "length")
         return std::make_unique<LengthPropertyExpr>(id->name);
-      if (prop.getWord() == "text")
-        return std::make_unique<StringTextExpr>(id->name);
     }
     throw ParseError(peek().getLine(), peek().getColumn(),
                      "Unknown property: " + prop.getWord());

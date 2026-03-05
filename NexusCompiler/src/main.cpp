@@ -21,13 +21,13 @@ int main(int argc, char *argv[]) {
 
   std::string code = readFile(argv[1]).value_or("");
 
-  std::cout << "Tokenizing Errors : \n";
+  std::cout << "Errors : \n";
   Lexer l(code);
   std::vector<Token> lst = l.Tokenize();
   // for (size_t i = 0; i < lst.size(); i++)
   // std::cout << lst[i].toString();
 
-  std::cout << "\nParsing Errors : \n";
+  // td::cout << "Errors : \n";
   Parser parser(lst);
   auto parsed = parser.parse();
   // parsed->toJson(std::cout);

@@ -1,13 +1,37 @@
-Pi() -> f64 {return 3.1415926535;}
-
-Five() -> i32 {return 5;}
+Multiply(&i32 val) /* & symbol is needed to say modify orig val
+{
+	val = val * 2;
+}
 
 Main() -> void
 {
-	string test = "hello";
-	test = test + " ok";
-	test = test + " Now if you read this";
-	test = test + " then you gay";
-	Printf("{test}\n");
+	string intro = "Hello";
+	intro = intro + ", my fellow Gnomes !";
+	i32[] tab = new i32[10];
+	i32 val = 2;
+
+	i32 cpt = 0;
+	while (cpt < tab.length)
+	{
+		tab[cpt] = val;
+		Multiply(val);
+		cpt++;
+	}
+	Printf("{intro}\nI have something cool to show\n");
+	Print("Tab : [");
+	cpt = 0;
+	while (cpt < tab.length)
+	{
+		i32 tmp = tab[cpt];
+		Printf("{tmp}\n");
+		cpt++;
+	}
+	Print("]");
+
+	string ok = "test";
+	if (ok == "test") 
+	{
+		Print("WOW a comparison");
+	}
 	return;
 }

@@ -79,7 +79,6 @@ private:
 
   // Property access
   llvm::Value *visitLengthProperty(const LengthPropertyExpr &e);
-  llvm::Value *visitStringText(const StringTextExpr &e);
   void scheduleStringFree(llvm::Value *strAlloca);
   void flushPendingFrees();
 
