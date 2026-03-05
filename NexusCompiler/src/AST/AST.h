@@ -10,9 +10,9 @@
 #include <variant>
 #include <vector>
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JSON helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ------------- //
+// JSON helpers  //
+// ------------- //
 namespace json_utils {
 inline std::string escape(const std::string &s) {
   std::ostringstream oss;
@@ -55,9 +55,9 @@ inline std::string escape(const std::string &s) {
 }
 } // namespace json_utils
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Forward declarations
-// ─────────────────────────────────────────────────────────────────────────────
+// -------------------- //
+// Forward declarations //
+// -------------------- //
 struct Expression;
 struct Statement;
 struct Block;
@@ -65,23 +65,20 @@ struct Function;
 
 using ExprPtr = std::unique_ptr<Expression>;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Core token wrapper
-// ─────────────────────────────────────────────────────────────────────────────
+// ------------------ //
+// Core token wrapper //
+// ------------------ //
 struct Identifier {
   Token token;
   explicit Identifier(const Token &t) : token(t) {}
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Type descriptors
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Represents T[][], T[], or plain T in variable declarations.
-// `dimensions` = 0 for scalars, 1 for 1-D arrays, 2 for 2-D arrays, etc.
+// ---------------- //
+// Type descriptors //
+// ---------------- //
 struct TypeDesc {
-  Identifier base;    // e.g. "i32", "string"
-  int dimensions = 0; // 0 = scalar, 1 = 1-D array, 2 = 2-D array
+  Identifier base;
+  int dimensions = 0;
   bool isConst = false;
 
   explicit TypeDesc(const Identifier &b, int dims = 0, bool c = false)
@@ -89,7 +86,6 @@ struct TypeDesc {
   explicit TypeDesc(Identifier &&b, int dims = 0, bool c = false)
       : base(std::move(b)), dimensions(dims), isConst(c) {}
 
-  // Legacy alias used by TypeResolver
   const Identifier &elementType() const { return base; }
 
   std::string fullName() const {
@@ -100,25 +96,24 @@ struct TypeDesc {
   }
 };
 
-// Keep ArrayType as a thin alias so old code compiles with minimal changes.
 using ArrayType = TypeDesc;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Parameter
-// ─────────────────────────────────────────────────────────────────────────────
+// --------- //
+// Parameter //
+// --------- //
 struct Parameter {
   TypeDesc type;
   Identifier name;
-  bool isBorrowRef = false; // & prefix
-  bool isConst = false;     // const prefix
+  bool isBorrowRef = false;
+  bool isConst = false;
 
   Parameter(TypeDesc t, Identifier n, bool ref = false, bool c = false)
       : type(std::move(t)), name(std::move(n)), isBorrowRef(ref), isConst(c) {}
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Operators
-// ─────────────────────────────────────────────────────────────────────────────
+// --------- //
+// Operators //
+// --------- //
 enum class BinaryOp {
   Add,
   Sub,
@@ -133,6 +128,7 @@ enum class BinaryOp {
   Le,
   Ge
 };
+
 enum class UnaryOp { Negate };
 enum class AssignKind { Copy, Move, Borrow };
 
@@ -174,19 +170,20 @@ inline std::string toString(UnaryOp op) {
   return "Unknown";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Expression base
-// ─────────────────────────────────────────────────────────────────────────────
+// --------------- //
+// Expression base //
+// --------------- //
 struct Expression {
   virtual ~Expression() = default;
   virtual void toJson(std::ostream &os, int indent = 0) const = 0;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Literal expressions
-// ─────────────────────────────────────────────────────────────────────────────
+// ------------------- //
+// Literal expressions //
+// ------------------- //
 struct IntLitExpr : Expression {
   Token lit;
+
   explicit IntLitExpr(const Token &t) : lit(t) {}
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
@@ -197,6 +194,7 @@ struct IntLitExpr : Expression {
 
 struct FloatLitExpr : Expression {
   Token lit;
+
   explicit FloatLitExpr(const Token &t) : lit(t) {}
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
@@ -207,6 +205,7 @@ struct FloatLitExpr : Expression {
 
 struct StrLitExpr : Expression {
   Token lit;
+
   explicit StrLitExpr(const Token &t) : lit(t) {}
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
@@ -217,6 +216,7 @@ struct StrLitExpr : Expression {
 
 struct BoolLitExpr : Expression {
   Token lit;
+
   explicit BoolLitExpr(const Token &t) : lit(t) {}
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
@@ -227,6 +227,7 @@ struct BoolLitExpr : Expression {
 
 struct CharLitExpr : Expression {
   Token lit;
+
   explicit CharLitExpr(const Token &t) : lit(t) {}
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
@@ -235,11 +236,12 @@ struct CharLitExpr : Expression {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Identifier expression
-// ─────────────────────────────────────────────────────────────────────────────
+// --------------------- //
+// Identifier expression //
+// --------------------- //
 struct IdentExpr : Expression {
   Identifier name;
+
   explicit IdentExpr(const Identifier &n) : name(n) {}
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
@@ -248,12 +250,13 @@ struct IdentExpr : Expression {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Arithmetic / comparison
-// ─────────────────────────────────────────────────────────────────────────────
+// ----------------------- //
+// Arithmetic / comparison //
+// ----------------------- //
 struct BinaryExpr : Expression {
   BinaryOp op;
   ExprPtr left, right;
+
   BinaryExpr(BinaryOp o, ExprPtr l, ExprPtr r)
       : op(o), left(std::move(l)), right(std::move(r)) {}
   void toJson(std::ostream &os, int indent) const override {
@@ -272,6 +275,7 @@ struct BinaryExpr : Expression {
 struct UnaryExpr : Expression {
   UnaryOp op;
   ExprPtr operand;
+
   UnaryExpr(UnaryOp o, ExprPtr e) : op(o), operand(std::move(e)) {}
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
@@ -283,11 +287,12 @@ struct UnaryExpr : Expression {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Call
-// ─────────────────────────────────────────────────────────────────────────────
+// --------------- //
+// Call expression //
+// --------------- //
 struct CallExpr : Expression {
   Identifier callee;
+
   std::vector<ExprPtr> arguments;
   CallExpr(const Identifier &c, std::vector<ExprPtr> args)
       : callee(c), arguments(std::move(args)) {}
@@ -304,13 +309,14 @@ struct CallExpr : Expression {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Assignment (scalar)
-// ─────────────────────────────────────────────────────────────────────────────
+// ------------------- //
+// Assignment (scalar) //
+// ------------------- //
 struct AssignExpr : Expression {
   Identifier target;
   ExprPtr value;
   AssignKind kind;
+
   AssignExpr(Identifier tgt, ExprPtr val, AssignKind k = AssignKind::Copy)
       : target(std::move(tgt)), value(std::move(val)), kind(k) {}
   void toJson(std::ostream &os, int indent) const override {
@@ -322,11 +328,12 @@ struct AssignExpr : Expression {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Increment / Decrement
-// ─────────────────────────────────────────────────────────────────────────────
+// --------------------- //
+// Increment / Decrement //
+// --------------------- //
 struct Increment : Expression {
   Identifier target;
+
   explicit Increment(const Identifier &t) : target(t) {}
   void toJson(std::ostream &os, int indent) const override {
     os << std::string(indent, ' ') << "{\"kind\":\"Increment\",\"target\":"
@@ -336,6 +343,7 @@ struct Increment : Expression {
 
 struct Decrement : Expression {
   Identifier target;
+
   explicit Decrement(const Identifier &t) : target(t) {}
   void toJson(std::ostream &os, int indent) const override {
     os << std::string(indent, ' ') << "{\"kind\":\"Decrement\",\"target\":"
@@ -343,12 +351,12 @@ struct Decrement : Expression {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Array allocation:  new T[r]  or  new T[r][c]
-// ─────────────────────────────────────────────────────────────────────────────
+// ---------------- //
+// Array allocation //
+// ---------------- //
 struct NewArrayExpr : Expression {
   TypeDesc arrayType;
-  std::vector<ExprPtr> sizes; // sizes[0]=rows, sizes[1]=cols (if 2-D)
+  std::vector<ExprPtr> sizes;
 
   NewArrayExpr(TypeDesc t, std::vector<ExprPtr> sz)
       : arrayType(std::move(t)), sizes(std::move(sz)) {}
@@ -360,9 +368,9 @@ struct NewArrayExpr : Expression {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Array indexing (arr[i], arr[i][j], arr[i][j][k], …) – used in expressions
-// ─────────────────────────────────────────────────────────────────────────────
+// -------------- //
+// Array indexing //
+// -------------- //
 struct ArrayIndexExpr : Expression {
   Identifier array;
   std::vector<ExprPtr> indices;
@@ -383,9 +391,9 @@ struct ArrayIndexExpr : Expression {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Array element assignment (arr[i] = val, arr[i][j] = val, …)
-// ─────────────────────────────────────────────────────────────────────────────
+// ------------------------ //
+// Array element assignment //
+// ------------------------ //
 struct ArrayIndexAssignExpr : Expression {
   Identifier array;
   std::vector<ExprPtr> indices;
@@ -406,11 +414,14 @@ struct ArrayIndexAssignExpr : Expression {
     }
     os << "]}";
   }
-}; // ─────────────────────────────────────────────────────────────────────────────
-// Property access:  x.length  /  x.text
-// ─────────────────────────────────────────────────────────────────────────────
+};
+
+// ---------------- //
+// Property access: //
+// ---------------- //
 struct LengthPropertyExpr : Expression {
   Identifier name;
+
   explicit LengthPropertyExpr(const Identifier &n) : name(n) {}
   void toJson(std::ostream &os, int indent) const override {
     os << std::string(indent, ' ')
@@ -419,24 +430,23 @@ struct LengthPropertyExpr : Expression {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Statement base
-// ─────────────────────────────────────────────────────────────────────────────
+// -------------- //
+// Statement base //
+// -------------- //
 struct Statement {
   virtual ~Statement() = default;
   virtual void toJson(std::ostream &os, int indent = 0) const = 0;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Variable declaration
-//   [const] T [[][]] name = | <- | &= expr ;
-// ─────────────────────────────────────────────────────────────────────────────
+// -------------------- //
+// Variable declaration //
+// -------------------- //
 struct VarDecl : Statement {
   TypeDesc type;
   Identifier name;
   ExprPtr initializer;
   AssignKind kind;
-  bool isConst = false; // declared with `const`
+  bool isConst = false;
 
   VarDecl(TypeDesc t, Identifier n, ExprPtr init,
           AssignKind k = AssignKind::Copy, bool c = false)
@@ -463,11 +473,12 @@ struct VarDecl : Statement {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Control flow
-// ─────────────────────────────────────────────────────────────────────────────
+// ------------ //
+// Control flow //
+// ------------ //
 struct Block {
   std::vector<std::unique_ptr<Statement>> statements;
+
   Block() = default;
   explicit Block(std::vector<std::unique_ptr<Statement>> s)
       : statements(std::move(s)) {}
@@ -487,6 +498,7 @@ struct IfStmt : Statement {
   ExprPtr condition;
   std::unique_ptr<Block> thenBranch;
   std::unique_ptr<Block> elseBranch;
+
   IfStmt(ExprPtr cond, std::unique_ptr<Block> thenB,
          std::unique_ptr<Block> elseB = nullptr)
       : condition(std::move(cond)), thenBranch(std::move(thenB)),
@@ -502,6 +514,7 @@ struct IfStmt : Statement {
 struct WhileStmt : Statement {
   ExprPtr condition;
   std::unique_ptr<Block> doBranch;
+
   WhileStmt(ExprPtr cond, std::unique_ptr<Block> body)
       : condition(std::move(cond)), doBranch(std::move(body)) {}
   void toJson(std::ostream &os, int indent) const override {
@@ -514,6 +527,7 @@ struct WhileStmt : Statement {
 
 struct Return : Statement {
   std::optional<ExprPtr> value;
+
   Return() = default;
   explicit Return(ExprPtr v) : value(std::move(v)) {}
   void toJson(std::ostream &os, int indent) const override {
@@ -529,6 +543,7 @@ struct Return : Statement {
 
 struct ExprStmt : Statement {
   ExprPtr expr;
+
   ExprStmt() = default;
   explicit ExprStmt(ExprPtr e) : expr(std::move(e)) {}
   void toJson(std::ostream &os, int indent) const override {
@@ -542,9 +557,9 @@ struct ExprStmt : Statement {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Function & Program
-// ─────────────────────────────────────────────────────────────────────────────
+// ------------------ //
+// Function & Program //
+// ------------------ //
 struct Function {
   Identifier name;
   std::vector<Parameter> params;
@@ -566,6 +581,7 @@ struct Function {
 
 struct Program {
   std::vector<std::unique_ptr<Function>> functions;
+
   Program() = default;
   void toJson(std::ostream &os = std::cout, int indent = 0) const {
     std::string p(indent, ' ');
@@ -579,9 +595,9 @@ struct Program {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Compatibility helpers (used in some older codegen paths)
-// ─────────────────────────────────────────────────────────────────────────────
+// --------------------- //
+// Compatibility helpers //
+// --------------------- //
 namespace AST_H {
 using Function = ::Function;
 }
