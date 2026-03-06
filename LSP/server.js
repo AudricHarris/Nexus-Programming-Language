@@ -34,13 +34,13 @@ let hasDiagnosticRelatedInformationCapability = false;
 const KEYWORDS = [
   'sum', 'class', 'implement', 'static', 'Constructor', 'Factory',
   'if', 'else', 'for', 'while', 'return', 'match', 'new', 'export', 'static', "import",
-  'self', 'Sequential', 'true', 'false', "public", "private", "protected"
+  'self', 'Sequential', 'true', 'false', "public", "private", "protected", "const"
 ];
 
 const TYPES = [
   'i32', 'i64', 'i16', 'i8', 'i4',
   'u32', 'u64', 'u16', 'u8',
-  'f32', 'f64', 'bool', 'string', 'void', 'char',
+  'f32', 'f64', 'bool', 'string', 'void', 'char', 'str',
   'any'
 ];
 

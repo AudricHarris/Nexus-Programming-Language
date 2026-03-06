@@ -218,6 +218,8 @@ std::vector<Token> Lexer::Tokenize() {
         lstTokens.push_back(makeToken(TokenKind::TOK_BOOL, currentWord));
       } else if (currentWord == "new") {
         lstTokens.push_back(makeToken(TokenKind::TOK_NEW, currentWord));
+      } else if (currentWord == "const") {
+        lstTokens.push_back(makeToken(TokenKind::TOK_CONST, currentWord));
       } else {
         lstTokens.push_back(makeToken(TokenKind::TOK_IDENTIFIER, currentWord));
       }
