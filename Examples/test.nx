@@ -69,6 +69,7 @@ Main() -> i32
 	i32 rdm = tab[3][2][1];
 	Printf("{rdm}\n");
 	Printf("Final value of ex: \t\t {ex}\n");
-	
+
+
 	return ex;
 }

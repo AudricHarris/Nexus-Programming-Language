@@ -7,10 +7,9 @@
 #include <utility>
 #include <vector>
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Token navigation
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ---------------- //
+// Token navigation //
+// ---------------- //
 const Token &Parser::peek() const {
   if (currentIndex >= tokens.size()) {
     static const Token EOF_TOKEN{TokenKind::TOK_EOF, "", 0, 0};
@@ -83,10 +82,9 @@ void Parser::synchronize() {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Type-keyword detection
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ---------------------- //
+// Type-keyword detection //
+// ---------------------- //
 static bool isScalarTypeName(const std::string &w) {
   return w == "i32" || w == "i64" || w == "i16" || w == "i8" || w == "f32" ||
          w == "f64" || w == "bool" || w == "void" || w == "int" ||
@@ -99,10 +97,9 @@ static bool looksLikeType(const Token &tok) {
          isScalarTypeName(tok.getWord());
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Top-level parse
-// ─────────────────────────────────────────────────────────────────────────────
-
+// --------------- //
+// Top-level parse //
+// --------------- //
 std::unique_ptr<Program> Parser::parse() {
   auto prog = std::make_unique<Program>();
   while (!isAtEnd()) {
@@ -115,10 +112,9 @@ std::unique_ptr<Program> Parser::parse() {
   return prog;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Function declaration
-// ─────────────────────────────────────────────────────────────────────────────
-
+// -------------------- //
+// Function declaration //
+// -------------------- //
 std::unique_ptr<Function> Parser::parseFunctionDecl() {
   Token nameToken = expect(TokenKind::TOK_IDENTIFIER, "Expected function name");
   expect(TokenKind::TOK_LPAREN, "Expected '(' after function name");
@@ -142,6 +138,7 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
       params.emplace_back(TypeDesc(Identifier{typeTok}), Identifier{nameTok},
                           isBorrowRef, isConst);
     } while (match(TokenKind::TOK_COMMA));
+
     expect(TokenKind::TOK_RPAREN, "Expected ')'");
   }
 
@@ -152,6 +149,7 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
                                       std::move(body),
                                       TypeDesc(Identifier{retTok}));
   }
+
   Token voidTok{TokenKind::TOK_IDENTIFIER, "void", nameToken.getLine(), 0};
   auto body = parseBlock();
   return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
@@ -159,10 +157,9 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
                                     TypeDesc(Identifier{voidTok}));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Block
-// ─────────────────────────────────────────────────────────────────────────────
-
+// --------- //
+// Block     //
+// --------- //
 std::unique_ptr<Block> Parser::parseBlock(bool allowSingleStmt) {
   auto block = std::make_unique<Block>();
   if (check(TokenKind::TOK_LBRACE)) {
@@ -189,10 +186,9 @@ std::unique_ptr<Block> Parser::parseBlock(bool allowSingleStmt) {
   return block;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Statement dispatch
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ------------------ //
+// Statement dispatch //
+// ------------------ //
 std::unique_ptr<Statement> Parser::parseStatement() {
   if (match(TokenKind::TOK_RETURN))
     return parseReturnStatement();
@@ -231,12 +227,11 @@ std::unique_ptr<Statement> Parser::parseStatement() {
   return std::make_unique<ExprStmt>(std::move(expr));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Array assignment helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ------------------------ //
+// Array assignment helpers //
+// ------------------------ //
 std::unique_ptr<Statement> Parser::parseArrayAssign() {
-  Token arrTok = consume(); // array name
+  Token arrTok = consume();
   std::vector<ExprPtr> indices;
 
   while (true) {
@@ -247,7 +242,7 @@ std::unique_ptr<Statement> Parser::parseArrayAssign() {
       break;
   }
 
-  consume(); // assignment operator (= or += etc. – adjust if you support more)
+  consume();
   auto value = parseExpression();
   expect(TokenKind::TOK_SEMI, "Expected ';'");
 
@@ -255,10 +250,10 @@ std::unique_ptr<Statement> Parser::parseArrayAssign() {
       Identifier{arrTok}, std::move(indices), std::move(value));
   return std::make_unique<ExprStmt>(std::move(e));
 }
-// ─────────────────────────────────────────────────────────────────────────────
-// Control flow
-// ─────────────────────────────────────────────────────────────────────────────
 
+// ------------ //
+// Control flow //
+// ------------ //
 std::unique_ptr<IfStmt> Parser::parseIfStatement() {
   expect(TokenKind::TOK_LPAREN, "Expected '('");
   auto cond = parseExpression();
@@ -295,10 +290,9 @@ std::unique_ptr<Return> Parser::parseReturnStatement() {
   return ret;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Variable declaration:  [const] T [[][]] name (= | <- | &=) expr ;
-// ─────────────────────────────────────────────────────────────────────────────
-
+// -------------------- //
+// Variable declaration //
+// -------------------- //
 std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
   bool isConst = false;
   if (peek().getKind() == TokenKind::TOK_CONST) {
@@ -335,10 +329,9 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
                                    std::move(init), kind, isConst);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Expressions  (precedence climbing)
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ---------- //
+// Expression //
+// ---------- //
 std::unique_ptr<Expression> Parser::parseExpression() {
   return parseAssignment();
 }
@@ -458,7 +451,6 @@ std::unique_ptr<Expression> Parser::parseUnary() {
 std::unique_ptr<Expression> Parser::parsePostfix() {
   auto expr = parsePrimary();
 
-  // arr[i], arr[i][j], arr[i][j][k], ... — any number of dimensions
   if (match(TokenKind::TOK_LBRACKET)) {
     std::vector<ExprPtr> indices;
     do {
@@ -473,7 +465,6 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
                      "Indexing requires an identifier");
   }
 
-  // .length or .text
   if (match(TokenKind::TOK_DOT)) {
     Token prop = expect(TokenKind::TOK_IDENTIFIER, "Expected property name");
     if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
@@ -546,7 +537,7 @@ std::unique_ptr<Expression> Parser::parseNewArray() {
     expect(TokenKind::TOK_RBRACKET, "Expected ']'");
     if (peek().getKind() != TokenKind::TOK_LBRACKET)
       break;
-    consume(); // next [
+    consume();
   } while (true);
 
   const std::string &baseName = elemTok.getWord();

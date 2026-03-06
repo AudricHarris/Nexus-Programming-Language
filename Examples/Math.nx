@@ -3,35 +3,23 @@ Multiply(&i32 val) /* & symbol is needed to say modify orig val
 	val = val * 2;
 }
 
-Main() -> void
+Main() -> i32
 {
-	string intro = "Hello";
-	intro = intro + ", my fellow Gnomes !";
-	i32[] tab = new i32[10];
-	i32 val = 2;
+	Printf("Errors (2) : \n#FF0000Tried to index outside of array size. \n(Allocate a bigger size or don't index higher than size)\n");
 
-	i32 cpt = 0;
-	while (cpt < tab.length)
-	{
-		tab[cpt] = val;
-		Multiply(val);
-		cpt++;
-	}
-	Printf("{intro}\nI have something cool to show\n");
-	Print("Tab : [");
-	cpt = 0;
-	while (cpt < tab.length)
-	{
-		i32 tmp = tab[cpt];
-		Printf("{tmp}\n");
-		cpt++;
-	}
-	Print("]");
+	Print("    i32[] t = new i32[10];");
+	Print("    t[11] = 5;");
+	Print("      ^");
+	Print("      |");
+	Print("Most likely cause line 12. Are you sure you wanted to do this ?");
 
-	string ok = "test";
-	if (ok == "test") 
-	{
-		Print("WOW a comparison");
-	}
-	return;
+	Printf("#FF0000\nTried declaring variable with wrong type. (Consider changing the litteral or the type)\n");
+	Print("    i32 word = 'Hello, world';");
+	Print("                ^");
+	Print("                |");
+	Print("Got a string litteral for type int ?");
+
+	Print("Run with ./Executable/Math.x");
+	
+	return 1000;
 }
