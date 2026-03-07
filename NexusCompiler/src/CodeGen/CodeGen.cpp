@@ -2,7 +2,6 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
-#include <iostream>
 #include <memory>
 #include <regex>
 #include <string>
@@ -608,15 +607,13 @@ static Value *emitMalloc(IRBuilder<> &B, LLVMContext &C, Module &M,
   Value *count64 = B.CreateZExt(count, i64Ty);
   Value *total = B.CreateMul(elemSize, count64);
 
-  // malloc must return ptr
   FunctionCallee mallocFn = M.getOrInsertFunction(
       "malloc", FunctionType::get(PointerType::get(C, 0), {i64Ty}, false));
 
-  return B.CreateCall(mallocFn, {total}); // already ptr
+  return B.CreateCall(mallocFn, {total});
 }
 
 static StructType *getArrayStructTy(LLVMContext &C) {
-  // { i64, ptr }
   return StructType::get(Type::getInt64Ty(C), PointerType::get(C, 0));
 }
 
@@ -628,10 +625,8 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
 
   Value *len = dims[depth];
 
-  // allocate descriptor on stack
   Value *descriptor = B.CreateAlloca(arrTy);
 
-  // store length
   Value *lenPtr = B.CreateStructGEP(arrTy, descriptor, 0);
   B.CreateStore(B.CreateZExt(len, i64Ty), lenPtr);
 
@@ -640,16 +635,13 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
   bool isLeaf = (depth == dims.size() - 1);
 
   if (isLeaf) {
-    // allocate element buffer
     Value *buffer = emitMalloc(B, C, M, elementType, len);
-    B.CreateStore(buffer, dataPtr); // store ptr directly
+    B.CreateStore(buffer, dataPtr);
   } else {
     StructType *childTy = getArrayStructTy(C);
 
-    // allocate array of child descriptors
     Value *childArray = emitMalloc(B, C, M, childTy, len);
 
-    // store pointer to children
     B.CreateStore(childArray, dataPtr);
 
     llvm::Function *fn = B.GetInsertBlock()->getParent();
@@ -669,7 +661,6 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
 
     B.CreateCondBr(cond, bodyBB, afterBB);
 
-    // ---- BODY ----
     B.SetInsertPoint(bodyBB);
 
     Value *slot = B.CreateGEP(childTy, childArray, iVal);
@@ -684,7 +675,6 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
     B.CreateStore(next, index);
     B.CreateBr(loopBB);
 
-    // ---- AFTER ----
     B.SetInsertPoint(afterBB);
   }
 
@@ -697,6 +687,7 @@ static Value *makeND(IRBuilder<> &B, LLVMContext &C, Module &M,
 }
 
 } // namespace ArrayAlloc
+
 std::string CodeGenerator::hexToAnsi(const std::string &hex) {
   if (hex.size() != 7 || hex[0] != '#')
     return hex;
@@ -902,7 +893,6 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
     Value *concatRes =
         StringOps::concat(builder, context, module.get(), lstr, rstr);
 
-    // Free RHS temporary if it wasn't a named variable
     bool rhsIsNamed = dynamic_cast<const IdentExpr *>(e.right.get()) != nullptr;
     if (!rhsIsNamed) {
       StructType *st = TypeResolver::getStringType(context);
@@ -911,7 +901,6 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
       builder.CreateCall(free_(module.get(), context), {dataPtr});
     }
 
-    // Free LHS temporary if it wasn't a named variable either
     bool lhsIsNamed = dynamic_cast<const IdentExpr *>(e.left.get()) != nullptr;
     if (!lhsIsNamed && ls) {
       StructType *st = TypeResolver::getStringType(context);
@@ -929,7 +918,6 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
     auto charPtr = [&](Value *v) -> Value * {
       Type *ty = v->getType();
 
-      // Case 1: pointer to a string struct (AllocaInst or any ptr)
       if (ty->isPointerTy()) {
         if (auto *ai = dyn_cast<AllocaInst>(v)) {
           if (TypeResolver::isString(ai->getAllocatedType())) {
@@ -938,16 +926,13 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
             return builder.CreateExtractValue(loaded, {0}, "str.data");
           }
         }
-        // Already a char* (e.g. from a prior ExtractValue)
         return v;
       }
 
-      // Case 2: string struct value (e.g. returned from a call or load)
       if (TypeResolver::isString(ty)) {
         return builder.CreateExtractValue(v, {0}, "str.data");
       }
 
-      // Case 3: already a raw pointer (i8* / opaque ptr)
       return v;
     };
     llvm::Function *strcmpF = module->getFunction("strcmp");
@@ -960,7 +945,6 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
     bool rIsNamed = dynamic_cast<const IdentExpr *>(e.right.get()) != nullptr;
 
     auto freeStringStruct = [&](Value *v) {
-      // v is a ptr to a %string alloca — load it and free the data ptr
       if (auto *ai = dyn_cast<AllocaInst>(v)) {
         if (TypeResolver::isString(ai->getAllocatedType())) {
           StructType *st = cast<StructType>(ai->getAllocatedType());
@@ -1080,7 +1064,6 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
   Type *targetTy = it->second.type;
 
   if (TypeResolver::isString(targetTy)) {
-    // Free old buffer before overwriting
     Value *oldVal =
         builder.CreateLoad(targetTy, it->second.allocaInst, tgt + ".old");
     Value *oldData = builder.CreateExtractValue(oldVal, {0}, "old.data");
@@ -1482,7 +1465,6 @@ void CodeGenerator::emitArrayFree(Value *arrPtr, StructType *arrSt, int depth) {
 
   Type *elemTy = TypeResolver::elemType(context, arrSt);
 
-  // If elements are sub-arrays, recurse into each slot first.
   if (elemTy && TypeResolver::isArray(elemTy)) {
     StructType *elemSt = cast<StructType>(elemTy);
     std::string sfx = std::to_string(depth);
@@ -1573,7 +1555,6 @@ Value *CodeGenerator::initCopy(const VarDecl &d, const std::string &name,
 
     Value *newMem = builder.CreateCall(mallocF, {srcCap});
 
-    // Copy FIRST...
     builder.CreateCall(
         memcpyF, {newMem, srcData, srcLen, ConstantInt::getFalse(context)});
 
@@ -1585,7 +1566,6 @@ Value *CodeGenerator::initCopy(const VarDecl &d, const std::string &name,
     builder.CreateStore(srcLen, builder.CreateStructGEP(st, alloca, 1));
     builder.CreateStore(srcCap, builder.CreateStructGEP(st, alloca, 2));
 
-    // ...THEN free the temporary source buffer
     bool isTempSource =
         namedValues.find(init->getName().str()) == namedValues.end();
     if (isTempSource)
@@ -1672,7 +1652,7 @@ Value *CodeGenerator::codegen(const Statement &stmt) {
     return visitVarDecl(*p);
   if (auto *p = dynamic_cast<const ExprStmt *>(&stmt)) {
     Value *v = codegen(*p->expr);
-    flushPendingFrees(); // emit free() for all temporaries
+    flushPendingFrees();
     return v;
   }
   if (auto *p = dynamic_cast<const IfStmt *>(&stmt))
@@ -1811,14 +1791,13 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     const std::string pname = param.name.token.getWord();
 
     if (param.isBorrowRef) {
-      // Store the incoming pointer in an alloca
       AllocaInst *ptrAlloca = builder.CreateAlloca(PointerType::get(context, 0),
                                                    nullptr, pname + ".refptr");
       builder.CreateStore(&arg, ptrAlloca);
 
       Type *pointee = TypeResolver::fromTypeDesc(context, param.type);
-      VarInfo vi(ptrAlloca, PointerType::get(context, 0), false, false,
-                 /*ref=*/true, param.isConst);
+      VarInfo vi(ptrAlloca, PointerType::get(context, 0), false, false, true,
+                 param.isConst);
       vi.pointeeType = pointee;
       namedValues[pname] = vi;
     } else {
@@ -1832,7 +1811,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   codegen(*func.body);
 
   if (!builder.GetInsertBlock()->getTerminator()) {
-    emitScopeDestructors(); // ← ADD THIS
+    emitScopeDestructors();
     scopeStack.pop_back();
     if (retTy->isVoidTy())
       builder.CreateRetVoid();
@@ -1871,7 +1850,7 @@ bool CodeGenerator::generate(const Program &program,
       return false;
   }
 
-  module->print(llvm::outs(), nullptr);
+  // module->print(llvm::outs(), nullptr);
 
   std::error_code ec;
   raw_fd_ostream out(outputFilename + ".ll", ec, sys::fs::OF_None);
