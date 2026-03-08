@@ -2,6 +2,12 @@
 #define CodeGen_H
 
 #include "../AST/AST.h"
+#include "Emitters/ArrayEmitter.h"
+#include "Emitters/PrintEmitter.h"
+#include "Emitters/StringEmitter.h"
+#include "Manager/ArithmeticManager.h"
+#include "Manager/ScopeManager.h"
+#include "VarInfo.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -11,54 +17,37 @@
 #include <string>
 #include <vector>
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Per-variable metadata tracked during code generation
-// ─────────────────────────────────────────────────────────────────────────────
-struct VarInfo {
-  llvm::AllocaInst *allocaInst = nullptr;
-  llvm::Type *type = nullptr;
-  bool isBorrowed = false;
-  bool isMoved = false;
-  bool isReference = false;
-  bool isConst = false;
-  llvm::Type *pointeeType = nullptr;
-  std::string sourceName;
-  bool ownsHeap = false;
-
-  VarInfo() = default;
-
-  VarInfo(llvm::AllocaInst *a, llvm::Type *t, bool borrowed, bool moved,
-          bool ref = false, bool c = false, std::string src = "")
-      : allocaInst(a), type(t), isBorrowed(borrowed), isMoved(moved),
-        isReference(ref), isConst(c), sourceName(std::move(src)) {}
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Code generator
-// ─────────────────────────────────────────────────────────────────────────────
+// -------------- //
+// Code generator //
+// -------------- //
 class CodeGenerator {
 public:
   CodeGenerator();
-  std::vector<std::vector<std::string>> scopeStack;
-  std::vector<llvm::Value *> pendingFrees;
+
   bool generate(const Program &program, const std::string &outputFilename);
 
   static bool isCStringPointer(llvm::Type *ty);
 
 private:
-  // ── LLVM state ──────────────────────────────────────────────────────────
+  // LLVM state
   llvm::LLVMContext context;
   std::unique_ptr<llvm::Module> module;
   llvm::IRBuilder<> builder;
 
-  // ── Symbol tables ────────────────────────────────────────────────────────
+  // Symbol tables
   std::map<std::string, VarInfo> namedValues;
   std::map<std::string, std::vector<bool>> borrowRefParams; // callee → isRef[]
 
-  // ── Error ────────────────────────────────────────────────────────────────
+  // Subsystems
+  ScopeManager scopeMgr;
+
+  // Temporaries whose heap buffers must be freed after a statement
+  std::vector<llvm::Value *> pendingFrees;
+
+  // Error
   llvm::Value *logError(const char *msg);
 
-  // ── Expression visitors ──────────────────────────────────────────────────
+  // Expression visitors
   llvm::Value *visitIdentifier(const IdentExpr &e);
   llvm::Value *visitIntLit(const IntLitExpr &e);
   llvm::Value *visitFloatLit(const FloatLitExpr &e);
@@ -70,22 +59,15 @@ private:
   llvm::Value *visitIncrement(const Increment &e);
   llvm::Value *visitDecrement(const Decrement &e);
   llvm::Value *visitCall(const CallExpr &e);
-
-  // Array / string indexing
-  void emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt, int depth);
   llvm::Value *visitNewArray(const NewArrayExpr &e);
   llvm::Value *visitArrayIndex(const ArrayIndexExpr &e);
   llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &e);
-
-  // Property access
   llvm::Value *visitLengthProperty(const LengthPropertyExpr &e);
-  void scheduleStringFree(llvm::Value *strAlloca);
-  void flushPendingFrees();
 
-  // ── Expression dispatch ──────────────────────────────────────────────────
+  // Expression dispatch
   llvm::Value *codegen(const Expression &expr);
 
-  // ── Statement visitors ───────────────────────────────────────────────────
+  // Statement visitors
   llvm::Value *visitVarDecl(const VarDecl &d);
   llvm::Value *visitIfStmt(const IfStmt &s);
   llvm::Value *visitWhileStmt(const WhileStmt &s);
@@ -93,9 +75,9 @@ private:
 
   llvm::Value *codegen(const Statement &stmt);
   void codegen(const Block &block);
-  llvm::Function *codegen(const Function &func);
+  llvm::Function *codegen(const AST_H::Function &func);
 
-  // ── VarDecl initialisation helpers ──────────────────────────────────────
+  // VarDecl initialisation helpers
   llvm::Value *initCopy(const VarDecl &d, const std::string &name,
                         llvm::Type *ty, llvm::AllocaInst *alloca);
   llvm::Value *initMove(const VarDecl &d, const std::string &name,
@@ -103,23 +85,15 @@ private:
   llvm::Value *initBorrow(const VarDecl &d, const std::string &name,
                           llvm::AllocaInst *alloca);
 
-  // ── Arithmetic helpers ───────────────────────────────────────────────────
-  llvm::Value *promoteToDouble(llvm::Value *v);
-  llvm::Value *promoteToInt(llvm::Value *v);
-  llvm::Value *generateComparison(BinaryOp op, llvm::Value *l, llvm::Value *r,
-                                  bool isFloat);
+  // Increment / decrement helper
   llvm::Value *generateIncrDecr(const std::string &varName, bool isInc);
 
-  // ── Print helpers ────────────────────────────────────────────────────────
-  llvm::Value *handlePrintf(const CallExpr &e);
-  llvm::Value *handlePrint(const CallExpr &e);
+  // Pending-free helpers
+  void scheduleStringFree(llvm::Value *strAlloca);
+  void flushPendingFrees();
 
-  // ── Colour helpers ───────────────────────────────────────────────────────
-  std::string hexToAnsi(const std::string &hex);
-  std::string replaceHexColors(const std::string &input);
-
-  void emitScopeDestructors();
-  void emitDestructor(VarInfo &vi);
+  // free() lazy-declare
+  llvm::Function *getFree();
 };
 
 #endif // CodeGen_H
