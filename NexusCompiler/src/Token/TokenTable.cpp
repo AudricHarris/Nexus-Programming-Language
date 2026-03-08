@@ -91,6 +91,8 @@ std::string Token::toString() {
     return "TOK_FLOAT  ";
   case TokenKind::TOK_STRING:
     return "TOK_STRING  ";
+  case TokenKind::TOK_CHAR:
+    return "TOK_CHAR  ";
   case TokenKind::TOK_BOOL:
     return "TOK_BOOL  ";
   case TokenKind::TOK_ASSIGN:

@@ -1126,6 +1126,11 @@ bool CodeGenerator::generate(const Program &program,
     llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "strcmp",
                            *module);
   }
+  if (!module->getFunction("scanf")) {
+    auto *ft = FunctionType::get(i32, {ptrTy, ptrTy}, false);
+    llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "scanf",
+                           *module);
+  }
 
   for (const auto &fn : program.functions)
     if (!codegen(*fn))

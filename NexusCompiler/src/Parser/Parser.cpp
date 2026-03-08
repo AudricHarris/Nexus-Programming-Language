@@ -89,7 +89,7 @@ static bool isScalarTypeName(const std::string &w) {
   return w == "i32" || w == "i64" || w == "i16" || w == "i8" || w == "f32" ||
          w == "f64" || w == "bool" || w == "void" || w == "int" ||
          w == "integer" || w == "long" || w == "short" || w == "float" ||
-         w == "double" || w == "string" || w == "str";
+         w == "double" || w == "string" || w == "str" || w == "char";
 }
 
 static bool looksLikeType(const Token &tok) {
