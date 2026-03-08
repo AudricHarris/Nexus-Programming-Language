@@ -101,7 +101,7 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
                          Type *elementType, ArrayRef<Value *> dims,
                          unsigned depth) {
   Type *i64Ty = Type::getInt64Ty(C);
-  StructType *arrTy = getArrayStructTy(C);
+  StructType *arrTy = TypeResolver::getOrCreateArrayStruct(C, elementType);
   Value *len = dims[depth];
 
   Value *descriptor = B.CreateAlloca(arrTy);
@@ -116,7 +116,7 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
     Value *buffer = emitMalloc(B, C, M, elementType, len);
     B.CreateStore(buffer, dataPtr);
   } else {
-    StructType *childTy = getArrayStructTy(C);
+    StructType *childTy = TypeResolver::getOrCreateArrayStruct(C, elementType);
     Value *childArray = emitMalloc(B, C, M, childTy, len);
     B.CreateStore(childArray, dataPtr);
 

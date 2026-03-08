@@ -1,4 +1,5 @@
 #include "CodeGen.h"
+#include "Emitters/BuiltinEmitter.h"
 #include "Emitters/StringEmitter.h"
 #include "RTDecl.h"
 #include "TypeResolver.h"
@@ -17,10 +18,8 @@ using namespace llvm;
 
 static std::string normalizeFunctionName(const std::string &name) {
   static const std::unordered_map<std::string, std::string> kMap = {
-      {"Main", "main"},
-      {"Printf", "printf"},
-      {"Print", "print_literal"},
-      {"printf", "printf"},
+      {"Main", "main"},     {"Printf", "printf"}, {"Print", "print_literal"},
+      {"printf", "printf"}, {"Read", "read"},     {"Random", "random"},
   };
   auto it = kMap.find(name);
   return it != kMap.end() ? it->second : name;
@@ -241,6 +240,40 @@ Value *CodeGenerator::visitFloatLit(const FloatLitExpr &e) {
 Value *CodeGenerator::visitBoolLit(const BoolLitExpr &e) {
   return ConstantInt::get(Type::getInt1Ty(context),
                           e.lit.getWord() == "true" ? 1 : 0);
+}
+
+Value *CodeGenerator::visitCharLit(const CharLitExpr &e) {
+  const std::string &word = e.lit.getWord();
+  char c = 0;
+  if (word.size() == 1) {
+    c = word[0];
+  } else if (word.size() == 2 && word[0] == '\\') {
+    switch (word[1]) {
+    case 'n':
+      c = '\n';
+      break;
+    case 't':
+      c = '\t';
+      break;
+    case 'r':
+      c = '\r';
+      break;
+    case '0':
+      c = '\0';
+      break;
+    case '\\':
+      c = '\\';
+      break;
+    case '\'':
+      c = '\'';
+      break;
+    default:
+      c = word[1];
+      break;
+    }
+  }
+  return llvm::ConstantInt::get(llvm::Type::getInt8Ty(context),
+                                static_cast<uint8_t>(c));
 }
 
 Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
@@ -720,6 +753,12 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
   if (rawName == "Print" && e.arguments.size() == 1)
     return PrintEmitter::handlePrint(e, builder, context, module.get());
 
+  if (rawName == "Read")
+    return BuiltinEmitter::handleRead(builder, context, module.get());
+
+  if (rawName == "Random")
+    return BuiltinEmitter::handleRandom(builder, context, module.get());
+
   llvm::Function *callee = module->getFunction(calleeName);
   if (!callee)
     return logError(("Unknown function: " + calleeName).c_str());
@@ -744,6 +783,13 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       Value *v = codegen(*e.arguments[i]);
       if (!v)
         return nullptr;
+
+      if (auto *ai = dyn_cast<AllocaInst>(v)) {
+        Type *allocTy = ai->getAllocatedType();
+        if (TypeResolver::isArray(allocTy) || TypeResolver::isString(allocTy)) {
+          v = builder.CreateLoad(allocTy, ai, "arg.val");
+        }
+      }
       args.push_back(v);
     }
   }
@@ -765,6 +811,8 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitStrLit(*p);
   if (auto *p = dynamic_cast<const BoolLitExpr *>(&expr))
     return visitBoolLit(*p);
+  if (auto *p = dynamic_cast<const CharLitExpr *>(&expr))
+    return visitCharLit(*p);
   if (auto *p = dynamic_cast<const BinaryExpr *>(&expr))
     return visitBinary(*p);
   if (auto *p = dynamic_cast<const UnaryExpr *>(&expr))
@@ -785,6 +833,7 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitArrayIndexAssign(*p);
   if (auto *p = dynamic_cast<const LengthPropertyExpr *>(&expr))
     return visitLengthProperty(*p);
+
   return logError("Unknown expression node");
 }
 
@@ -1060,6 +1109,10 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   BasicBlock *entry = BasicBlock::Create(context, "entry", f);
   builder.SetInsertPoint(entry);
 
+  if (fname == "main") {
+    BuiltinEmitter::emitRuntimeInit(builder, context, module.get());
+  }
+
   namedValues.clear();
 
   // Push the function's top-level scope
@@ -1080,10 +1133,21 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
       vi.pointeeType = pointee;
       namedValues[pname] = vi;
     } else {
-      AllocaInst *a = builder.CreateAlloca(arg.getType(), nullptr, pname);
-      builder.CreateStore(&arg, a);
+      Type *declaredTy = TypeResolver::fromTypeDesc(context, param.type);
+      if (!declaredTy)
+        declaredTy = arg.getType(); // fallback for scalars
+
+      AllocaInst *a = builder.CreateAlloca(declaredTy, nullptr, pname);
+
+      if (TypeResolver::isArray(declaredTy) ||
+          TypeResolver::isString(declaredTy)) {
+        builder.CreateStore(&arg, a);
+      } else {
+        builder.CreateStore(&arg, a);
+      }
+
       namedValues[pname] =
-          VarInfo(a, arg.getType(), false, false, false, param.isConst);
+          VarInfo(a, declaredTy, false, false, false, param.isConst);
     }
     scopeMgr.declare(pname);
   }
@@ -1135,6 +1199,8 @@ bool CodeGenerator::generate(const Program &program,
   for (const auto &fn : program.functions)
     if (!codegen(*fn))
       return false;
+
+  // module->print(llvm::outs(), nullptr);
 
   std::error_code ec;
   raw_fd_ostream out(outputFilename + ".ll", ec, sys::fs::OF_None);

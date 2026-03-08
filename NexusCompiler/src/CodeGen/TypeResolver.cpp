@@ -60,7 +60,17 @@ llvm::Type *TypeResolver::fromName(llvm::LLVMContext &ctx,
 
 llvm::Type *TypeResolver::fromTypeDesc(llvm::LLVMContext &ctx,
                                        const TypeDesc &td) {
-  return fromName(ctx, td.fullName());
+  llvm::Type *base = fromName(ctx, td.base.token.getWord());
+  if (!base)
+    return nullptr;
+
+  llvm::Type *result = base;
+  for (int i = 0; i < td.dimensions; ++i) {
+    result = getOrCreateArrayStruct(ctx, result);
+    if (!result)
+      return nullptr;
+  }
+  return result;
 }
 
 llvm::StructType *TypeResolver::getStringType(llvm::LLVMContext &ctx) {

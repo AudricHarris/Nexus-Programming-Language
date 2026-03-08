@@ -146,6 +146,9 @@ static std::string buildPrintfFmt(const std::string &raw, LLVMContext &ctx,
         Value *f = B.CreateGlobalString("false", "bf");
         args.push_back({"%s", B.CreateSelect(val, t, f, "bstr")});
         fmt += "%s";
+      } else if (ty->isIntegerTy(8)) {
+        args.push_back({"%c", val});
+        fmt += "%c";
       } else if (ty->isIntegerTy()) {
         if (ty->getIntegerBitWidth() < 64)
           val = B.CreateSExt(val, Type::getInt64Ty(ctx));
@@ -160,7 +163,6 @@ static std::string buildPrintfFmt(const std::string &raw, LLVMContext &ctx,
         args.push_back({"%s", val});
         fmt += "%s";
       } else {
-        // Struct — assume string-like, extract data ptr
         if (auto *ai = dyn_cast<AllocaInst>(val)) {
           if (TypeResolver::isString(ai->getAllocatedType())) {
             StructType *st = cast<StructType>(ai->getAllocatedType());

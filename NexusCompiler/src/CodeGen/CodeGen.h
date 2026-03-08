@@ -53,6 +53,7 @@ private:
   llvm::Value *visitFloatLit(const FloatLitExpr &e);
   llvm::Value *visitStrLit(const StrLitExpr &e);
   llvm::Value *visitBoolLit(const BoolLitExpr &e);
+  llvm::Value *visitCharLit(const CharLitExpr &e);
   llvm::Value *visitBinary(const BinaryExpr &e);
   llvm::Value *visitUnary(const UnaryExpr &e);
   llvm::Value *visitAssign(const AssignExpr &e);

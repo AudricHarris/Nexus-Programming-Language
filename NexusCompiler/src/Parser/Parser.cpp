@@ -133,10 +133,19 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
       }
       Token typeTok =
           expect(TokenKind::TOK_IDENTIFIER, "Expected parameter type");
+
+      int dims = 0;
+      while (peek().getKind() == TokenKind::TOK_LBRACKET &&
+             peekAt(1).getKind() == TokenKind::TOK_RBRACKET) {
+        consume();
+        consume();
+        ++dims;
+      }
+
       Token nameTok =
           expect(TokenKind::TOK_IDENTIFIER, "Expected parameter name");
-      params.emplace_back(TypeDesc(Identifier{typeTok}), Identifier{nameTok},
-                          isBorrowRef, isConst);
+      params.emplace_back(TypeDesc(Identifier{typeTok}, dims, isConst),
+                          Identifier{nameTok}, isBorrowRef, isConst);
     } while (match(TokenKind::TOK_COMMA));
 
     expect(TokenKind::TOK_RPAREN, "Expected ')'");
@@ -144,10 +153,19 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
 
   if (match(TokenKind::TOK_RETURN_TYPE)) {
     Token retTok = expect(TokenKind::TOK_IDENTIFIER, "Expected return type");
+
+    int retDims = 0;
+    while (peek().getKind() == TokenKind::TOK_LBRACKET &&
+           peekAt(1).getKind() == TokenKind::TOK_RBRACKET) {
+      consume();
+      consume();
+      ++retDims;
+    }
+
     auto body = parseBlock();
+    TypeDesc retTd(Identifier{retTok}, retDims, false);
     return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
-                                      std::move(body),
-                                      TypeDesc(Identifier{retTok}));
+                                      std::move(body), std::move(retTd));
   }
 
   Token voidTok{TokenKind::TOK_IDENTIFIER, "void", nameToken.getLine(), 0};
