@@ -265,7 +265,6 @@ std::vector<Token> Lexer::Tokenize() {
 
       this->next();
 
-      std::cout << "Is a char\n";
       lstTokens.push_back(makeToken(TokenKind::TOK_CHAR, currentChar));
       continue;
     }

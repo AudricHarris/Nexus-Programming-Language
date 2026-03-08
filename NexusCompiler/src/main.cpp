@@ -12,7 +12,7 @@
 int main(int argc, char *argv[]) {
   if (argc != 3) {
     if (argc == 2 && std::string(argv[1]) == "--version") {
-      std::cout << "nexus 1.4" << std::endl;
+      std::cout << "nexus 1.4.2" << std::endl;
       return 0;
     };
     std::cerr << "Usage: nexus input.nx output.x\n";
@@ -24,13 +24,13 @@ int main(int argc, char *argv[]) {
   std::cout << "Errors : \n";
   Lexer l(code);
   std::vector<Token> lst = l.Tokenize();
-  for (size_t i = 0; i < lst.size(); i++)
-    std::cout << lst[i].toString();
+  // for (size_t i = 0; i < lst.size(); i++)
+  // std::cout << lst[i].toString();
 
   // td::cout << "Errors : \n";
   Parser parser(lst);
   auto parsed = parser.parse();
-  parsed->toJson(std::cout);
+  // parsed->toJson(std::cout);
   CodeGenerator cg;
   if (!cg.generate(*parsed, "out")) {
     std::cerr << "Codegen failed\n";
