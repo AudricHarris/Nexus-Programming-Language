@@ -1,7 +1,7 @@
 #ifndef LEXER_H
 #define LEXER_H
 
-#include "../Dictionary/TokenType.h"
+#include "../Token/TokenType.h"
 #include <cstddef>
 #include <optional>
 #include <string>

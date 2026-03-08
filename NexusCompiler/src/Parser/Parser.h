@@ -8,7 +8,7 @@
 
 // Custom
 #include "../AST/AST.h"
-#include "../Dictionary/TokenType.h"
+#include "../Token/TokenType.h"
 
 // Let's start by defining Notions
 

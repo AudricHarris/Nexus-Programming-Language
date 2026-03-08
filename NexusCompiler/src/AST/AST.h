@@ -1,7 +1,7 @@
 #ifndef AST_H
 #define AST_H
 
-#include "../Dictionary/TokenType.h"
+#include "../Token/TokenType.h"
 #include <iostream>
 #include <memory>
 #include <optional>

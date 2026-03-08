@@ -1,5 +1,5 @@
 #include "Parser.h"
-#include "../Dictionary/TokenType.h"
+#include "../Token/TokenType.h"
 #include "ParserError.h"
 #include <memory>
 #include <string>

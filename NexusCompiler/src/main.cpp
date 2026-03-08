@@ -1,8 +1,8 @@
 #include "CodeGen/CodeGen.h"
-#include "Dictionary/TokenType.h"
 #include "FileReader/FileReader.h"
 #include "Lexer/Lexer.h"
 #include "Parser/Parser.h"
+#include "Token/TokenType.h"
 #include <cstdlib>
 #include <iostream>
 #include <optional>
