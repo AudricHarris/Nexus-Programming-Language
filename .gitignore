@@ -1,6 +1,7 @@
 # Build artifacts
 build/
 out/
+llvm-project/
 bin/
 cmake-build-*/
 CMakeCache.txt
