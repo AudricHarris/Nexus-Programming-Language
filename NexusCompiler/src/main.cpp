@@ -39,7 +39,8 @@ int main(int argc, char *argv[]) {
 
   std::cout << "\nNow run:\n";
 
-  std::string cmd = "clang -fsanitize=address -fsanitize=leak -g out.ll -o " +
+  std::string cmd = "clang -Wno-override-module -fsanitize=address "
+                    "-fsanitize=leak -g out.ll  -o " +
                     std::string(argv[2]);
   system(cmd.c_str());
   system("rm -rf out.ll");

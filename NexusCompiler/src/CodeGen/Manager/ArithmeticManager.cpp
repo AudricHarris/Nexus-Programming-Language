@@ -122,7 +122,18 @@ Value *ArithmeticManager::emitBinaryOp(IRBuilder<> &B, LLVMContext &ctx,
   case BinaryOp::Mod:
     return B.CreateSRem(promoteToInt(B, ctx, l), promoteToInt(B, ctx, r),
                         "srem");
+  case BinaryOp::BitAnd:
+    return B.CreateAnd(l, r, "bitand");
 
+  case BinaryOp::And:
+    l = B.CreateICmpNE(l, ConstantInt::get(l->getType(), 0), "l.bool");
+    r = B.CreateICmpNE(r, ConstantInt::get(r->getType(), 0), "r.bool");
+    return B.CreateAnd(l, r, "land");
+
+  case BinaryOp::Or:
+    l = B.CreateICmpNE(l, ConstantInt::get(l->getType(), 0), "l.bool");
+    r = B.CreateICmpNE(r, ConstantInt::get(r->getType(), 0), "r.bool");
+    return B.CreateOr(l, r, "lor");
   default:
     return nullptr;
   }

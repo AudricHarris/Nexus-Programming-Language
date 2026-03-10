@@ -71,6 +71,9 @@ enum class TokenKind {
   TOK_EQ,
   TOK_NE,
   TOK_AND,
+  TOK_DOUBLE_AND,
+  TOK_OR,
+  TOK_NOT,
 
   // Punctuation / Delimiters
   TOK_LPAREN,

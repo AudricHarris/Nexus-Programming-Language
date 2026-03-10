@@ -1,6 +1,8 @@
 #include "PrintEmitter.h"
 #include "../TypeResolver.h"
 #include "llvm/IR/Constants.h"
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Value.h>
 #include <regex>
 
 using namespace llvm;
@@ -159,19 +161,17 @@ static std::string buildPrintfFmt(const std::string &raw, LLVMContext &ctx,
           val = B.CreateFPExt(val, Type::getDoubleTy(ctx));
         args.push_back({"%g", val});
         fmt += "%g";
+      } else if (auto *ai = dyn_cast<AllocaInst>(val)) {
+        if (TypeResolver::isString(ai->getAllocatedType())) {
+          StructType *st = cast<StructType>(ai->getAllocatedType());
+          Value *load = B.CreateLoad(st, ai);
+          Value *ptr = B.CreateExtractValue(load, {0});
+          args.push_back({"%s", ptr});
+          fmt += "%s";
+        }
       } else if (ty->isPointerTy()) {
         args.push_back({"%s", val});
         fmt += "%s";
-      } else {
-        if (auto *ai = dyn_cast<AllocaInst>(val)) {
-          if (TypeResolver::isString(ai->getAllocatedType())) {
-            StructType *st = cast<StructType>(ai->getAllocatedType());
-            Value *load = B.CreateLoad(st, ai);
-            Value *ptr = B.CreateExtractValue(load, {0});
-            args.push_back({"%s", ptr});
-            fmt += "%s";
-          }
-        }
       }
     } else {
       fmt += '{' + inner + '}';
@@ -218,7 +218,7 @@ Value *PrintEmitter::handlePrintf(const CallExpr &e, IRBuilder<> &B,
                                   const std::map<std::string, VarInfo> &vars) {
   auto *strArg = dynamic_cast<const StrLitExpr *>(e.arguments[0].get());
   if (!strArg)
-    return nullptr; // caller logs error
+    return nullptr;
 
   std::string raw = unescapeString(strArg->lit.getWord());
   raw = replaceHexColors(raw) + "\033[0m";
@@ -231,24 +231,44 @@ Value *PrintEmitter::handlePrintf(const CallExpr &e, IRBuilder<> &B,
     return nullptr;
 
   Value *fmtPtr = B.CreateGlobalString(fmt, ".fmt");
+
   std::vector<Value *> args = {fmtPtr};
 
+  std::vector<Value *> tempsToFree;
+
   for (auto &fa : fmtArgs) {
+    Value *toPass = fa.value;
+
     if (fa.spec == "%s") {
+      if (fa.value->getType()->isPointerTy()) {
+        args.push_back(fa.value);
+        continue;
+      }
+
       if (auto *ai = dyn_cast<AllocaInst>(fa.value)) {
         Type *at = ai->getAllocatedType();
         if (TypeResolver::isString(at)) {
-          Value *loaded = B.CreateLoad(cast<StructType>(at), ai);
-          args.push_back(B.CreateExtractValue(loaded, {0}));
-          continue;
+          StructType *st = cast<StructType>(at);
+          Value *loaded = B.CreateLoad(st, ai, "str.load");
+          Value *dataPtr = B.CreateExtractValue(loaded, {0}, "str.data");
+
+          FunctionCallee colorFn = M->getOrInsertFunction(
+              "rt_colorize_string",
+              FunctionType::get(PointerType::get(ctx, 0),   // returns char*
+                                {PointerType::get(ctx, 0)}, // takes const char*
+                                false));
+
+          Value *colored = B.CreateCall(colorFn, {dataPtr}, "colored.str");
+          toPass = colored;
+          tempsToFree.push_back(colored);
         }
       }
     }
-    args.push_back(fa.value);
   }
-  return B.CreateCall(printfF, args, "printf.ret");
-}
+  Value *printfRet = B.CreateCall(printfF, args, "printf.ret");
 
+  return printfRet;
+}
 Value *PrintEmitter::handlePrint(const CallExpr &e, IRBuilder<> &B,
                                  LLVMContext &ctx, Module *M) {
   (void)ctx;

@@ -55,6 +55,9 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_EQ", "=="},
     {"TOK_NE", "!="},
     {"TOK_AND", "&"},
+    {"TOK_DOUBLE_AND", "&&"},
+    {"TOK_OR", "||"},
+    {"TOK_NOT", "!"},
     {"TOK_LPAREN", "("},
     {"TOK_RPAREN", ")"},
     {"TOK_LBRACKET", "["},
@@ -131,6 +134,12 @@ std::string Token::toString() {
     return "TOK_NE  ";
   case TokenKind::TOK_AND:
     return "TOK_AND  ";
+  case TokenKind::TOK_DOUBLE_AND:
+    return "TOK_DOUBLE_AND  ";
+  case TokenKind::TOK_OR:
+    return "TOK_OR  ";
+  case TokenKind::TOK_NOT:
+    return "TOK_NOT  ";
   case TokenKind::TOK_LPAREN:
     return "TOK_LPAREN  ";
   case TokenKind::TOK_RPAREN:

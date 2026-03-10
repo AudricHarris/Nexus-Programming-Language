@@ -1,5 +1,6 @@
 #include "CodeGen.h"
 #include "Emitters/BuiltinEmitter.h"
+#include "Emitters/PrintEmitter.h"
 #include "Emitters/StringEmitter.h"
 #include "RTDecl.h"
 #include "TypeResolver.h"
@@ -69,12 +70,10 @@ static std::string unescapeString(const std::string &s) {
   return out;
 }
 
-// evalStrLit: build a String struct value from an interpolated string literal
 static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
                          IRBuilder<> &B,
                          const std::map<std::string, VarInfo> &vars, Module *M);
 
-// evalInterp: evaluate a simple {identifier} or {constant} inside a string
 static Value *evalInterp(const std::string &inner, LLVMContext &ctx,
                          IRBuilder<> &B,
                          const std::map<std::string, VarInfo> &vars) {
@@ -304,6 +303,7 @@ Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
       processed += raw[i];
     }
   }
+  processed = PrintEmitter::replaceHexColors(processed);
   return StringOps::fromLiteral(builder, context, module.get(), processed);
 }
 
@@ -457,6 +457,13 @@ Value *CodeGenerator::visitUnary(const UnaryExpr &e) {
   case UnaryOp::Negate:
     return v->getType()->isFloatingPointTy() ? builder.CreateFNeg(v, "fneg")
                                              : builder.CreateNeg(v, "neg");
+  case UnaryOp::Not: {
+    Value *b = v->getType()->isIntegerTy(1)
+                   ? v
+                   : builder.CreateICmpNE(v, ConstantInt::get(v->getType(), 0),
+                                          "tobool");
+    return builder.CreateNot(b, "lnot");
+  }
   }
   return logError("Unknown unary op");
 }
@@ -1200,7 +1207,7 @@ bool CodeGenerator::generate(const Program &program,
     if (!codegen(*fn))
       return false;
 
-  // module->print(llvm::outs(), nullptr);
+  module->print(llvm::outs(), nullptr);
 
   std::error_code ec;
   raw_fd_ostream out(outputFilename + ".ll", ec, sys::fs::OF_None);

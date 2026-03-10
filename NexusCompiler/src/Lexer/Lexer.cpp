@@ -186,10 +186,25 @@ std::vector<Token> Lexer::Tokenize() {
     }
     if (this->peek() == '&') {
       this->next();
+      if (this->peek() == '&') {
+        this->next();
+        lstTokens.push_back(makeToken(TokenKind::TOK_DOUBLE_AND, "&&"));
+        continue;
+      }
       lstTokens.push_back(makeToken(TokenKind::TOK_AND, "&"));
       continue;
     }
-
+    if (this->peek() == '!') {
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_NOT, "!"));
+      continue;
+    }
+    if (this->peek() == '|' && this->peeknext() == '|') {
+      this->next();
+      this->next();
+      lstTokens.push_back(makeToken(TokenKind::TOK_OR, "||"));
+      continue;
+    }
     if (this->peek() == '/') {
       this->next();
       if (this->peek() == '/') {

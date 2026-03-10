@@ -126,10 +126,13 @@ enum class BinaryOp {
   Lt,
   Gt,
   Le,
-  Ge
+  Ge,
+  And,
+  BitAnd,
+  Or
 };
 
-enum class UnaryOp { Negate };
+enum class UnaryOp { Negate, Not };
 enum class AssignKind { Copy, Move, Borrow };
 
 inline std::string toString(BinaryOp op) {
@@ -158,6 +161,12 @@ inline std::string toString(BinaryOp op) {
     return "Le";
   case BinaryOp::Ge:
     return "Ge";
+  case BinaryOp::And:
+    return "And";
+  case BinaryOp::BitAnd:
+    return "BitAnd";
+  case BinaryOp::Or:
+    return "Or";
   }
   return "Unknown";
 }
@@ -166,6 +175,8 @@ inline std::string toString(UnaryOp op) {
   switch (op) {
   case UnaryOp::Negate:
     return "Negate";
+  case UnaryOp::Not:
+    return "Not";
   }
   return "Unknown";
 }

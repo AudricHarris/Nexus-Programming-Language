@@ -355,7 +355,7 @@ std::unique_ptr<Expression> Parser::parseExpression() {
 }
 
 std::unique_ptr<Expression> Parser::parseAssignment() {
-  auto left = parseEquality();
+  auto left = parseOr();
   if (match(TokenKind::TOK_ASSIGN)) {
     if (auto *id = dynamic_cast<IdentExpr *>(left.get())) {
       auto val = parseAssignment();
@@ -389,6 +389,29 @@ std::unique_ptr<Expression> Parser::parseAssignment() {
                      "'&=' requires an identifier");
   }
   return left;
+}
+
+std::unique_ptr<Expression> Parser::parseOr() {
+  auto expr = parseAnd();
+  while (match(TokenKind::TOK_OR))
+    expr =
+        std::make_unique<BinaryExpr>(BinaryOp::Or, std::move(expr), parseAnd());
+  return expr;
+}
+
+std::unique_ptr<Expression> Parser::parseAnd() {
+  auto expr = parseEquality();
+  while (true) {
+    if (match(TokenKind::TOK_DOUBLE_AND))
+      expr = std::make_unique<BinaryExpr>(BinaryOp::And, std::move(expr),
+                                          parseEquality());
+    else if (match(TokenKind::TOK_AND))
+      expr = std::make_unique<BinaryExpr>(BinaryOp::BitAnd, std::move(expr),
+                                          parseEquality());
+    else
+      break;
+  }
+  return expr;
 }
 
 std::unique_ptr<Expression> Parser::parseEquality() {
@@ -460,6 +483,9 @@ std::unique_ptr<Expression> Parser::parseMultiplicative() {
 }
 
 std::unique_ptr<Expression> Parser::parseUnary() {
+  if (match(TokenKind::TOK_NOT))
+    return std::make_unique<UnaryExpr>(UnaryOp::Not, parseUnary());
+
   if (match(TokenKind::TOK_SUB)) {
     return std::make_unique<UnaryExpr>(UnaryOp::Negate, parseUnary());
   }
