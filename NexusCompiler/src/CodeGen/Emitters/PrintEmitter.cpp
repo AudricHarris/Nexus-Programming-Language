@@ -264,6 +264,7 @@ Value *PrintEmitter::handlePrintf(const CallExpr &e, IRBuilder<> &B,
         }
       }
     }
+    args.push_back(toPass);
   }
   Value *printfRet = B.CreateCall(printfF, args, "printf.ret");
 
