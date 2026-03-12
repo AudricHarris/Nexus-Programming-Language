@@ -785,7 +785,17 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (sit == namedValues.end())
         return logError(
             ("Unknown variable: " + id->name.token.getWord()).c_str());
-      args.push_back(sit->second.allocaInst);
+
+      // FIX: if the variable is already a borrow-ref, load the pointer out
+      // instead of passing the alloca holding the pointer (double indirection)
+      if (sit->second.isReference) {
+        Value *ptr = builder.CreateLoad(PointerType::get(context, 0),
+                                        sit->second.allocaInst,
+                                        id->name.token.getWord() + ".fwd");
+        args.push_back(ptr);
+      } else {
+        args.push_back(sit->second.allocaInst);
+      }
     } else {
       Value *v = codegen(*e.arguments[i]);
       if (!v)
