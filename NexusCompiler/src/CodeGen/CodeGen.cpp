@@ -8,6 +8,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_map>
 
@@ -1071,7 +1072,47 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 
   fn->insert(fn->end(), bodyBB);
   builder.SetInsertPoint(bodyBB);
+
+  // Snapshot the variable names that exist BEFORE the body runs.
+  // After codegen, only variables whose names are NEW (not in this snapshot)
+  // were declared inside the loop body.  We free those on the fall-through
+  // back-edge; outer-scope variables (like `wall` in Draw) must not be freed
+  // here — they outlive the loop iteration.
+  std::set<std::string> preBodyVars;
+  for (auto &[n, _] : namedValues)
+    preBodyVars.insert(n);
+
   codegen(*s.doBranch);
+
+  // Free owned string/leaf-array locals that were declared inside this body.
+  if (!builder.GetInsertBlock()->getTerminator()) {
+    for (auto &[varName, info] : namedValues) {
+      if (preBodyVars.count(varName))
+        continue; // declared before the loop body — not ours to free here
+      if (!info.ownsHeap || info.isMoved || info.isReference || info.isBorrowed)
+        continue;
+      if (TypeResolver::isString(info.type)) {
+        Value *loaded = builder.CreateLoad(info.type, info.allocaInst,
+                                           varName + ".loop.load");
+        Value *data =
+            builder.CreateExtractValue(loaded, {0}, varName + ".loop.data");
+        builder.CreateCall(getFree(), {data});
+      } else if (TypeResolver::isArray(info.type)) {
+        if (auto *arrSt = dyn_cast<StructType>(info.type)) {
+          Type *elemTy = TypeResolver::elemType(context, arrSt);
+          if (elemTy && !TypeResolver::isArray(elemTy) &&
+              !TypeResolver::isString(elemTy)) {
+            Value *loaded = builder.CreateLoad(info.type, info.allocaInst,
+                                               varName + ".loop.load");
+            Value *data = builder.CreateExtractValue(
+                loaded, {1}, varName + ".loop.arr.data");
+            builder.CreateCall(getFree(), {data});
+          }
+        }
+      }
+    }
+  }
+
   scopeMgr.popScope();
   if (!builder.GetInsertBlock()->getTerminator())
     builder.CreateBr(condBB);
@@ -1082,6 +1123,43 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 }
 
 Value *CodeGenerator::visitReturn(const Return &s) {
+  // Determine the name of the variable being returned (if any) so we can
+  // skip freeing it — it must stay alive to be the return value.
+  std::string returnedVar;
+  if (s.value) {
+    if (auto *id = dynamic_cast<const IdentExpr *>(s.value->get()))
+      returnedVar = id->name.token.getWord();
+  }
+
+  // Emit free() calls for owned locals before popping scope.
+  // Skip: not owning heap, moved, reference/borrow (double-free risk),
+  // the return value itself, and nested arrays (already have deep-free loops).
+  for (auto &[varName, info] : namedValues) {
+    if (!info.ownsHeap || info.isMoved || info.isReference || info.isBorrowed)
+      continue;
+    if (!returnedVar.empty() && varName == returnedVar)
+      continue;
+    if (TypeResolver::isString(info.type)) {
+      Value *loaded =
+          builder.CreateLoad(info.type, info.allocaInst, varName + ".ret.load");
+      Value *data =
+          builder.CreateExtractValue(loaded, {0}, varName + ".ret.data");
+      builder.CreateCall(getFree(), {data});
+    } else if (TypeResolver::isArray(info.type)) {
+      if (auto *arrSt = dyn_cast<StructType>(info.type)) {
+        Type *elemTy = TypeResolver::elemType(context, arrSt);
+        if (elemTy && !TypeResolver::isArray(elemTy) &&
+            !TypeResolver::isString(elemTy)) {
+          Value *loaded = builder.CreateLoad(info.type, info.allocaInst,
+                                             varName + ".ret.load");
+          Value *data = builder.CreateExtractValue(loaded, {1},
+                                                   varName + ".ret.arr.data");
+          builder.CreateCall(getFree(), {data});
+        }
+      }
+    }
+  }
+
   scopeMgr.popAll();
   if (s.value) {
     Value *v = codegen(**s.value);
