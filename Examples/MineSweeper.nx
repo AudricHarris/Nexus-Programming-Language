@@ -1,0 +1,230 @@
+/* Helper: returns display char for count */
+GetDigit(i32 n) -> char {
+	if (n == 0) return '.';
+	if (n == 1) return '1';
+	if (n == 2) return '2';
+	if (n == 3) return '3';
+	if (n == 4) return '4';
+	if (n == 5) return '5';
+	if (n == 6) return '6';
+	if (n == 7) return '7';
+	if (n == 8) return '8';
+	return '?';
+}
+
+/* Fill board with initial state */
+Generate(&char[][] board, &bool[][] mines, &bool[][] opened, &bool[][] flags) {
+	i32 x = 0;
+	while (x < 10) {
+		i32 y = 0;
+		while (y < 20) {
+			board[x][y] = '#';
+			mines[x][y] = false;
+			opened[x][y] = false;
+			flags[x][y] = false;
+			y = y + 1;
+		}
+		x = x + 1;
+	}
+}
+
+/* Place exactly 40 mines */
+PlaceMines(&bool[][] mines) {
+	i32 placed = 0;
+	while (placed < 40) {
+		i32 rx = Random() * 10;
+		i32 ry = Random() * 20;
+		if (!mines[rx][ry]) {
+			mines[rx][ry] = true;
+			placed = placed + 1;
+		}
+	}
+}
+
+/* Count mines in 8 neighbors */
+Count(&bool[][] mines, i32 x, i32 y) -> i32 {
+	i32 count = 0;
+	i32 dx = -1;
+	while (dx <= 1) {
+		i32 dy = -1;
+		while (dy <= 1) {
+			if (dx == 0 && dy == 0) {
+				dy = dy + 1;
+			} else {
+				i32 nx = x + dx;
+				i32 ny = y + dy;
+				if (nx >= 0 && nx < 10 && ny >= 0 && ny < 20) {
+					if (mines[nx][ny]) {
+						count = count + 1;
+					}
+				}
+				dy = dy + 1;
+			}
+		}
+		dx = dx + 1;
+	}
+	return count;
+}
+
+/* Recursive flood fill - using opened as visited tracker */
+FloodReveal(&char[][] board, &bool[][] mines, &bool[][] opened, i32 x, i32 y) {
+	if (x < 0 || x >= 10 || y < 0 || y >= 20) return;
+	bool case = opened[x][y];
+	if (case) return;  /* Check if already opened
+	opened[x][y] = true;
+
+	if (mines[x][y]) {
+		board[x][y] = '*';
+		return;
+	}
+
+	i32 n = Count(mines, x, y);
+	board[x][y] = GetDigit(n);
+
+	if (n == 0) {
+		i32 dx = -1;
+		while (dx <= 1) {
+			i32 dy = -1;
+			while (dy <= 1) {
+				if (dx != 0 || dy != 0) {
+					FloodReveal(board, mines, opened, x + dx, y + dy);
+				}
+				dy = dy + 1;
+			}
+			dx = dx + 1;
+		}
+	}
+}
+
+/* Open cell */
+Open(&char[][] board, &bool[][] mines, &bool[][] opened, i32 x, i32 y) {
+	if (opened[x][y]) return;
+
+	if (mines[x][y]) {
+		board[x][y] = '*';
+		opened[x][y] = true;
+		return;
+	}
+	bool case = opened[x][y];
+	FloodReveal(board, mines, opened, x, y);
+}
+/* Win condition */
+HasWon(&bool[][] mines, &bool[][] opened) -> bool {
+	i32 x = 0;
+	while (x < 10) {
+		i32 y = 0;
+		while (y < 20) {
+			if (!mines[x][y] && !opened[x][y]) return false;
+			y = y + 1;
+		}
+		x = x + 1;
+	}
+	return true;
+}
+
+/* Render board */
+Draw(&char[][] board, &bool[][] opened, &bool[][] flags, i32 cx, i32 cy) {
+	str wall = "";
+	i32 cnt = 0;
+	while (cnt < 20) {
+		wall = wall + "─";
+		cnt = cnt + 1;
+	}
+
+	Printf("┌{wall}┐\n");
+
+	i32 x = 0;
+	while (x < 10) {
+		Printf("│");
+		i32 y = 0;
+		while (y < 20) {
+			char t = board[x][y];
+			bool cursor = x == cx && y == cy;
+			bool visible = opened[x][y] || cursor;
+
+			if (cursor) Printf("#0000FF¤");
+			else if (flags[x][y]) {
+				Printf("#FFFF00F");
+			} else if (visible) {
+				if (t == '#') Printf("#007700#");
+				else if (t == '*') Printf("#FF0000*");
+				else Printf("{t}");
+			} else {
+				Printf("#004400#");
+			}
+
+			y = y + 1;
+		}
+		Printf("│\n");
+		x = x + 1;
+	}
+
+	Printf("└{wall}┘\n");
+	Print("WASD = move | O = open | F = flag | Q = quit");
+}
+
+/* Main game loop */
+Main() {
+	char[][] board = new char[10][20];
+	bool[][] mines = new bool[10][20];
+	bool[][] opened = new bool[10][20];
+	bool[][] flags = new bool[10][20];
+
+	Generate(board, mines, opened, flags);
+	PlaceMines(mines);
+
+	i32 cx = 0;
+	i32 cy = 0;
+	bool found = false;	
+	while(!found)
+	{
+		cx = Random() * 10;
+		cy = Random() * 20;
+
+		i32 nb = Count(mines, cx, cy);
+		Printf("{cx} , {cy} = {nb}\n");
+		if (nb == 0 && !mines[cx][cy]) found = true;
+	}
+	
+	bool running = true;
+	bool gameOver = false;
+
+	while (running) {
+		Draw(board, opened, flags, cx, cy);
+
+		if (gameOver) {
+			Print("BOOM! Game Over.");
+			return;
+		} else {
+			if (HasWon(mines, opened)) {
+				Print("Congratulations! You won!");
+				return;
+			} else {
+				str input = Read();
+
+				if (input == "W") { if (cx > 0) cx = cx - 1; }
+				if (input == "S") { if (cx < 9) cx = cx + 1; }
+				if (input == "A") { if (cy > 0) cy = cy - 1; }
+				if (input == "D") { if (cy < 19) cy = cy + 1; }
+
+				if (input == "F") {
+					flags[cx][cy] = !flags[cx][cy];
+				}
+
+				if (input == "O") {
+					if (!opened[cx][cy]) {
+					Print("Open");
+						Open(board, mines, opened, cx, cy);
+						if (mines[cx][cy]) gameOver = true;
+					}
+				}
+				
+				if (input == "Q") {
+					Print("Quit.");
+					return;
+				}
+
+			}
+		}
+	}
+}

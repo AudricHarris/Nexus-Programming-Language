@@ -1,20 +1,20 @@
+/![WARN_UNUSED]!/
+/![NO_WARNINGS]!/
 Main()
 {
-	char[] t = new char[5];
-
-	i32 cpt = 0;
+	let[] t = new char[5];
+	
+	let cpt = 0;
 	while (cpt < 5)
 	{
-		t[cpt] = 'A';
 		cpt++;
 	}
-
 	cpt = 0;
-	char tmp = 'a';
+	let tmp = 'a';
 	while (cpt < 5)
 	{
 		Printf("{tmp}\n");
 		cpt++;
 	}
-	Printf("{t}\n");
+	i32 c = 9;
 }
