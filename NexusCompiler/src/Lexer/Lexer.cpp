@@ -1,6 +1,6 @@
 #include "Lexer.h"
 #include <cstdint>
-#include <emmintrin.h> // SSE2
+#include <emmintrin.h>
 #include <iostream>
 #include <string_view>
 #include <vector>
@@ -28,7 +28,7 @@ enum class State : uint8_t {
   S16,
   S17,
   S18,
-  ACCEPT, // collapsed latch states S19-S30
+  ACCEPT,
   END,
   ERR
 };
