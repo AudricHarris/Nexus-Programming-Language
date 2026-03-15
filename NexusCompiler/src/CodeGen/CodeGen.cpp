@@ -1123,17 +1123,12 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 }
 
 Value *CodeGenerator::visitReturn(const Return &s) {
-  // Determine the name of the variable being returned (if any) so we can
-  // skip freeing it — it must stay alive to be the return value.
   std::string returnedVar;
   if (s.value) {
     if (auto *id = dynamic_cast<const IdentExpr *>(s.value->get()))
       returnedVar = id->name.token.getWord();
   }
 
-  // Emit free() calls for owned locals before popping scope.
-  // Skip: not owning heap, moved, reference/borrow (double-free risk),
-  // the return value itself, and nested arrays (already have deep-free loops).
   for (auto &[varName, info] : namedValues) {
     if (!info.ownsHeap || info.isMoved || info.isReference || info.isBorrowed)
       continue;
@@ -1295,7 +1290,7 @@ bool CodeGenerator::generate(const Program &program,
     if (!codegen(*fn))
       return false;
 
-  module->print(llvm::outs(), nullptr);
+  // module->print(llvm::outs(), nullptr);
 
   std::error_code ec;
   raw_fd_ostream out(outputFilename + ".ll", ec, sys::fs::OF_None);

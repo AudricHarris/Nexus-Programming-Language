@@ -1,6 +1,7 @@
 #include "TokenType.h"
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 class TokenTable {
@@ -12,8 +13,8 @@ public:
     return TokenTable::table[static_cast<int>(k)];
   }
 
-  static std::optional<TokenKind> getKindFromSpelling(const std::string &s) {
-    static const std::unordered_map<std::string, TokenKind> keywordMap = {
+  static std::optional<TokenKind> getKindFromSpelling(std::string_view s) {
+    static const std::unordered_map<std::string_view, TokenKind> keywordMap = {
         {"i32", TokenKind::TOK_IDENTIFIER},
         {"return", TokenKind::TOK_RETURN},
     };
@@ -36,6 +37,7 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_INT", nullptr},
     {"TOK_FLOAT", nullptr},
     {"TOK_STRING", nullptr},
+    {"TOK_CHAR", nullptr},
     {"TOK_BOOL", nullptr},
     {"TOK_ASSIGN", "="},
     {"TOK_INCREMENT", "++"},
@@ -62,12 +64,11 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_RPAREN", ")"},
     {"TOK_LBRACKET", "["},
     {"TOK_RBRACKET", "]"},
-    {"TOK_LPAREN", "("},
     {"TOK_LBRACE", "{"},
     {"TOK_RBRACE", "}"},
     {"TOK_COMMA", ","},
     {"TOK_SEMI", ";"},
-    {"TOK_DIV_FLOOR", "."},
+    {"TOK_DOT", "."},
     {"TOK_RETURN_TYPE", "->"},
     {"TOK_NEW", "new"},
     {"TOK_EOF", "<EOF>"},
@@ -81,7 +82,7 @@ std::string Token::toString() {
   case TokenKind::TOK_IF:
     return "TOK_IF  ";
   case TokenKind::TOK_ElSE:
-    return "TOK ELSE  ";
+    return "TOK_ELSE  ";
   case TokenKind::TOK_WHILE:
     return "TOK_WHILE  ";
   case TokenKind::TOK_RETURN:
@@ -113,7 +114,7 @@ std::string Token::toString() {
   case TokenKind::TOK_SUB:
     return "TOK_SUB  ";
   case TokenKind::TOK_PROD:
-    return "TOK_DIV  ";
+    return "TOK_PROD  ";
   case TokenKind::TOK_DIV:
     return "TOK_DIV  ";
   case TokenKind::TOK_DIV_FLOOR:

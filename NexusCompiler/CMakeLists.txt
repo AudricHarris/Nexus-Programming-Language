@@ -20,6 +20,7 @@ set(BUILD_SHARED_LIBS OFF)
 # -----------------------------
 # Find LLVM
 # -----------------------------
+set(LLVM_ENABLE_ZSTD OFF CACHE BOOL "" FORCE)
 find_package(LLVM REQUIRED CONFIG)
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")

@@ -23,9 +23,22 @@ int main(int argc, char *argv[]) {
 
   std::cout << "Errors : \n";
   Lexer l(code);
+
+  auto start = std::chrono::high_resolution_clock::now();
   std::vector<Token> lst = l.Tokenize();
+  auto end = std::chrono::high_resolution_clock::now();
+
+  double elapsedMs =
+      std::chrono::duration<double, std::milli>(end - start).count();
+  double elapsedS = elapsedMs / 1000.0;
+  double tokPerS = lst.size() / elapsedS;
+
+  std::cout << "Tokens:          " << lst.size() << "\n";
+  std::cout << "Time (ms):       " << elapsedS << "\n";
+  std::cout << "Tokens / second: " << tokPerS << "\n";
+
   // for (size_t i = 0; i < lst.size(); i++)
-  // std::cout << lst[i].toString();
+  //   std::cout << lst[i].toString();
 
   // td::cout << "Errors : \n";
   Parser parser(lst);
