@@ -263,8 +263,6 @@ static inline TokenKind singleCharKind(char c) {
 // Lexer methods       //
 // ------------------- //
 
-Lexer::Lexer(std::string f) { this->codeFile = std::move(f); }
-
 void Lexer::skipWhitespace() {
   const char *p = this->src + this->pos;
   const char *end = this->src + this->srcLen;

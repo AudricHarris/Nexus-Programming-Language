@@ -24,7 +24,7 @@
  */
 class Lexer {
 private:
-  std::string codeFile;
+  const std::string &codeFile;
   const char *src = nullptr;
   size_t srcLen = 0;
   size_t pos = 0;
@@ -36,7 +36,7 @@ private:
   Token makeToken(TokenKind k, std::string_view spelling);
 
 public:
-  Lexer(std::string file);
+  Lexer(const std::string &file) : codeFile(file) {}
   std::vector<Token> Tokenize();
 };
 #endif

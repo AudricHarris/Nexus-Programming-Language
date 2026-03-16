@@ -53,8 +53,7 @@ Token Parser::expect(TokenKind kind, std::string_view errorMsg) {
   std::string msg;
   if (errorMsg.empty()) {
     Token tmp(kind, "", 0, 0);
-    msg = "Expected: " + tmp.toString() + ", got: `" +
-          std::string(peek().getWord()) + "`";
+    msg = "Expected: " + tmp.toString() + ", got: `" + peek().getWord() + "`";
   } else {
     msg = std::string(errorMsg);
   }
@@ -86,7 +85,7 @@ void Parser::synchronize() {
 // ---------------------- //
 // Type-keyword detection //
 // ---------------------- //
-static bool isScalarTypeName(std::string_view w) {
+static bool isScalarTypeName(const std::string &w) {
   return w == "i32" || w == "i64" || w == "i16" || w == "i8" || w == "f32" ||
          w == "f64" || w == "bool" || w == "void" || w == "int" ||
          w == "integer" || w == "long" || w == "short" || w == "float" ||
@@ -517,8 +516,7 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
         return std::make_unique<LengthPropertyExpr>(id->name);
     }
     throw ParseError(peek().getLine(), peek().getColumn(),
-                     std::string("Unknown property: ") +
-                         std::string(prop.getWord()));
+                     "Unknown property: " + prop.getWord());
   }
   if (match(TokenKind::TOK_INCREMENT)) {
     if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
@@ -567,8 +565,7 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
   }
   default:
     throw ParseError(tok.getLine(), tok.getColumn(),
-                     std::string("Unexpected token: `") +
-                         std::string(tok.getWord()) + "`");
+                     "Unexpected token: `" + tok.getWord() + "`");
   }
 }
 
@@ -587,7 +584,7 @@ std::unique_ptr<Expression> Parser::parseNewArray() {
     consume();
   } while (true);
 
-  const std::string baseName(elemTok.getWord());
+  const std::string &baseName = elemTok.getWord();
   TypeDesc td(Identifier{Token{TokenKind::TOK_IDENTIFIER, baseName,
                                elemTok.getLine(), elemTok.getColumn()}},
               sizes.size());

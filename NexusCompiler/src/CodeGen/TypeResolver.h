@@ -7,12 +7,10 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
-#include <string_view>
 
 class TypeResolver {
 public:
-  static llvm::Type *fromName(llvm::LLVMContext &ctx,
-                              const std::string_view &t);
+  static llvm::Type *fromName(llvm::LLVMContext &ctx, const std::string &t);
   static llvm::Type *fromTypeDesc(llvm::LLVMContext &ctx, const TypeDesc &td);
   static llvm::StructType *getStringType(llvm::LLVMContext &ctx);
   static llvm::StructType *getOrCreateArrayStruct(llvm::LLVMContext &ctx,

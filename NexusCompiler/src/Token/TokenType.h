@@ -1,6 +1,7 @@
 #ifndef TokenType
 #define TokenType
 
+#include <iostream>
 #include <string>
 #include <string_view>
 
@@ -104,7 +105,7 @@ struct TokenInfo {
 class Token {
 private:
   TokenKind kind;
-  std::string_view word;
+  std::string word;
   int line;
   int column;
 
@@ -114,7 +115,7 @@ public:
 
   // getters
   TokenKind getKind() const { return this->kind; }
-  std::string_view getWord() const { return this->word; }
+  std::string getWord() const { return this->word; }
   int getLine() const { return this->line; }
   int getColumn() const { return this->column; }
   std::string toString();

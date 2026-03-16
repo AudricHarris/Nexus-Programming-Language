@@ -220,7 +220,7 @@ Value *PrintEmitter::handlePrintf(const CallExpr &e, IRBuilder<> &B,
   if (!strArg)
     return nullptr;
 
-  std::string raw = unescapeString(std::string(strArg->lit.getWord()));
+  std::string raw = unescapeString(strArg->lit.getWord());
   raw = replaceHexColors(raw) + "\033[0m";
 
   std::vector<FmtArg> fmtArgs;
@@ -281,8 +281,7 @@ Value *PrintEmitter::handlePrint(const CallExpr &e, IRBuilder<> &B,
   if (!printfF)
     return nullptr;
 
-  std::string fmt(strArg->lit.getWord());
-  fmt += '\n';
+  std::string fmt = strArg->lit.getWord() + "\n";
   Value *fmtPtr = B.CreateGlobalString(fmt, ".fmt");
   return B.CreateCall(printfF, {fmtPtr}, "printf.ret");
 }

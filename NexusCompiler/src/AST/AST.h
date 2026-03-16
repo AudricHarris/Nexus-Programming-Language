@@ -7,7 +7,6 @@
 #include <optional>
 #include <sstream>
 #include <string>
-#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -15,7 +14,7 @@
 // JSON helpers  //
 // ------------- //
 namespace json_utils {
-inline std::string escape(std::string_view s) {
+inline std::string escape(const std::string &s) {
   std::ostringstream oss;
   oss << '"';
   for (char c : s) {
@@ -90,7 +89,7 @@ struct TypeDesc {
   const Identifier &elementType() const { return base; }
 
   std::string fullName() const {
-    std::string name(base.token.getWord());
+    std::string name = base.token.getWord();
     for (int i = 0; i < dimensions; ++i)
       name = "array." + name;
     return name;

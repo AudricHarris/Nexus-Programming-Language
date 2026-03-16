@@ -3,7 +3,6 @@
 #include "llvm/IR/Function.h"
 #include "llvm/Support/Casting.h"
 #include <string>
-#include <string_view>
 
 std::string TypeResolver::typeName(llvm::Type *ty) {
   if (!ty)
@@ -28,7 +27,7 @@ std::string TypeResolver::typeName(llvm::Type *ty) {
 }
 
 llvm::Type *TypeResolver::fromName(llvm::LLVMContext &ctx,
-                                   const std::string_view &t) {
+                                   const std::string &t) {
   if (t == "i32" || t == "int" || t == "integer")
     return llvm::Type::getInt32Ty(ctx);
   if (t == "i64" || t == "long")
@@ -49,7 +48,7 @@ llvm::Type *TypeResolver::fromName(llvm::LLVMContext &ctx,
     return getStringType(ctx);
 
   if (t.size() > 6 && t.substr(0, 6) == "array.") {
-    std::string_view innerName = t.substr(6);
+    std::string innerName = t.substr(6);
     llvm::Type *innerTy = fromName(ctx, innerName);
     if (!innerTy)
       return nullptr;
