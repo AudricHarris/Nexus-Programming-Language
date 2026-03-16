@@ -38,7 +38,7 @@ int main(int argc, char *argv[]) {
   std::cout << "Tokens / second: " << tokPerS << "\n";
 
   // for (size_t i = 0; i < lst.size(); i++)
-  //   std::cout << lst[i].toString();
+  // std::cout << lst[i].toString();
 
   // td::cout << "Errors : \n";
   Parser parser(lst);

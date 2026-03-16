@@ -229,12 +229,12 @@ void CodeGenerator::flushPendingFrees() {
 
 Value *CodeGenerator::visitIntLit(const IntLitExpr &e) {
   return ConstantInt::get(Type::getInt32Ty(context),
-                          std::stoll(e.lit.getWord()));
+                          std::stoll(std::string(e.lit.getWord())));
 }
 
 Value *CodeGenerator::visitFloatLit(const FloatLitExpr &e) {
   return ConstantFP::get(Type::getDoubleTy(context),
-                         std::stod(e.lit.getWord()));
+                         std::stod(std::string(e.lit.getWord())));
 }
 
 Value *CodeGenerator::visitBoolLit(const BoolLitExpr &e) {
@@ -243,7 +243,7 @@ Value *CodeGenerator::visitBoolLit(const BoolLitExpr &e) {
 }
 
 Value *CodeGenerator::visitCharLit(const CharLitExpr &e) {
-  const std::string &word = e.lit.getWord();
+  std::string_view word = e.lit.getWord();
   char c = 0;
   if (word.size() == 1) {
     c = word[0];
@@ -277,7 +277,7 @@ Value *CodeGenerator::visitCharLit(const CharLitExpr &e) {
 }
 
 Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
-  std::string raw = unescapeString(e.lit.getWord());
+  std::string raw = unescapeString(std::string(e.lit.getWord()));
 
   // Check for interpolation
   bool hasInterp = false;
@@ -309,7 +309,7 @@ Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
 }
 
 Value *CodeGenerator::visitIdentifier(const IdentExpr &e) {
-  const std::string &name = e.name.token.getWord();
+  std::string name(e.name.token.getWord());
   auto it = namedValues.find(name);
   if (it == namedValues.end())
     return logError(("Unknown variable: " + name).c_str());
@@ -344,7 +344,7 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
     if (dynamic_cast<const StrLitExpr *>(&ex))
       return true;
     if (auto *id = dynamic_cast<const IdentExpr *>(&ex)) {
-      auto it = namedValues.find(id->name.token.getWord());
+      auto it = namedValues.find(std::string(id->name.token.getWord()));
       if (it != namedValues.end())
         return TypeResolver::isString(it->second.type);
     }
@@ -472,7 +472,7 @@ Value *CodeGenerator::visitUnary(const UnaryExpr &e) {
 // Assign
 
 Value *CodeGenerator::visitAssign(const AssignExpr &e) {
-  const std::string &tgt = e.target.token.getWord();
+  std::string tgt(e.target.token.getWord());
   auto it = namedValues.find(tgt);
   if (it == namedValues.end())
     return logError(("Undeclared variable: " + tgt).c_str());
@@ -528,7 +528,7 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
     auto *sid = dynamic_cast<const IdentExpr *>(e.value.get());
     if (!sid)
       return logError("Move requires an identifier on the right-hand side");
-    const std::string &src = sid->name.token.getWord();
+    const std::string src(sid->name.token.getWord());
     auto sit = namedValues.find(src);
     if (sit == namedValues.end())
       return logError(("Unknown variable: " + src).c_str());
@@ -545,7 +545,7 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
     auto *sid = dynamic_cast<const IdentExpr *>(e.value.get());
     if (!sid)
       return logError("Borrow requires an identifier on the right-hand side");
-    const std::string &src = sid->name.token.getWord();
+    const std::string src(sid->name.token.getWord());
     auto sit = namedValues.find(src);
     if (sit == namedValues.end())
       return logError(("Unknown variable: " + src).c_str());
@@ -561,11 +561,11 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
 // Increment / Decrement
 
 Value *CodeGenerator::visitIncrement(const Increment &e) {
-  return generateIncrDecr(e.target.token.getWord(), true);
+  return generateIncrDecr(std::string(e.target.token.getWord()), true);
 }
 
 Value *CodeGenerator::visitDecrement(const Decrement &e) {
-  return generateIncrDecr(e.target.token.getWord(), false);
+  return generateIncrDecr(std::string(e.target.token.getWord()), false);
 }
 
 Value *CodeGenerator::generateIncrDecr(const std::string &name, bool isInc) {
@@ -610,7 +610,7 @@ Value *CodeGenerator::generateIncrDecr(const std::string &name, bool isInc) {
 // Array indexing
 
 Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
-  const std::string &name = e.array.token.getWord();
+  std::string name(e.array.token.getWord());
   auto it = namedValues.find(name);
   if (it == namedValues.end())
     return logError(("Unknown variable: " + name).c_str());
@@ -657,7 +657,7 @@ Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
 }
 
 Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
-  const std::string &name = e.array.token.getWord();
+  std::string name(e.array.token.getWord());
   auto it = namedValues.find(name);
   if (it == namedValues.end())
     return logError(("Unknown variable: " + name).c_str());
@@ -712,7 +712,7 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
 // Length property
 
 Value *CodeGenerator::visitLengthProperty(const LengthPropertyExpr &e) {
-  const std::string &name = e.name.token.getWord();
+  std::string name(e.name.token.getWord());
   auto it = namedValues.find(name);
   if (it == namedValues.end())
     return logError(("Unknown variable: " + name).c_str());
@@ -732,7 +732,7 @@ Value *CodeGenerator::visitLengthProperty(const LengthPropertyExpr &e) {
 // New array
 
 Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
-  std::string typeName = e.arrayType.base.token.getWord();
+  std::string typeName(e.arrayType.base.token.getWord());
   Type *elemType = TypeResolver::fromName(context, typeName);
   if (!elemType)
     return nullptr;
@@ -750,7 +750,7 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
 // Call
 
 Value *CodeGenerator::visitCall(const CallExpr &e) {
-  const std::string rawName = e.callee.token.getWord();
+  const std::string rawName(e.callee.token.getWord());
   const std::string calleeName = normalizeFunctionName(rawName);
 
   // Nexus print builtins
@@ -782,17 +782,17 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       auto *id = dynamic_cast<const IdentExpr *>(e.arguments[i].get());
       if (!id)
         return logError("Borrow-ref parameter requires an identifier");
-      auto sit = namedValues.find(id->name.token.getWord());
+      std::string argName(id->name.token.getWord());
+      auto sit = namedValues.find(argName);
       if (sit == namedValues.end())
-        return logError(
-            ("Unknown variable: " + id->name.token.getWord()).c_str());
+        return logError(("Unknown variable: " + argName).c_str());
 
       // FIX: if the variable is already a borrow-ref, load the pointer out
       // instead of passing the alloca holding the pointer (double indirection)
       if (sit->second.isReference) {
-        Value *ptr = builder.CreateLoad(PointerType::get(context, 0),
-                                        sit->second.allocaInst,
-                                        id->name.token.getWord() + ".fwd");
+        Value *ptr =
+            builder.CreateLoad(PointerType::get(context, 0),
+                               sit->second.allocaInst, argName + ".fwd");
         args.push_back(ptr);
       } else {
         args.push_back(sit->second.allocaInst);
@@ -860,7 +860,7 @@ Value *CodeGenerator::codegen(const Expression &expr) {
 // ------------------ //
 
 Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
-  const std::string &name = d.name.token.getWord();
+  std::string name(d.name.token.getWord());
   Type *ty = TypeResolver::fromTypeDesc(context, d.type);
   if (!ty)
     return logError(("Unknown type for variable: " + name).c_str());
@@ -939,7 +939,7 @@ Value *CodeGenerator::initMove(const VarDecl &d, const std::string &name,
   if (!id)
     return logError("Move initialiser requires a variable (identifier)");
 
-  const std::string &src = id->name.token.getWord();
+  std::string src(id->name.token.getWord());
   auto sit = namedValues.find(src);
   if (sit == namedValues.end())
     return logError(("Unknown variable: " + src).c_str());
@@ -967,7 +967,7 @@ Value *CodeGenerator::initBorrow(const VarDecl &d, const std::string &name,
   if (!id)
     return logError("Borrow initialiser requires a variable (identifier)");
 
-  const std::string &src = id->name.token.getWord();
+  std::string src(id->name.token.getWord());
   auto sit = namedValues.find(src);
   if (sit == namedValues.end())
     return logError(("Unknown variable: " + src).c_str());
@@ -1073,11 +1073,6 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
   fn->insert(fn->end(), bodyBB);
   builder.SetInsertPoint(bodyBB);
 
-  // Snapshot the variable names that exist BEFORE the body runs.
-  // After codegen, only variables whose names are NEW (not in this snapshot)
-  // were declared inside the loop body.  We free those on the fall-through
-  // back-edge; outer-scope variables (like `wall` in Draw) must not be freed
-  // here — they outlive the loop iteration.
   std::set<std::string> preBodyVars;
   for (auto &[n, _] : namedValues)
     preBodyVars.insert(n);
@@ -1126,7 +1121,7 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   std::string returnedVar;
   if (s.value) {
     if (auto *id = dynamic_cast<const IdentExpr *>(s.value->get()))
-      returnedVar = id->name.token.getWord();
+      returnedVar = std::string(id->name.token.getWord());
   }
 
   for (auto &[varName, info] : namedValues) {
@@ -1172,7 +1167,8 @@ Value *CodeGenerator::visitReturn(const Return &s) {
 // ---------------- //
 
 llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
-  const std::string fname = normalizeFunctionName(func.name.token.getWord());
+  const std::string fname =
+      normalizeFunctionName(std::string(func.name.token.getWord()));
   Type *retTy = TypeResolver::fromTypeDesc(context, func.returnType);
   if (!retTy)
     return nullptr;
@@ -1211,7 +1207,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   size_t idx = 0;
   for (auto &arg : f->args()) {
     const auto &param = func.params[idx++];
-    const std::string pname = param.name.token.getWord();
+    const std::string pname(param.name.token.getWord());
 
     if (param.isBorrowRef) {
       AllocaInst *ptrAlloca = builder.CreateAlloca(PointerType::get(context, 0),

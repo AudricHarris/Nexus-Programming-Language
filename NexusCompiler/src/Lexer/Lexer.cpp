@@ -324,7 +324,7 @@ bool Lexer::isIdentifierChar(char c) {
 }
 
 Token Lexer::makeToken(TokenKind k, std::string_view spelling) {
-  return Token(k, std::string(spelling), line, col);
+  return Token(k, spelling, line, col);
 }
 
 // ------------------- //
@@ -387,7 +387,11 @@ std::vector<Token> Lexer::Tokenize() {
              static_cast<InputCat>(icat) == InputCat::QUOTE_S)) {
           ++this->pos;
           ++this->col;
+        } else if (ns == State::ACCEPT) {
+          ++this->pos;
+          ++this->col;
         }
+
         state = ns;
         break;
       }

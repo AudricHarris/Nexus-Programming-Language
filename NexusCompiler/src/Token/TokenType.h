@@ -2,6 +2,7 @@
 #define TokenType
 
 #include <string>
+#include <string_view>
 
 /*
  * Let's start with the basics and expand on that
@@ -103,17 +104,17 @@ struct TokenInfo {
 class Token {
 private:
   TokenKind kind;
-  std::string word;
+  std::string_view word;
   int line;
   int column;
 
 public:
-  Token(TokenKind k, std::string w, int l, int c)
+  Token(TokenKind k, std::string_view w, int l, int c)
       : kind(k), word(w), line(l), column(c) {}
 
   // getters
   TokenKind getKind() const { return this->kind; }
-  std::string getWord() const { return this->word; }
+  std::string_view getWord() const { return this->word; }
   int getLine() const { return this->line; }
   int getColumn() const { return this->column; }
   std::string toString();
