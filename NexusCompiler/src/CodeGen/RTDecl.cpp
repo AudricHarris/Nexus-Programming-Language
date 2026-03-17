@@ -37,7 +37,20 @@ llvm::Function *RTDecl::sprintf_(llvm::Module *M, llvm::LLVMContext &ctx) {
   }
   return f;
 }
+llvm::Function *RTDecl::strcmp_(llvm::Module *M, llvm::LLVMContext &ctx) {
+  llvm::Function *f = M->getFunction("strcmp");
+  if (!f) {
+    llvm::Type *i8ptr =
+        llvm::PointerType::get(llvm::Type::getInt8Ty(ctx)->getContext(), 0);
 
+    llvm::FunctionType *ft = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(ctx), {i8ptr, i8ptr}, false);
+
+    f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "strcmp",
+                               *M);
+  }
+  return f;
+}
 llvm::Function *RTDecl::strlen_(llvm::Module *M, llvm::LLVMContext &ctx) {
   llvm::Function *f = M->getFunction("strlen");
   if (!f) {

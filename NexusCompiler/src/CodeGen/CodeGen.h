@@ -14,6 +14,7 @@
 #include "llvm/IR/Value.h"
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,7 @@
 class CodeGenerator {
 public:
   CodeGenerator();
+  ~CodeGenerator() = default;
 
   bool generate(const Program &program, const std::string &outputFilename);
 
@@ -36,13 +38,10 @@ private:
 
   // Symbol tables
   std::map<std::string, VarInfo> namedValues;
-  std::map<std::string, std::vector<bool>> borrowRefParams; // callee → isRef[]
+  std::map<std::string, std::vector<bool>> borrowRefParams;
 
   // Subsystems
   ScopeManager scopeMgr;
-
-  // Temporaries whose heap buffers must be freed after a statement
-  std::vector<llvm::Value *> pendingFrees;
 
   // Error
   llvm::Value *logError(const char *msg);
@@ -78,20 +77,8 @@ private:
   void codegen(const Block &block);
   llvm::Function *codegen(const AST_H::Function &func);
 
-  // VarDecl initialisation helpers
-  llvm::Value *initCopy(const VarDecl &d, const std::string &name,
-                        llvm::Type *ty, llvm::AllocaInst *alloca);
-  llvm::Value *initMove(const VarDecl &d, const std::string &name,
-                        llvm::Type *ty, llvm::AllocaInst *alloca);
-  llvm::Value *initBorrow(const VarDecl &d, const std::string &name,
-                          llvm::AllocaInst *alloca);
-
   // Increment / decrement helper
   llvm::Value *generateIncrDecr(const std::string &varName, bool isInc);
-
-  // Pending-free helpers
-  void scheduleStringFree(llvm::Value *strAlloca);
-  void flushPendingFrees();
 
   // free() lazy-declare
   llvm::Function *getFree();

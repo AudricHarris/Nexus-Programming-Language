@@ -17,16 +17,40 @@ ScopeManager::ScopeManager(IRBuilder<> &B, LLVMContext &ctx, Module *M,
 // Scope lifecycle //
 // --------------- //
 
-void ScopeManager::pushScope() { stack_.emplace_back(); }
+void ScopeManager::pushScope() {
+  stack_.emplace_back();
+  tmpStack_.emplace_back();
+}
 
 void ScopeManager::declare(const std::string &name) {
   if (!stack_.empty())
     stack_.back().push_back(name);
 }
 
+void ScopeManager::declareTmp(llvm::AllocaInst *alloca, llvm::Type *ty) {
+  if (tmpStack_.empty())
+    return;
+  VarInfo vi(alloca, ty, false, false, false, false);
+  vi.ownsHeap = true;
+  tmpStack_.back().push_back(vi);
+}
+
+bool ScopeManager::isTmp(llvm::AllocaInst *alloca) const {
+  for (const auto &level : tmpStack_)
+    for (const auto &vi : level)
+      if (vi.allocaInst == alloca)
+        return true;
+  return false;
+}
+
 std::vector<std::string> ScopeManager::popScope() {
   if (stack_.empty())
     return {};
+  if (!tmpStack_.empty()) {
+    for (auto &vi : tmpStack_.back())
+      emitDestructor(vi);
+    tmpStack_.pop_back();
+  }
   auto names = stack_.back();
   emitDestructorsFor(names);
   stack_.pop_back();
@@ -36,6 +60,16 @@ std::vector<std::string> ScopeManager::popScope() {
 void ScopeManager::popAll() {
   while (!stack_.empty())
     popScope();
+}
+
+void ScopeManager::emitAllDestructors() {
+  for (int i = static_cast<int>(stack_.size()) - 1; i >= 0; --i) {
+    if (i < static_cast<int>(tmpStack_.size())) {
+      for (auto &vi : tmpStack_[i])
+        emitDestructor(vi);
+    }
+    emitDestructorsFor(stack_[i]);
+  }
 }
 
 // ----------- //
@@ -76,27 +110,56 @@ void ScopeManager::emitDestructorsFor(const std::vector<std::string> &names) {
 void ScopeManager::emitDestructor(VarInfo &vi) {
   Type *ty = vi.type;
 
+  if (!ty) {
+    return;
+  }
+
   if (TypeResolver::isString(ty)) {
     StructType *st = cast<StructType>(ty);
     Value *load = B_.CreateLoad(st, vi.allocaInst);
     Value *data = B_.CreateExtractValue(load, {0});
+
+    if (!isValidPointer(data))
+      return;
+
+    llvm::Function *fn = B_.GetInsertBlock()->getParent();
+    BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free", fn);
+    BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip", fn);
+    Value *isNull = B_.CreateICmpEQ(
+        data, llvm::ConstantPointerNull::get(llvm::PointerType::get(ctx_, 0)),
+        "is.null");
+    B_.CreateCondBr(isNull, skipBB, freeBB);
+
+    B_.SetInsertPoint(freeBB);
     B_.CreateCall(getFree(), {data});
+    B_.CreateBr(skipBB);
+
+    B_.SetInsertPoint(skipBB);
     return;
   }
 
   if (TypeResolver::isArray(ty)) {
-    emitArrayFree(vi.allocaInst, cast<StructType>(ty), 0);
+    if (vi.allocaInst) {
+      emitArrayFree(vi.allocaInst, cast<StructType>(ty), 0);
+    }
     return;
   }
 }
 
-void ScopeManager::emitArrayFree(Value *arrPtr, StructType *arrSt, int depth) {
+void ScopeManager::emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt,
+                                 int depth) {
+  if (!arrPtr || !arrSt)
+    return;
+
   Type *i64 = Type::getInt64Ty(ctx_);
   llvm::Function *fn = B_.GetInsertBlock()->getParent();
 
   Value *loaded = B_.CreateLoad(arrSt, arrPtr);
   Value *dataPtr = B_.CreateExtractValue(loaded, {1}, "data");
   Value *len = B_.CreateExtractValue(loaded, {0}, "len");
+
+  if (!isValidPointer(dataPtr))
+    return;
 
   Type *elemTy = TypeResolver::elemType(ctx_, arrSt);
 
@@ -128,6 +191,12 @@ void ScopeManager::emitArrayFree(Value *arrPtr, StructType *arrSt, int depth) {
   }
 
   B_.CreateCall(getFree(), {dataPtr});
+}
+
+bool ScopeManager::isValidPointer(llvm::Value *ptr) {
+  return ptr != nullptr && !llvm::isa<llvm::ConstantPointerNull>(ptr) &&
+         !llvm::isa<llvm::UndefValue>(ptr) &&
+         !llvm::isa<llvm::PoisonValue>(ptr);
 }
 
 llvm::Function *ScopeManager::getFree() {

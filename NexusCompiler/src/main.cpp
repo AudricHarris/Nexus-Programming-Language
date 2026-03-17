@@ -56,7 +56,7 @@ int main(int argc, char *argv[]) {
                     "-fsanitize=leak -g out.ll  -o " +
                     std::string(argv[2]);
   system(cmd.c_str());
-  system("rm -rf out.ll");
+  // system("rm -rf out.ll");
   std::cout << "./" << argv[2] << "\n";
 
   return EXIT_SUCCESS;

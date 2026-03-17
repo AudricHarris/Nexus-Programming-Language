@@ -62,6 +62,41 @@ llvm::Value *StringOps::concat(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
   B.CreateStore(cap, B.CreateStructGEP(st, res, 2));
   return res;
 }
+llvm::Value *StringOps::equals(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
+                               llvm::Module *M, llvm::Value *lhs,
+                               llvm::Value *rhs) {
+
+  llvm::StructType *st = TypeResolver::getStringType(ctx);
+
+  llvm::Value *lv = B.CreateLoad(st, lhs, "eq.ls");
+  llvm::Value *rv = B.CreateLoad(st, rhs, "eq.rs");
+
+  llvm::Value *ld = B.CreateExtractValue(lv, {0}, "eq.ld");
+  llvm::Value *rd = B.CreateExtractValue(rv, {0}, "eq.rd");
+
+  // call strcmp
+  llvm::Function *strcmpFn = RTDecl::strcmp_(M, ctx);
+
+  llvm::Value *cmp = B.CreateCall(strcmpFn, {ld, rd}, "strcmp");
+
+  // strcmp == 0 → equal
+  return B.CreateICmpEQ(
+      cmp, llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx), 0), "streq");
+}
+llvm::Value *StringOps::clone(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
+                              llvm::Module *M, llvm::Value *strStruct) {
+
+  llvm::StructType *st = TypeResolver::getStringType(ctx);
+
+  // load original struct
+  llvm::Value *val = B.CreateLoad(st, strStruct, "clone.src");
+
+  llvm::Value *data = B.CreateExtractValue(val, {0}, "clone.data");
+  llvm::Value *len = B.CreateExtractValue(val, {1}, "clone.len");
+
+  // 🔥 reuse your safe constructor
+  return fromParts(B, ctx, M, data, len);
+}
 
 llvm::Value *StringOps::fromValue(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
                                   llvm::Module *M, llvm::Value *val) {

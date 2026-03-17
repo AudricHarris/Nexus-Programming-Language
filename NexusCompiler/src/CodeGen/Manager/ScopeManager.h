@@ -9,25 +9,24 @@
 #include <string>
 #include <vector>
 
-// ----------------------------------------------------------------------- //
-// ScopeManager — tracks variable lifetimes across nested scopes and emits //
-// destructors when a scope is exited.                                     //
-// ----------------------------------------------------------------------- //
 class ScopeManager {
 public:
   ScopeManager(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx, llvm::Module *M,
                std::map<std::string, VarInfo> &namedValues);
 
   void pushScope();
-
   void declare(const std::string &name);
 
-  std::vector<std::string> popScope();
+  void declareTmp(llvm::AllocaInst *alloca, llvm::Type *ty);
 
+  bool isTmp(llvm::AllocaInst *alloca) const;
+
+  std::vector<std::string> popScope();
   void popAll();
 
-  size_t depth() const { return stack_.size(); }
+  void emitAllDestructors();
 
+  size_t depth() const { return stack_.size(); }
   bool isLocal(const std::string &name) const;
 
 private:
@@ -37,13 +36,13 @@ private:
   std::map<std::string, VarInfo> &namedValues_;
 
   std::vector<std::vector<std::string>> stack_;
+  std::vector<std::vector<VarInfo>> tmpStack_;
 
   void emitDestructorsFor(const std::vector<std::string> &names);
-
   void emitDestructor(VarInfo &vi);
-
   void emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt, int depth);
 
+  static bool isValidPointer(llvm::Value *ptr);
   llvm::Function *getFree();
 };
 

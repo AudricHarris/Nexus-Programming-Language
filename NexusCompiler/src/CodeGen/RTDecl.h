@@ -11,4 +11,5 @@ llvm::Function *malloc_(llvm::Module *M, llvm::LLVMContext &ctx);
 llvm::Function *memcpy_(llvm::Module *M, llvm::LLVMContext &ctx);
 llvm::Function *sprintf_(llvm::Module *M, llvm::LLVMContext &ctx);
 llvm::Function *strlen_(llvm::Module *M, llvm::LLVMContext &ctx);
+llvm::Function *strcmp_(llvm::Module *M, llvm::LLVMContext &ctx);
 } // namespace RTDecl

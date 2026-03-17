@@ -25,6 +25,13 @@ public:
   static llvm::Value *fromValue(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
                                 llvm::Module *M, llvm::Value *val);
 
+  static llvm::Value *clone(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
+                            llvm::Module *M, llvm::Value *strStruct);
+
+  static llvm::Value *equals(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
+                             llvm::Module *M, llvm::Value *lhs,
+                             llvm::Value *rhs);
+
 private:
   static llvm::Value *intToStr(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
                                llvm::Module *M, llvm::Value *v);

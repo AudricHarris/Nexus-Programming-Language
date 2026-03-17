@@ -2,21 +2,19 @@
 #include "Emitters/BuiltinEmitter.h"
 #include "Emitters/PrintEmitter.h"
 #include "Emitters/StringEmitter.h"
-#include "RTDecl.h"
 #include "TypeResolver.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
-#include <set>
 #include <string>
 #include <unordered_map>
 
 using namespace llvm;
 
-// ------------------------------- //
-// Internal utilities (file-local) //
-// ------------------------------- //
+// --------- //
+// Utilities //
+// --------- //
 
 static std::string normalizeFunctionName(const std::string &name) {
   static const std::unordered_map<std::string, std::string> kMap = {
@@ -179,7 +177,6 @@ static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
 // ------------- //
 // CodeGenerator //
 // ------------- //
-
 CodeGenerator::CodeGenerator()
     : module(std::make_unique<Module>("nexus", context)), builder(context),
       scopeMgr(builder, context, module.get(), namedValues) {
@@ -187,8 +184,6 @@ CodeGenerator::CodeGenerator()
 }
 
 bool CodeGenerator::isCStringPointer(Type *ty) { return ty->isPointerTy(); }
-
-// free() lazy-declare
 
 llvm::Function *CodeGenerator::getFree() {
   llvm::Function *f = module->getFunction("free");
@@ -201,26 +196,9 @@ llvm::Function *CodeGenerator::getFree() {
   return f;
 }
 
-// Error
-
 Value *CodeGenerator::logError(const char *msg) {
   errs() << "\033[31mCodeGen error: " << msg << "\033[0m\n";
   return nullptr;
-}
-
-// Pending-free helpers
-
-void CodeGenerator::scheduleStringFree(Value *strAlloca) {
-  StructType *st = TypeResolver::getStringType(context);
-  Value *load = builder.CreateLoad(st, strAlloca);
-  Value *data = builder.CreateExtractValue(load, {0}, "tmp.data");
-  pendingFrees.push_back(data);
-}
-
-void CodeGenerator::flushPendingFrees() {
-  for (Value *ptr : pendingFrees)
-    builder.CreateCall(getFree(), {ptr});
-  pendingFrees.clear();
 }
 
 // ------------------- //
@@ -291,10 +269,13 @@ Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
       break;
     }
   }
-  if (hasInterp)
-    return evalStrLit(raw, context, builder, namedValues, module.get());
+  if (hasInterp) {
+    Value *v = evalStrLit(raw, context, builder, namedValues, module.get());
+    if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v))
+      scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));
+    return v;
+  }
 
-  // Collapse {{ → {
   std::string processed;
   for (size_t i = 0; i < raw.size(); ++i) {
     if (raw[i] == '{' && i + 1 < raw.size() && raw[i + 1] == '{') {
@@ -305,7 +286,10 @@ Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
     }
   }
   processed = PrintEmitter::replaceHexColors(processed);
-  return StringOps::fromLiteral(builder, context, module.get(), processed);
+  Value *v = StringOps::fromLiteral(builder, context, module.get(), processed);
+  if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v))
+    scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));
+  return v;
 }
 
 Value *CodeGenerator::visitIdentifier(const IdentExpr &e) {
@@ -334,121 +318,55 @@ Value *CodeGenerator::visitIdentifier(const IdentExpr &e) {
                             name + ".load");
 }
 
-// Binary
+Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
+  Value *lhs = codegen(*expr.left);
+  Value *rhs = codegen(*expr.right);
 
-Value *CodeGenerator::visitBinary(const BinaryExpr &e) {
-
-  // Determine if an expression produces a string value
-  std::function<bool(const Expression &)> isStrExpr =
-      [&](const Expression &ex) -> bool {
-    if (dynamic_cast<const StrLitExpr *>(&ex))
-      return true;
-    if (auto *id = dynamic_cast<const IdentExpr *>(&ex)) {
-      auto it = namedValues.find(id->name.token.getWord());
-      if (it != namedValues.end())
-        return TypeResolver::isString(it->second.type);
-    }
-    if (auto *bin = dynamic_cast<const BinaryExpr *>(&ex))
-      if (bin->op == BinaryOp::Add)
-        return isStrExpr(*bin->left) || isStrExpr(*bin->right);
-    return false;
-  };
-
-  bool ls = isStrExpr(*e.left), rs = isStrExpr(*e.right);
-
-  // String concatenation
-  if (e.op == BinaryOp::Add && (ls || rs)) {
-    Value *l = codegen(*e.left), *r = codegen(*e.right);
-    if (!l || !r)
-      return nullptr;
-
-    Value *lstr =
-        ls ? l : StringOps::fromValue(builder, context, module.get(), l);
-    Value *rstr =
-        rs ? r : StringOps::fromValue(builder, context, module.get(), r);
-    Value *res = StringOps::concat(builder, context, module.get(), lstr, rstr);
-
-    // Free temporaries (non-identifier operands)
-    bool rhsIsNamed = dynamic_cast<const IdentExpr *>(e.right.get()) != nullptr;
-    if (!rhsIsNamed) {
-      StructType *st = TypeResolver::getStringType(context);
-      Value *load = builder.CreateLoad(st, rstr);
-      Value *data = builder.CreateExtractValue(load, {0}, "rhs.tmp.data");
-      builder.CreateCall(getFree(), {data});
-    }
-    bool lhsIsNamed = dynamic_cast<const IdentExpr *>(e.left.get()) != nullptr;
-    if (!lhsIsNamed && ls) {
-      StructType *st = TypeResolver::getStringType(context);
-      Value *load = builder.CreateLoad(st, lstr);
-      Value *data = builder.CreateExtractValue(load, {0}, "lhs.tmp.data");
-      builder.CreateCall(getFree(), {data});
-    }
-    return res;
-  }
-
-  // String equality / inequality
-  if ((e.op == BinaryOp::Eq || e.op == BinaryOp::Ne) && (ls || rs)) {
-    Value *l = codegen(*e.left), *r = codegen(*e.right);
-    if (!l || !r)
-      return nullptr;
-
-    auto charPtr = [&](Value *v) -> Value * {
-      Type *ty = v->getType();
-      if (ty->isPointerTy()) {
-        if (auto *ai = dyn_cast<AllocaInst>(v)) {
-          if (TypeResolver::isString(ai->getAllocatedType())) {
-            Value *loaded = builder.CreateLoad(
-                cast<StructType>(ai->getAllocatedType()), v, "str.load");
-            return builder.CreateExtractValue(loaded, {0}, "str.data");
-          }
-        }
-        return v;
-      }
-      if (TypeResolver::isString(ty))
-        return builder.CreateExtractValue(v, {0}, "str.data");
-      return v;
-    };
-
-    llvm::Function *strcmpF = module->getFunction("strcmp");
-    if (!strcmpF)
-      return logError("strcmp not declared");
-
-    Value *cmp = builder.CreateCall(strcmpF, {charPtr(l), charPtr(r)}, "scmp");
-    Value *eq =
-        builder.CreateICmpEQ(cmp, ConstantInt::get(cmp->getType(), 0), "seq");
-
-    auto freeStringStruct = [&](Value *v) {
-      if (auto *ai = dyn_cast<AllocaInst>(v))
-        if (TypeResolver::isString(ai->getAllocatedType())) {
-          StructType *st = cast<StructType>(ai->getAllocatedType());
-          Value *load = builder.CreateLoad(st, ai);
-          Value *data = builder.CreateExtractValue(load, {0}, "cmp.tmp.data");
-          builder.CreateCall(getFree(), {data});
-        }
-    };
-
-    bool lIsNamed = dynamic_cast<const IdentExpr *>(e.left.get()) != nullptr;
-    bool rIsNamed = dynamic_cast<const IdentExpr *>(e.right.get()) != nullptr;
-    if (!lIsNamed && ls)
-      freeStringStruct(l);
-    if (!rIsNamed && rs)
-      freeStringStruct(r);
-
-    return e.op == BinaryOp::Eq ? eq : builder.CreateNot(eq, "sne");
-  }
-
-  // Scalar path ArithmeticManager
-  Value *l = codegen(*e.left), *r = codegen(*e.right);
-  if (!l || !r)
+  if (!lhs || !rhs)
     return nullptr;
 
-  Value *result = ArithmeticManager::emitBinaryOp(builder, context, e.op, l, r);
+  auto resolveType = [&](Value *v, const Expression &e) -> Type * {
+    if (auto *id = dynamic_cast<const IdentExpr *>(&e)) {
+      auto it = namedValues.find(id->name.token.getWord());
+      if (it != namedValues.end())
+        return it->second.type;
+    }
+    if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v))
+      return ai->getAllocatedType();
+    return v->getType();
+  };
+
+  Type *lTy = resolveType(lhs, *expr.left);
+  Type *rTy = resolveType(rhs, *expr.right);
+
+  if (TypeResolver::isString(lTy) && TypeResolver::isString(rTy)) {
+    switch (expr.op) {
+    case BinaryOp::Add: {
+      Value *cat = StringOps::concat(builder, context, module.get(), lhs, rhs);
+      if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(cat))
+        scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));
+      return cat;
+    }
+
+    case BinaryOp::Eq:
+      return StringOps::equals(builder, context, module.get(), lhs, rhs);
+
+    case BinaryOp::Ne: {
+      Value *eq = StringOps::equals(builder, context, module.get(), lhs, rhs);
+      return builder.CreateNot(eq);
+    }
+
+    default:
+      return logError("Unsupported string operator");
+    }
+  }
+
+  Value *result =
+      ArithmeticManager::emitBinaryOp(builder, context, expr.op, lhs, rhs);
   if (!result)
-    return logError("Unknown binary op");
+    return logError("Unsupported binary operator");
   return result;
 }
-
-// Unary
 
 Value *CodeGenerator::visitUnary(const UnaryExpr &e) {
   Value *v = codegen(*e.operand);
@@ -469,8 +387,6 @@ Value *CodeGenerator::visitUnary(const UnaryExpr &e) {
   return logError("Unknown unary op");
 }
 
-// Assign
-
 Value *CodeGenerator::visitAssign(const AssignExpr &e) {
   const std::string &tgt = e.target.token.getWord();
   auto it = namedValues.find(tgt);
@@ -479,7 +395,6 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
   if (it->second.isConst)
     return logError(("Cannot reassign const variable: " + tgt).c_str());
 
-  // Reference target
   if (it->second.isReference) {
     Value *val = codegen(*e.value);
     if (!val)
@@ -505,7 +420,6 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
     return nullptr;
   Type *targetTy = it->second.type;
 
-  // String assignment: free old buffer first
   if (TypeResolver::isString(targetTy)) {
     Value *oldVal =
         builder.CreateLoad(targetTy, it->second.allocaInst, tgt + ".old");
@@ -514,6 +428,15 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
 
     Value *loaded = builder.CreateLoad(targetTy, val);
     builder.CreateStore(loaded, it->second.allocaInst);
+
+    if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(val)) {
+      llvm::StructType *st = TypeResolver::getStringType(context);
+      Value *dataField = builder.CreateStructGEP(st, ai, 0, "null.data.ptr");
+      builder.CreateStore(
+          llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
+          dataField);
+    }
+
     return it->second.allocaInst;
   }
 
@@ -557,8 +480,6 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
   }
   return val;
 }
-
-// Increment / Decrement
 
 Value *CodeGenerator::visitIncrement(const Increment &e) {
   return generateIncrDecr(e.target.token.getWord(), true);
@@ -606,8 +527,6 @@ Value *CodeGenerator::generateIncrDecr(const std::string &name, bool isInc) {
   builder.CreateStore(res, it->second.allocaInst);
   return res;
 }
-
-// Array indexing
 
 Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
   const std::string &name = e.array.token.getWord();
@@ -709,8 +628,6 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
   return nullptr;
 }
 
-// Length property
-
 Value *CodeGenerator::visitLengthProperty(const LengthPropertyExpr &e) {
   const std::string &name = e.name.token.getWord();
   auto it = namedValues.find(name);
@@ -729,8 +646,6 @@ Value *CodeGenerator::visitLengthProperty(const LengthPropertyExpr &e) {
   return logError(".length not applicable to this type");
 }
 
-// New array
-
 Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   std::string typeName = e.arrayType.base.token.getWord();
   Type *elemType = TypeResolver::fromName(context, typeName);
@@ -747,13 +662,10 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   return ArrayEmitter::makeND(builder, context, *module, elemType, dimValues);
 }
 
-// Call
-
 Value *CodeGenerator::visitCall(const CallExpr &e) {
   const std::string rawName = e.callee.token.getWord();
   const std::string calleeName = normalizeFunctionName(rawName);
 
-  // Nexus print builtins
   if ((calleeName == "printf" || rawName == "Printf") &&
       e.arguments.size() == 1)
     return PrintEmitter::handlePrintf(e, builder, context, module.get(),
@@ -787,8 +699,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         return logError(
             ("Unknown variable: " + id->name.token.getWord()).c_str());
 
-      // FIX: if the variable is already a borrow-ref, load the pointer out
-      // instead of passing the alloca holding the pointer (double indirection)
       if (sit->second.isReference) {
         Value *ptr = builder.CreateLoad(PointerType::get(context, 0),
                                         sit->second.allocaInst,
@@ -815,8 +725,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
   bool isVoid = callee->getReturnType()->isVoidTy();
   return builder.CreateCall(callee, args, isVoid ? "" : "call");
 }
-
-// Expression dispatch
 
 Value *CodeGenerator::codegen(const Expression &expr) {
   if (auto *p = dynamic_cast<const IdentExpr *>(&expr))
@@ -860,138 +768,117 @@ Value *CodeGenerator::codegen(const Expression &expr) {
 // ------------------ //
 
 Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
-  const std::string &name = d.name.token.getWord();
-  Type *ty = TypeResolver::fromTypeDesc(context, d.type);
-  if (!ty)
-    return logError(("Unknown type for variable: " + name).c_str());
+  const std::string name = d.name.token.getWord();
 
+  Type *ty = TypeResolver::fromTypeDesc(context, d.type);
   AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
-  scopeMgr.declare(name);
+
+  VarInfo vi(alloca, ty, false, false, false, d.isConst);
 
   if (!d.initializer) {
-    namedValues[name] = VarInfo(alloca, ty, false, false, false, d.isConst);
+    namedValues[name] = vi;
+    scopeMgr.declare(name);
     return alloca;
   }
+
+  std::string srcName;
+  if (auto *id = dynamic_cast<IdentExpr *>(d.initializer.get())) {
+    srcName = id->name.token.getWord();
+  }
+
+  Value *init = codegen(*d.initializer);
 
   switch (d.kind) {
-  case AssignKind::Move:
-    return initMove(d, name, ty, alloca);
-  case AssignKind::Borrow:
-    return initBorrow(d, name, alloca);
-  default:
-    return initCopy(d, name, ty, alloca);
+
+  // -------------------------
+  // COPY (DEEP COPY FOR STRING)
+  // -------------------------
+  case AssignKind::Copy: {
+    if (TypeResolver::isString(ty)) {
+      Value *empty = StringOps::fromLiteral(builder, context, module.get(), "");
+      Value *copy =
+          StringOps::concat(builder, context, module.get(), init, empty);
+      Value *copyVal = builder.CreateLoad(ty, copy);
+      builder.CreateStore(copyVal, alloca);
+      llvm::StructType *st = TypeResolver::getStringType(context);
+      Value *emptyData = builder.CreateExtractValue(
+          builder.CreateLoad(st, empty), {0}, "empty.data");
+      builder.CreateCall(getFree(), {emptyData});
+      if (srcName.empty()) {
+        llvm::AllocaInst *initAI = llvm::dyn_cast<llvm::AllocaInst>(init);
+        if (initAI && !scopeMgr.isTmp(initAI)) {
+          Value *initData = builder.CreateExtractValue(
+              builder.CreateLoad(st, init), {0}, "init.data");
+          builder.CreateCall(getFree(), {initData});
+        }
+      }
+      vi.ownsHeap = true;
+    } else if (TypeResolver::isArray(ty)) {
+      Value *arrVal = builder.CreateLoad(ty, init);
+      builder.CreateStore(arrVal, alloca);
+      vi.ownsHeap = true;
+    } else {
+      builder.CreateStore(TypeResolver::coerce(builder, init, ty), alloca);
+    }
+    break;
   }
-}
 
-Value *CodeGenerator::initCopy(const VarDecl &d, const std::string &name,
-                               Type *ty, AllocaInst *alloca) {
-  Value *init = codegen(*d.initializer);
-  if (!init)
-    return logError(("Failed to evaluate initializer for: " + name).c_str());
+  // -------------------------
+  // MOVE
+  // -------------------------
+  case AssignKind::Move: {
+    if (srcName.empty())
+      return logError("Move requires identifier");
 
-  if (TypeResolver::isString(ty)) {
-    StructType *st = cast<StructType>(ty);
-    Value *loaded = builder.CreateLoad(st, init);
-    Value *srcData = builder.CreateExtractValue(loaded, {0});
-    Value *srcLen = builder.CreateExtractValue(loaded, {1});
-    Value *srcCap = builder.CreateExtractValue(loaded, {2});
+    auto &srcInfo = namedValues[srcName];
 
-    llvm::Function *mallocF = RTDecl::malloc_(module.get(), context);
-    llvm::Function *memcpyF = RTDecl::memcpy_(module.get(), context);
-    Value *newMem = builder.CreateCall(mallocF, {srcCap});
-    builder.CreateCall(
-        memcpyF, {newMem, srcData, srcLen, ConstantInt::getFalse(context)});
-    Value *nullPos =
-        builder.CreateGEP(Type::getInt8Ty(context), newMem, srcLen);
-    builder.CreateStore(ConstantInt::get(Type::getInt8Ty(context), 0), nullPos);
+    if (TypeResolver::isString(ty) || TypeResolver::isArray(ty)) {
+      Value *val =
+          builder.CreateLoad(ty, srcInfo.allocaInst, srcName + ".move");
+      builder.CreateStore(val, alloca);
+    } else {
+      builder.CreateStore(init, alloca);
+    }
 
-    builder.CreateStore(newMem, builder.CreateStructGEP(st, alloca, 0));
-    builder.CreateStore(srcLen, builder.CreateStructGEP(st, alloca, 1));
-    builder.CreateStore(srcCap, builder.CreateStructGEP(st, alloca, 2));
+    vi.ownsHeap = srcInfo.ownsHeap;
+    srcInfo.ownsHeap = false;
+    srcInfo.isMoved = true;
 
-    bool isTempSource =
-        namedValues.find(init->getName().str()) == namedValues.end();
-    if (isTempSource)
-      builder.CreateCall(getFree(), {srcData});
+    break;
+  }
 
-    namedValues[name] = VarInfo(alloca, ty, false, false, false, d.isConst);
-    namedValues[name].ownsHeap = true;
+  // -------------------------
+  // BORROW
+  // -------------------------
+  case AssignKind::Borrow: {
+    if (srcName.empty())
+      return logError("Borrow requires identifier");
+
+    auto &srcInfo = namedValues[srcName];
+
+    vi.allocaInst = srcInfo.allocaInst;
+    vi.type = srcInfo.type;
+
+    vi.isBorrowed = true;
+    vi.isReference = true;
+    vi.ownsHeap = false;
+
+    namedValues[name] = vi;
+    scopeMgr.declare(name);
     return alloca;
   }
-
-  if (TypeResolver::isArray(ty)) {
-    Value *loaded = builder.CreateLoad(ty, init);
-    builder.CreateStore(loaded, alloca);
-    namedValues[name] = VarInfo(alloca, ty, false, false, false, d.isConst);
-    namedValues[name].ownsHeap = true;
-    return alloca;
   }
 
-  init = TypeResolver::coerce(builder, init, ty);
-  builder.CreateStore(init, alloca);
-  namedValues[name] = VarInfo(alloca, ty, false, false, false, d.isConst);
-  return alloca;
-}
-
-Value *CodeGenerator::initMove(const VarDecl &d, const std::string &name,
-                               Type *ty, AllocaInst *alloca) {
-  auto *id = dynamic_cast<const IdentExpr *>(d.initializer.get());
-  if (!id)
-    return logError("Move initialiser requires a variable (identifier)");
-
-  const std::string &src = id->name.token.getWord();
-  auto sit = namedValues.find(src);
-  if (sit == namedValues.end())
-    return logError(("Unknown variable: " + src).c_str());
-  if (sit->second.isMoved)
-    return logError(("Already moved: " + src).c_str());
-  if (sit->second.isBorrowed)
-    return logError(("Cannot move borrowed value: " + src).c_str());
-  if (sit->second.isConst)
-    return logError(("Cannot move const value: " + src).c_str());
-
-  Value *val = builder.CreateLoad(sit->second.type, sit->second.allocaInst,
-                                  src + ".move");
-  builder.CreateStore(val, alloca);
-  sit->second.isMoved = true;
-  sit->second.ownsHeap = false;
-
-  namedValues[name] = VarInfo(alloca, ty, false, false, false, d.isConst);
-  namedValues[name].ownsHeap = true;
-  return alloca;
-}
-
-Value *CodeGenerator::initBorrow(const VarDecl &d, const std::string &name,
-                                 AllocaInst *alloca) {
-  auto *id = dynamic_cast<const IdentExpr *>(d.initializer.get());
-  if (!id)
-    return logError("Borrow initialiser requires a variable (identifier)");
-
-  const std::string &src = id->name.token.getWord();
-  auto sit = namedValues.find(src);
-  if (sit == namedValues.end())
-    return logError(("Unknown variable: " + src).c_str());
-  if (sit->second.isMoved)
-    return logError(("Cannot borrow moved value: " + src).c_str());
-
-  builder.CreateStore(sit->second.allocaInst, alloca);
-  sit->second.isBorrowed = true;
-
-  Type *refTy = PointerType::get(context, 0);
-  VarInfo vi(alloca, refTy, false, false, /*isRef=*/true, d.isConst, src);
-  vi.pointeeType = sit->second.type;
   namedValues[name] = vi;
+  scopeMgr.declare(name);
   return alloca;
 }
-
-// Statement dispatch
 
 Value *CodeGenerator::codegen(const Statement &stmt) {
   if (auto *p = dynamic_cast<const VarDecl *>(&stmt))
     return visitVarDecl(*p);
   if (auto *p = dynamic_cast<const ExprStmt *>(&stmt)) {
     Value *v = codegen(*p->expr);
-    flushPendingFrees();
     return v;
   }
   if (auto *p = dynamic_cast<const IfStmt *>(&stmt))
@@ -1003,8 +890,6 @@ Value *CodeGenerator::codegen(const Statement &stmt) {
   return logError("Unknown statement node");
 }
 
-// NOTE: scope is popped by the caller (visitIfStmt, visitWhileStmt, etc.)
-// so they can emit the branch first. For plain blocks the caller pops too.
 void CodeGenerator::codegen(const Block &block) {
   scopeMgr.pushScope();
   for (const auto &s : block.statements) {
@@ -1073,45 +958,7 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
   fn->insert(fn->end(), bodyBB);
   builder.SetInsertPoint(bodyBB);
 
-  // Snapshot the variable names that exist BEFORE the body runs.
-  // After codegen, only variables whose names are NEW (not in this snapshot)
-  // were declared inside the loop body.  We free those on the fall-through
-  // back-edge; outer-scope variables (like `wall` in Draw) must not be freed
-  // here — they outlive the loop iteration.
-  std::set<std::string> preBodyVars;
-  for (auto &[n, _] : namedValues)
-    preBodyVars.insert(n);
-
   codegen(*s.doBranch);
-
-  // Free owned string/leaf-array locals that were declared inside this body.
-  if (!builder.GetInsertBlock()->getTerminator()) {
-    for (auto &[varName, info] : namedValues) {
-      if (preBodyVars.count(varName))
-        continue; // declared before the loop body — not ours to free here
-      if (!info.ownsHeap || info.isMoved || info.isReference || info.isBorrowed)
-        continue;
-      if (TypeResolver::isString(info.type)) {
-        Value *loaded = builder.CreateLoad(info.type, info.allocaInst,
-                                           varName + ".loop.load");
-        Value *data =
-            builder.CreateExtractValue(loaded, {0}, varName + ".loop.data");
-        builder.CreateCall(getFree(), {data});
-      } else if (TypeResolver::isArray(info.type)) {
-        if (auto *arrSt = dyn_cast<StructType>(info.type)) {
-          Type *elemTy = TypeResolver::elemType(context, arrSt);
-          if (elemTy && !TypeResolver::isArray(elemTy) &&
-              !TypeResolver::isString(elemTy)) {
-            Value *loaded = builder.CreateLoad(info.type, info.allocaInst,
-                                               varName + ".loop.load");
-            Value *data = builder.CreateExtractValue(
-                loaded, {1}, varName + ".loop.arr.data");
-            builder.CreateCall(getFree(), {data});
-          }
-        }
-      }
-    }
-  }
 
   scopeMgr.popScope();
   if (!builder.GetInsertBlock()->getTerminator())
@@ -1123,47 +970,19 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 }
 
 Value *CodeGenerator::visitReturn(const Return &s) {
-  std::string returnedVar;
+  Value *retVal = nullptr;
+
   if (s.value) {
-    if (auto *id = dynamic_cast<const IdentExpr *>(s.value->get()))
-      returnedVar = id->name.token.getWord();
+    retVal = codegen(**s.value);
   }
 
-  for (auto &[varName, info] : namedValues) {
-    if (!info.ownsHeap || info.isMoved || info.isReference || info.isBorrowed)
-      continue;
-    if (!returnedVar.empty() && varName == returnedVar)
-      continue;
-    if (TypeResolver::isString(info.type)) {
-      Value *loaded =
-          builder.CreateLoad(info.type, info.allocaInst, varName + ".ret.load");
-      Value *data =
-          builder.CreateExtractValue(loaded, {0}, varName + ".ret.data");
-      builder.CreateCall(getFree(), {data});
-    } else if (TypeResolver::isArray(info.type)) {
-      if (auto *arrSt = dyn_cast<StructType>(info.type)) {
-        Type *elemTy = TypeResolver::elemType(context, arrSt);
-        if (elemTy && !TypeResolver::isArray(elemTy) &&
-            !TypeResolver::isString(elemTy)) {
-          Value *loaded = builder.CreateLoad(info.type, info.allocaInst,
-                                             varName + ".ret.load");
-          Value *data = builder.CreateExtractValue(loaded, {1},
-                                                   varName + ".ret.arr.data");
-          builder.CreateCall(getFree(), {data});
-        }
-      }
-    }
-  }
+  scopeMgr.emitAllDestructors();
 
-  scopeMgr.popAll();
-  if (s.value) {
-    Value *v = codegen(**s.value);
-    if (!v)
-      return nullptr;
-    builder.CreateRet(v);
-  } else {
+  if (retVal)
+    builder.CreateRet(retVal);
+  else
     builder.CreateRetVoid();
-  }
+
   return nullptr;
 }
 
@@ -1205,7 +1024,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 
   namedValues.clear();
 
-  // Push the function's top-level scope
   scopeMgr.pushScope();
 
   size_t idx = 0;
@@ -1225,7 +1043,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     } else {
       Type *declaredTy = TypeResolver::fromTypeDesc(context, param.type);
       if (!declaredTy)
-        declaredTy = arg.getType(); // fallback for scalars
+        declaredTy = arg.getType();
 
       AllocaInst *a = builder.CreateAlloca(declaredTy, nullptr, pname);
 
