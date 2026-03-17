@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-std::optional<std::string> readFile(char *name);
+std::optional<std::string> readFile(const char *name);
 std::string uncommentedCode(std::string code);
 
 #endif

@@ -11,7 +11,7 @@ std::string fileToString(const std::string &filename) {
                      std::istreambuf_iterator<char>());
 }
 
-std::optional<std::string> readFile(char *name) {
+std::optional<std::string> readFile(const char *name) {
   std::string filename = name;
 
   try {

@@ -3,61 +3,115 @@
 #include "Lexer/Lexer.h"
 #include "Parser/Parser.h"
 #include "Token/TokenType.h"
+
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <vector>
 
+bool endsWith(const std::string &str, const std::string &suffix) {
+  if (str.length() < suffix.length())
+    return false;
+  return str.compare(str.length() - suffix.length(), suffix.length(), suffix) ==
+         0;
+}
+
+bool hasValidExt(const std::string &f) {
+  return endsWith(f, ".nx") || endsWith(f, ".nex") || endsWith(f, ".nexus");
+}
+
+std::string getOutputName(const std::string &file) {
+  size_t pos = file.find_last_of('.');
+  if (pos == std::string::npos)
+    return file + ".x";
+  return file.substr(0, pos) + ".x";
+}
+
 int main(int argc, char *argv[]) {
-  if (argc != 3) {
-    if (argc == 2 && std::string(argv[1]) == "--version") {
-      std::cout << "nexus 1.4.2" << std::endl;
-      return 0;
-    };
-    std::cerr << "Usage: nexus input.nx output.x\n";
+  if (argc < 2) {
+    std::cerr << "Usage: nexus [files...]\n";
     return EXIT_FAILURE;
   }
 
-  std::string code = readFile(argv[1]).value_or("");
+  std::vector<std::string> inputs;
 
-  std::cout << "Errors : \n";
-  Lexer l(code);
+  for (int i = 1; i < argc; i++) {
+    std::string arg = argv[i];
 
-  auto start = std::chrono::high_resolution_clock::now();
-  std::vector<Token> lst = l.Tokenize();
-  auto end = std::chrono::high_resolution_clock::now();
+    if (arg == "--version") {
+      std::cout << "nexus 1.4.2\n";
+      return 0;
+    }
 
-  double elapsedMs =
-      std::chrono::duration<double, std::milli>(end - start).count();
-  double elapsedS = elapsedMs / 1000.0;
-  double tokPerS = lst.size() / elapsedS;
-
-  std::cout << "Tokens:          " << lst.size() << "\n";
-  std::cout << "Time (ms):       " << elapsedS << "\n";
-  std::cout << "Tokens / second: " << tokPerS << "\n";
-
-  // for (size_t i = 0; i < lst.size(); i++)
-  // std::cout << lst[i].toString();
-
-  // td::cout << "Errors : \n";
-  Parser parser(lst);
-  auto parsed = parser.parse();
-  // parsed->toJson(std::cout);
-  CodeGenerator cg;
-  if (!cg.generate(*parsed, "out")) {
-    std::cerr << "Codegen failed\n";
-    return 1;
+    inputs.push_back(arg);
   }
 
-  std::cout << "\nNow run:\n";
+  std::cout << "Compiling " << argc - 1 << " nexus files" << "\n";
+  for (const auto &file : inputs) {
+    if (!hasValidExt(file)) {
+      std::cerr << "Skipping invalid file: " << file << "\n";
+      continue;
+    }
 
-  std::string cmd = "clang -Wno-override-module -fsanitize=address "
-                    "-fsanitize=leak -g out.ll  -o " +
-                    std::string(argv[2]);
-  system(cmd.c_str());
-  // system("rm -rf out.ll");
-  std::cout << "./" << argv[2] << "\n";
+    std::optional<std::string> codeOpt = readFile(file.c_str());
+    if (!codeOpt.has_value()) {
+      std::cerr << "Failed to read file: " << file << "\n";
+      continue;
+    }
 
+    std::string code = codeOpt.value();
+
+    std::cout << "\nCompiling: " << file << "\n";
+
+    // Lexer
+    auto start = std::chrono::high_resolution_clock::now();
+    Lexer lexer(code);
+    std::vector<Token> tokens = lexer.Tokenize();
+    auto end = std::chrono::high_resolution_clock::now();
+
+    double elapsedMs =
+        std::chrono::duration<double, std::milli>(end - start).count();
+    double elapsedS = elapsedMs / 1000.0;
+    double tokPerS = tokens.size() / (elapsedS > 0 ? elapsedS : 1);
+
+    std::cout << "Tokens:          " << tokens.size() << "\n";
+    std::cout << "Time (s):        " << elapsedS << "\n";
+    std::cout << "Tokens / second: " << tokPerS << "\n";
+
+    // Parser
+    Parser parser(tokens);
+    auto parsed = parser.parse();
+
+    if (!parsed) {
+      std::cerr << "Parsing failed for " << file << "\n";
+      continue;
+    }
+
+    CodeGenerator cg;
+    if (!cg.generate(*parsed, "out")) {
+      std::cerr << "Codegen failed for " << file << "\n";
+      continue;
+    }
+
+    std::string output = getOutputName(file);
+
+    // Out.ll to out.x
+    std::string cmd = "clang -Wno-override-module -fsanitize=address "
+                      "-fsanitize=leak -g out.ll -o " +
+                      output;
+
+    int res = system(cmd.c_str());
+    system("rm -rf out.ll");
+    if (res != 0) {
+      std::cerr << "Clang failed for " << file << "\n";
+      continue;
+    }
+
+    std::cout << "Run: ./" << output << "\n\n";
+  }
+
+  std::cout << "\nDone.\n";
   return EXIT_SUCCESS;
 }
