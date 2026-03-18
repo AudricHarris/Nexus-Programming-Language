@@ -46,6 +46,10 @@ enum class TokenKind {
   TOK_WHILE,
   TOK_RETURN,
   TOK_CONST,
+  TOK_IMPORT,
+  TOK_PUBLIC,
+  TOK_PRIVATE,
+  TOK_PROTECTED,
 
   // Litterals
   TOK_INT,

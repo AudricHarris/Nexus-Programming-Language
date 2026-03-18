@@ -64,9 +64,11 @@ static constexpr State E = State::END;
 static constexpr State AC = State::ACCEPT;
 static constexpr State ER = State::ERR;
 
-// ------------------------------- //
+// -------------------------------- //
 // Transition table (T[state][cat]) //
-// ------------------------------- //
+// -------------------------------- //
+
+// If futur me updated the github the transition table should be there
 
 // Symbol order :
 //        PLUS   MINUS  SLASH  DIGIT  DOT    LTR    EQ     LT     GT     AMP
@@ -225,6 +227,19 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
   case 6:
     if (w == "return")
       return TokenKind::TOK_RETURN;
+    if (w == "import")
+      return TokenKind::TOK_IMPORT;
+    if (w == "public")
+      return TokenKind::TOK_PUBLIC;
+    break;
+
+  case 7:
+    if (w == "private")
+      return TokenKind::TOK_PRIVATE;
+    break;
+  case 9:
+    if (w == "protected")
+      return TokenKind::TOK_PRIVATE;
     break;
   }
   return TokenKind::TOK_IDENTIFIER;

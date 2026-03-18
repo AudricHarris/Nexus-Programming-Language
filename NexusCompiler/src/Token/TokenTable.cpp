@@ -34,6 +34,10 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_WHILE", "while"},
     {"TOK_RETURN", "return"},
     {"TOK_CONST", "const"},
+    {"TOK_IMPORT", "import"},
+    {"TOK_PUBLIC", "public"},
+    {"TOK_PRIVATE", "private"},
+    {"TOK_PROTECTED", "protected"},
     {"TOK_INT", nullptr},
     {"TOK_FLOAT", nullptr},
     {"TOK_STRING", nullptr},
@@ -89,6 +93,14 @@ std::string Token::toString() {
     return "TOK_RETURN  ";
   case TokenKind::TOK_CONST:
     return "TOK_CONST  ";
+  case TokenKind::TOK_IMPORT:
+    return "TOK_IMPORT  ";
+  case TokenKind::TOK_PUBLIC:
+    return "TOK_PUBLIC  ";
+  case TokenKind::TOK_PRIVATE:
+    return "TOK_PRIVATE  ";
+  case TokenKind::TOK_PROTECTED:
+    return "TOK_PROTECTED  ";
   case TokenKind::TOK_INT:
     return "TOK_INT  ";
   case TokenKind::TOK_FLOAT:
