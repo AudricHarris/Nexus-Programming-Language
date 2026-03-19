@@ -35,3 +35,9 @@ You can find both compilers :
 
 # Version logs can be found in documentation.
 
+# Transition table made for lexer
+this is a initial version and might see changes in the futur.
+<img width="644" height="665" alt="image" src="https://github.com/user-attachments/assets/ce3c5aa4-9c16-479c-b091-80524a924029" />
+<img width="652" height="615" alt="image" src="https://github.com/user-attachments/assets/9894279d-6de1-4541-99b1-2eecabd95bef" />
+
+
