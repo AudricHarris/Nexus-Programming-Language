@@ -38,6 +38,8 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"TOK_PUBLIC", "public"},
     {"TOK_PRIVATE", "private"},
     {"TOK_PROTECTED", "protected"},
+    {"TOK_CONTINUE", "continue"},
+    {"TOK_BREAK", "break"},
     {"TOK_INT", nullptr},
     {"TOK_FLOAT", nullptr},
     {"TOK_STRING", nullptr},
@@ -101,6 +103,10 @@ std::string Token::toString() {
     return "TOK_PRIVATE  ";
   case TokenKind::TOK_PROTECTED:
     return "TOK_PROTECTED  ";
+  case TokenKind::TOK_CONTINUE:
+    return "TOK_CONTINUE  ";
+  case TokenKind::TOK_BREAK:
+    return "TOK_BREAK  ";
   case TokenKind::TOK_INT:
     return "TOK_INT  ";
   case TokenKind::TOK_FLOAT:

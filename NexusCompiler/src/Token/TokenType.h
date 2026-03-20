@@ -50,6 +50,8 @@ enum class TokenKind {
   TOK_PUBLIC,
   TOK_PRIVATE,
   TOK_PROTECTED,
+  TOK_CONTINUE,
+  TOK_BREAK,
 
   // Litterals
   TOK_INT,

@@ -223,6 +223,8 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
       return TokenKind::TOK_BOOL;
     if (w == "const")
       return TokenKind::TOK_CONST;
+    if (w == "break")
+      return TokenKind::TOK_BREAK;
     break;
   case 6:
     if (w == "return")
@@ -236,6 +238,10 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
   case 7:
     if (w == "private")
       return TokenKind::TOK_PRIVATE;
+    break;
+  case 8:
+    if (w == "continue")
+      return TokenKind::TOK_CONTINUE;
     break;
   case 9:
     if (w == "protected")
