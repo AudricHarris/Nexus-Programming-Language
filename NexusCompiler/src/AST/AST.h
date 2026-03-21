@@ -552,6 +552,22 @@ struct Return : Statement {
   }
 };
 
+struct Break : Statement {
+  Break() = default;
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"Break\"}";
+  }
+};
+
+struct Continue : Statement {
+  Continue() = default;
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"Continue\"}";
+  }
+};
+
 struct ExprStmt : Statement {
   ExprPtr expr;
 

@@ -214,6 +214,9 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     return parseIfStatement();
   if (match(TokenKind::TOK_WHILE))
     return parseWhileLoop();
+  if (peek().getKind() == TokenKind::TOK_CONTINUE ||
+      peek().getKind() == TokenKind::TOK_BREAK)
+    return parseLoopBreak();
 
   // const var decl
   if (peek().getKind() == TokenKind::TOK_CONST)
@@ -306,6 +309,17 @@ std::unique_ptr<Return> Parser::parseReturnStatement() {
   ret->value = parseExpression();
   expect(TokenKind::TOK_SEMI, "Expected ';'");
   return ret;
+}
+
+std::unique_ptr<Statement> Parser::parseLoopBreak() {
+  if (match(TokenKind::TOK_CONTINUE)) {
+    expect(TokenKind::TOK_SEMI, "Expected ';' after continue");
+    return std::make_unique<Continue>();
+  }
+
+  expect(TokenKind::TOK_BREAK, "Expected 'break' or 'continue'");
+  expect(TokenKind::TOK_SEMI, "Expected ';' after break");
+  return std::make_unique<Break>();
 }
 
 // -------------------- //
