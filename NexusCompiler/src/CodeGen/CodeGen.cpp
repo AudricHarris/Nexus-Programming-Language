@@ -534,6 +534,24 @@ Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
   if (it == namedValues.end())
     return logError(("Unknown variable: " + name).c_str());
 
+  if (TypeResolver::isString(it->second.type)) {
+    if (e.indices.size() != 1)
+      return logError("String indexing takes exactly one index");
+    Value *idx = codegen(*e.indices[0]);
+    if (!idx)
+      return nullptr;
+    if (idx->getType()->isIntegerTy(32))
+      idx = builder.CreateSExt(idx, Type::getInt64Ty(context));
+
+    llvm::StructType *strSt = TypeResolver::getStringType(context);
+    Value *loaded =
+        builder.CreateLoad(strSt, it->second.allocaInst, "str.load");
+    Value *dataPtr = builder.CreateExtractValue(loaded, {0}, "str.data");
+    Value *charPtr =
+        builder.CreateGEP(Type::getInt8Ty(context), dataPtr, idx, "char.ptr");
+    return builder.CreateLoad(Type::getInt8Ty(context), charPtr, "char");
+  }
+
   Value *ptr = it->second.allocaInst;
   Type *ty = it->second.type;
 
@@ -644,6 +662,45 @@ Value *CodeGenerator::visitLengthProperty(const LengthPropertyExpr &e) {
     return builder.CreateExtractValue(loaded, {1}, "length");
   }
   return logError(".length not applicable to this type");
+}
+
+Value *CodeGenerator::visitIndexedLength(const IndexedLengthExpr &e) {
+  const std::string &name = e.arrayName.token.getWord();
+  auto it = namedValues.find(name);
+  if (it == namedValues.end())
+    return logError(("Unknown variable: " + name).c_str());
+
+  Value *ptr = it->second.allocaInst;
+  Type *ty = it->second.type;
+
+  for (size_t d = 0; d < e.indices.size(); ++d) {
+    auto *arrSt = dyn_cast<StructType>(ty);
+    if (!arrSt || !TypeResolver::isArray(arrSt))
+      return logError("Not an array");
+
+    Value *idx = codegen(*e.indices[d]);
+    if (!idx)
+      return nullptr;
+    if (idx->getType()->isIntegerTy(32))
+      idx = builder.CreateSExt(idx, Type::getInt64Ty(context));
+
+    Value *loaded = builder.CreateLoad(arrSt, ptr, "arr.load");
+    Value *dataPtr = builder.CreateExtractValue(loaded, {1}, "arr.data");
+    Type *elemTy = TypeResolver::elemType(context, arrSt);
+    if (!elemTy)
+      return logError("Cannot resolve element type");
+
+    ptr = builder.CreateGEP(elemTy, dataPtr, idx, "elem.ptr");
+    ty = elemTy;
+  }
+
+  // ty is now the sub-array struct type
+  auto *subSt = dyn_cast<StructType>(ty);
+  if (!subSt || !TypeResolver::isArray(subSt))
+    return logError(".length: element is not an array");
+
+  Value *loaded = builder.CreateLoad(subSt, ptr, "subarr.load");
+  return builder.CreateExtractValue(loaded, {0}, "length");
 }
 
 Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
@@ -759,6 +816,8 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitArrayIndexAssign(*p);
   if (auto *p = dynamic_cast<const LengthPropertyExpr *>(&expr))
     return visitLengthProperty(*p);
+  if (auto *p = dynamic_cast<const IndexedLengthExpr *>(&expr))
+    return visitIndexedLength(*p);
 
   return logError("Unknown expression node");
 }
@@ -885,6 +944,10 @@ Value *CodeGenerator::codegen(const Statement &stmt) {
     return visitIfStmt(*p);
   if (auto *p = dynamic_cast<const WhileStmt *>(&stmt))
     return visitWhileStmt(*p);
+  if (auto *p = dynamic_cast<const Break *>(&stmt))
+    return visitBreak(*p);
+  if (auto *p = dynamic_cast<const Continue *>(&stmt))
+    return visitContinue(*p);
   if (auto *p = dynamic_cast<const Return *>(&stmt))
     return visitReturn(*p);
   return logError("Unknown statement node");
@@ -945,7 +1008,6 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
   BasicBlock *exitBB = BasicBlock::Create(context, "while.exit");
 
   builder.CreateBr(condBB);
-
   builder.SetInsertPoint(condBB);
   Value *cond = codegen(*s.condition);
   if (!cond)
@@ -958,7 +1020,9 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
   fn->insert(fn->end(), bodyBB);
   builder.SetInsertPoint(bodyBB);
 
+  loopStack.push_back({condBB, exitBB});
   codegen(*s.doBranch);
+  loopStack.pop_back();
 
   scopeMgr.popScope();
   if (!builder.GetInsertBlock()->getTerminator())
@@ -966,6 +1030,20 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 
   fn->insert(fn->end(), exitBB);
   builder.SetInsertPoint(exitBB);
+  return nullptr;
+}
+
+Value *CodeGenerator::visitBreak(const Break &) {
+  if (loopStack.empty())
+    return logError("'break' outside loop");
+  builder.CreateBr(loopStack.back().exitBB);
+  return nullptr;
+}
+
+Value *CodeGenerator::visitContinue(const Continue &) {
+  if (loopStack.empty())
+    return logError("'continue' outside loop");
+  builder.CreateBr(loopStack.back().condBB);
   return nullptr;
 }
 

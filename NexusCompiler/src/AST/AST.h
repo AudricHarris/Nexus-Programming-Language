@@ -441,6 +441,21 @@ struct LengthPropertyExpr : Expression {
   }
 };
 
+struct IndexedLengthExpr : Expression {
+  Identifier arrayName;
+  std::vector<ExprPtr> indices;
+
+  IndexedLengthExpr(Identifier name, std::vector<ExprPtr> idxs)
+      : arrayName(std::move(name)), indices(std::move(idxs)) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"IndexedLengthExpr\",\"name\":"
+       << json_utils::escape(arrayName.token.getWord())
+       << ",\"depth\":" << indices.size() << "}";
+  }
+};
+
 // -------------- //
 // Statement base //
 // -------------- //

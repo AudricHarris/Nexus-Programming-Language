@@ -509,40 +509,49 @@ std::unique_ptr<Expression> Parser::parseUnary() {
 std::unique_ptr<Expression> Parser::parsePostfix() {
   auto expr = parsePrimary();
 
-  if (match(TokenKind::TOK_LBRACKET)) {
-    std::vector<ExprPtr> indices;
-    do {
-      indices.push_back(parseExpression());
-      expect(TokenKind::TOK_RBRACKET, "Expected ']'");
-    } while (match(TokenKind::TOK_LBRACKET));
+  while (true) {
+    if (match(TokenKind::TOK_LBRACKET)) {
+      std::vector<ExprPtr> indices;
+      do {
+        indices.push_back(parseExpression());
+        expect(TokenKind::TOK_RBRACKET, "Expected ']'");
+      } while (match(TokenKind::TOK_LBRACKET));
 
-    if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
-      return std::make_unique<ArrayIndexExpr>(id->name, std::move(indices));
+      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+        expr = std::make_unique<ArrayIndexExpr>(id->name, std::move(indices));
+      } else {
+        throw ParseError(peek().getLine(), peek().getColumn(),
+                         "Indexing requires an identifier");
+      }
+      continue; // loop back — now we can see the .length
     }
-    throw ParseError(peek().getLine(), peek().getColumn(),
-                     "Indexing requires an identifier");
-  }
 
-  if (match(TokenKind::TOK_DOT)) {
-    Token prop = expect(TokenKind::TOK_IDENTIFIER, "Expected property name");
-    if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
-      if (prop.getWord() == "length")
-        return std::make_unique<LengthPropertyExpr>(id->name);
+    if (match(TokenKind::TOK_DOT)) {
+      Token prop = expect(TokenKind::TOK_IDENTIFIER, "Expected property name");
+      if (prop.getWord() == "length") {
+        if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
+          return std::make_unique<LengthPropertyExpr>(id->name);
+        if (auto *arr = dynamic_cast<ArrayIndexExpr *>(expr.get()))
+          return std::make_unique<IndexedLengthExpr>(arr->array,
+                                                     std::move(arr->indices));
+      }
+      throw ParseError(peek().getLine(), peek().getColumn(),
+                       "Unknown property: " + prop.getWord());
     }
-    throw ParseError(peek().getLine(), peek().getColumn(),
-                     "Unknown property: " + prop.getWord());
-  }
-  if (match(TokenKind::TOK_INCREMENT)) {
-    if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
-      return std::make_unique<Increment>(id->name);
-    throw ParseError(peek().getLine(), peek().getColumn(),
-                     "'++' requires an identifier");
-  }
-  if (match(TokenKind::TOK_DECREMENT)) {
-    if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
-      return std::make_unique<Decrement>(id->name);
-    throw ParseError(peek().getLine(), peek().getColumn(),
-                     "'--' requires an identifier");
+
+    if (match(TokenKind::TOK_INCREMENT)) {
+      if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
+        return std::make_unique<Increment>(id->name);
+      throw ParseError(peek().getLine(), peek().getColumn(),
+                       "'++' requires an identifier");
+    }
+    if (match(TokenKind::TOK_DECREMENT)) {
+      if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
+        return std::make_unique<Decrement>(id->name);
+      throw ParseError(peek().getLine(), peek().getColumn(),
+                       "'--' requires an identifier");
+    }
+    break;
   }
   return expr;
 }

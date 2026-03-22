@@ -21,6 +21,12 @@
 // -------------- //
 // Code generator //
 // -------------- //
+
+struct LoopContext {
+  llvm::BasicBlock *condBB; // continue target
+  llvm::BasicBlock *exitBB; // break target
+};
+
 class CodeGenerator {
 public:
   CodeGenerator();
@@ -35,6 +41,7 @@ private:
   llvm::LLVMContext context;
   std::unique_ptr<llvm::Module> module;
   llvm::IRBuilder<> builder;
+  std::vector<LoopContext> loopStack;
 
   // Symbol tables
   std::map<std::string, VarInfo> namedValues;
@@ -63,6 +70,7 @@ private:
   llvm::Value *visitArrayIndex(const ArrayIndexExpr &e);
   llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &e);
   llvm::Value *visitLengthProperty(const LengthPropertyExpr &e);
+  llvm::Value *visitIndexedLength(const IndexedLengthExpr &e);
 
   // Expression dispatch
   llvm::Value *codegen(const Expression &expr);
@@ -71,6 +79,8 @@ private:
   llvm::Value *visitVarDecl(const VarDecl &d);
   llvm::Value *visitIfStmt(const IfStmt &s);
   llvm::Value *visitWhileStmt(const WhileStmt &s);
+  llvm::Value *visitBreak(const Break &);
+  llvm::Value *visitContinue(const Continue &);
   llvm::Value *visitReturn(const Return &s);
 
   llvm::Value *codegen(const Statement &stmt);
