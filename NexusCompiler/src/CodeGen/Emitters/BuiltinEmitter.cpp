@@ -6,7 +6,6 @@ using namespace llvm;
 
 Value *BuiltinEmitter::handleRandom(IRBuilder<> &B, LLVMContext &ctx,
                                     Module *M) {
-  // Declare rand() if needed
   llvm::Function *randF = M->getFunction("rand");
   if (!randF) {
     FunctionType *randTy = FunctionType::get(Type::getInt32Ty(ctx), false);
@@ -14,14 +13,12 @@ Value *BuiltinEmitter::handleRandom(IRBuilder<> &B, LLVMContext &ctx,
                                    "rand", M);
   }
 
-  // Just call rand() — seeding happens once in emitRuntimeInit()
   Value *randVal = B.CreateCall(randF, {}, "rand.val");
   Value *randFloat = B.CreateSIToFP(randVal, Type::getDoubleTy(ctx), "rand.f");
   Value *randMax = ConstantFP::get(Type::getDoubleTy(ctx), (double)RAND_MAX);
   return B.CreateFDiv(randFloat, randMax, "random.f");
 }
 
-// Call this once when setting up main / program entry
 void BuiltinEmitter::emitRuntimeInit(IRBuilder<> &B, LLVMContext &ctx,
                                      Module *M) {
   llvm::Function *timeF = M->getFunction("time");
@@ -51,7 +48,6 @@ Value *BuiltinEmitter::handleRead(IRBuilder<> &B, LLVMContext &ctx, Module *M) {
   Type *i32Ty = Type::getInt32Ty(ctx);
   Type *ptrTy = PointerType::getUnqual(ctx);
 
-  // Buffer on stack
   Value *buf =
       B.CreateAlloca(i8Ty, ConstantInt::get(i32Ty, BUF_SIZE), "read.buf");
 
@@ -65,17 +61,12 @@ Value *BuiltinEmitter::handleRead(IRBuilder<> &B, LLVMContext &ctx, Module *M) {
 
   GlobalVariable *stdinVar = M->getGlobalVariable("stdin");
   if (!stdinVar) {
-    stdinVar =
-        new GlobalVariable(*M, ptrTy,
-                           /*isConstant=*/false, GlobalValue::ExternalLinkage,
-                           /*Initializer=*/nullptr, // extern, no initializer
-                           "stdin");
+    stdinVar = new GlobalVariable(
+        *M, ptrTy, false, GlobalValue::ExternalLinkage, nullptr, "stdin");
   }
   Value *stdinVal = B.CreateLoad(ptrTy, stdinVar, "stdin.val");
 
-  // Call fgets
-  Value *result =
-      B.CreateCall(fgetsF, {buf, ConstantInt::get(i32Ty, BUF_SIZE), stdinVal});
+  B.CreateCall(fgetsF, {buf, ConstantInt::get(i32Ty, BUF_SIZE), stdinVal});
 
   Value *len = B.CreateCall(RTDecl::strlen_(M, ctx), {buf}, "read.len");
 
@@ -85,7 +76,6 @@ Value *BuiltinEmitter::handleRead(IRBuilder<> &B, LLVMContext &ctx, Module *M) {
   Value *lastPtr = B.CreateGEP(i8Ty, buf, lastIdx, "last.ptr");
   Value *lastCh = B.CreateLoad(i8Ty, lastPtr, "last.ch");
   Value *isNewline = B.CreateICmpEQ(lastCh, ConstantInt::get(i8Ty, '\n'));
-  // Conditionally zero it out and decrement length
   Value *nullCh = ConstantInt::get(i8Ty, 0);
   B.CreateStore(B.CreateSelect(isNewline, nullCh, lastCh), lastPtr);
   Value *trimmed =
