@@ -128,20 +128,20 @@ static constexpr State T[NSTATES][NCATS] = {
 };
 
 static constexpr TokenKind T2[14][2] = {
-    {TokenKind::TOK_UNKNOWN, TokenKind::TOK_UNKNOWN},
-    {TokenKind::TOK_INCREMENT, TokenKind::TOK_ADD},
-    {TokenKind::TOK_DECREMENT, TokenKind::TOK_SUB},
-    {TokenKind::TOK_DIV_FLOOR, TokenKind::TOK_DIV},
-    {TokenKind::TOK_UNKNOWN, TokenKind::TOK_INT},
-    {TokenKind::TOK_UNKNOWN, TokenKind::TOK_UNKNOWN},
-    {TokenKind::TOK_UNKNOWN, TokenKind::TOK_FLOAT},
-    {TokenKind::TOK_UNKNOWN, TokenKind::TOK_IDENTIFIER},
-    {TokenKind::TOK_EQ, TokenKind::TOK_ASSIGN},
-    {TokenKind::TOK_LE, TokenKind::TOK_LT},
-    {TokenKind::TOK_GE, TokenKind::TOK_GT},
-    {TokenKind::TOK_DOUBLE_AND, TokenKind::TOK_AND},
-    {TokenKind::TOK_NE, TokenKind::TOK_NOT},
-    {TokenKind::TOK_OR, TokenKind::TOK_UNKNOWN},
+    {TokenKind::UNKNOWN, TokenKind::UNKNOWN},
+    {TokenKind::INCREMENT, TokenKind::ADD},
+    {TokenKind::DECREMENT, TokenKind::SUB},
+    {TokenKind::DIV_FLOOR, TokenKind::DIV},
+    {TokenKind::UNKNOWN, TokenKind::LIT_INT},
+    {TokenKind::UNKNOWN, TokenKind::UNKNOWN},
+    {TokenKind::UNKNOWN, TokenKind::LIT_FLOAT},
+    {TokenKind::UNKNOWN, TokenKind::IDENTIFIER},
+    {TokenKind::EQ, TokenKind::ASSIGN},
+    {TokenKind::LE, TokenKind::LT},
+    {TokenKind::GE, TokenKind::GT},
+    {TokenKind::DOUBLE_AND, TokenKind::AND},
+    {TokenKind::NE, TokenKind::NOT},
+    {TokenKind::OR, TokenKind::UNKNOWN},
 };
 
 // ------------------- //
@@ -204,79 +204,79 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
   switch (w.size()) {
   case 2:
     if (w == "if")
-      return TokenKind::TOK_IF;
+      return TokenKind::IF;
     break;
   case 3:
     if (w == "new")
-      return TokenKind::TOK_NEW;
+      return TokenKind::NEW;
     break;
   case 4:
     if (w == "else")
-      return TokenKind::TOK_ElSE;
+      return TokenKind::ElSE;
     if (w == "true")
-      return TokenKind::TOK_BOOL;
+      return TokenKind::LIT_BOOL;
     break;
   case 5:
     if (w == "while")
-      return TokenKind::TOK_WHILE;
+      return TokenKind::WHILE;
     if (w == "false")
-      return TokenKind::TOK_BOOL;
+      return TokenKind::LIT_BOOL;
     if (w == "const")
-      return TokenKind::TOK_CONST;
+      return TokenKind::CONST;
     if (w == "break")
-      return TokenKind::TOK_BREAK;
+      return TokenKind::BREAK;
     break;
   case 6:
     if (w == "return")
-      return TokenKind::TOK_RETURN;
+      return TokenKind::RETURN;
     if (w == "import")
-      return TokenKind::TOK_IMPORT;
+      return TokenKind::IMPORT;
     if (w == "public")
-      return TokenKind::TOK_PUBLIC;
+      return TokenKind::PUBLIC;
     break;
 
   case 7:
     if (w == "private")
-      return TokenKind::TOK_PRIVATE;
+      return TokenKind::PRIVATE;
     break;
   case 8:
     if (w == "continue")
-      return TokenKind::TOK_CONTINUE;
+      return TokenKind::CONTINUE;
     break;
   case 9:
     if (w == "protected")
-      return TokenKind::TOK_PRIVATE;
+      return TokenKind::PRIVATE;
     break;
   }
-  return TokenKind::TOK_IDENTIFIER;
+  return TokenKind::IDENTIFIER;
 }
 
 static inline TokenKind singleCharKind(char c) {
   switch (c) {
   case '(':
-    return TokenKind::TOK_LPAREN;
+    return TokenKind::LPAREN;
   case ')':
-    return TokenKind::TOK_RPAREN;
+    return TokenKind::RPAREN;
   case '[':
-    return TokenKind::TOK_LBRACKET;
+    return TokenKind::LBRACKET;
   case ']':
-    return TokenKind::TOK_RBRACKET;
+    return TokenKind::RBRACKET;
   case '{':
-    return TokenKind::TOK_LBRACE;
+    return TokenKind::LBRACE;
   case '}':
-    return TokenKind::TOK_RBRACE;
+    return TokenKind::RBRACE;
   case ';':
-    return TokenKind::TOK_SEMI;
+    return TokenKind::SEMI;
   case ',':
-    return TokenKind::TOK_COMMA;
+    return TokenKind::COMMA;
   case '*':
-    return TokenKind::TOK_PROD;
+    return TokenKind::PROD;
   case '%':
-    return TokenKind::TOK_MOD;
+    return TokenKind::MOD;
   case '.':
-    return TokenKind::TOK_DOT;
+    return TokenKind::DOT;
   default:
-    return TokenKind::TOK_UNKNOWN;
+    return TokenKind::UNKNOWN;
   }
 }
 
@@ -364,7 +364,7 @@ std::vector<Token> Lexer::Tokenize() {
     char c = this->src[this->pos];
     if (c == '\0') {
       ++this->pos;
-      lstTokens.push_back(makeToken(TokenKind::TOK_EOF, "<EOF>"));
+      lstTokens.push_back(makeToken(TokenKind::END_OF_FILE, "<EOF>"));
       continue;
     }
 
@@ -382,7 +382,7 @@ std::vector<Token> Lexer::Tokenize() {
       std::cerr << "\033[31mUnknown symbol [" << c << "]\033[0m\n";
       ++this->pos;
       ++this->col;
-      lstTokens.push_back(makeToken(TokenKind::TOK_UNKNOWN, "<UNKNOWN>"));
+      lstTokens.push_back(makeToken(TokenKind::UNKNOWN, "<UNKNOWN>"));
       continue;
     }
 
@@ -432,7 +432,7 @@ std::vector<Token> Lexer::Tokenize() {
       std::string_view bad(this->src + spellingStart,
                            this->pos - spellingStart);
       std::cerr << "\033[31mLexer error near [" << bad << "]\033[0m\n";
-      lstTokens.push_back(makeToken(TokenKind::TOK_UNKNOWN, "<UNKNOWN>"));
+      lstTokens.push_back(makeToken(TokenKind::UNKNOWN, "<UNKNOWN>"));
       continue;
     }
 
@@ -449,11 +449,11 @@ std::vector<Token> Lexer::Tokenize() {
     if (fi >= 1 && fi <= 13) {
       TokenKind kind;
       if (first == State::S2 && spelling == "->") {
-        kind = TokenKind::TOK_RETURN_TYPE;
+        kind = TokenKind::RETURN_TYPE;
       } else if (first == State::S9 && spelling == "<-") {
-        kind = TokenKind::TOK_MOVE;
+        kind = TokenKind::MOVE;
       } else if (first == State::S11 && spelling == "&=") {
-        kind = TokenKind::TOK_BORROW;
+        kind = TokenKind::BORROW;
       } else if (first == State::S7) {
         kind = keywordOrIdent(spelling);
       } else {
@@ -465,22 +465,22 @@ std::vector<Token> Lexer::Tokenize() {
 
     switch (first) {
     case State::S4:
-      lstTokens.push_back(makeToken(TokenKind::TOK_INT, spelling));
+      lstTokens.push_back(makeToken(TokenKind::LIT_INT, spelling));
       break;
     case State::S6:
-      lstTokens.push_back(makeToken(TokenKind::TOK_FLOAT, spelling));
+      lstTokens.push_back(makeToken(TokenKind::LIT_FLOAT, spelling));
       break;
     case State::S14:
-      lstTokens.push_back(makeToken(TokenKind::TOK_STRING, spelling));
+      lstTokens.push_back(makeToken(TokenKind::LIT_STRING, spelling));
       break;
     case State::S15:
     case State::S16:
     case State::S17:
     case State::S18:
-      lstTokens.push_back(makeToken(TokenKind::TOK_CHAR, spelling));
+      lstTokens.push_back(makeToken(TokenKind::LIT_CHAR, spelling));
       break;
     default:
-      lstTokens.push_back(makeToken(TokenKind::TOK_UNKNOWN, "<UNKNOWN>"));
+      lstTokens.push_back(makeToken(TokenKind::UNKNOWN, "<UNKNOWN>"));
       break;
     }
   }

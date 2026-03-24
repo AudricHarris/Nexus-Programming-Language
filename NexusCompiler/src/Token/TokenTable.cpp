@@ -15,8 +15,8 @@ public:
 
   static std::optional<TokenKind> getKindFromSpelling(std::string_view s) {
     static const std::unordered_map<std::string_view, TokenKind> keywordMap = {
-        {"i32", TokenKind::TOK_IDENTIFIER},
-        {"return", TokenKind::TOK_RETURN},
+        {"i32", TokenKind::IDENTIFIER},
+        {"return", TokenKind::RETURN},
     };
 
     auto it = keywordMap.find(s);
@@ -28,163 +28,163 @@ public:
 };
 
 TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
-    {"TOK_IDENTIFIER", nullptr},
-    {"TOK_IF", "if"},
-    {"TOK_ELSE", "else"},
-    {"TOK_WHILE", "while"},
-    {"TOK_RETURN", "return"},
-    {"TOK_CONST", "const"},
-    {"TOK_IMPORT", "import"},
-    {"TOK_PUBLIC", "public"},
-    {"TOK_PRIVATE", "private"},
-    {"TOK_PROTECTED", "protected"},
-    {"TOK_CONTINUE", "continue"},
-    {"TOK_BREAK", "break"},
-    {"TOK_INT", nullptr},
-    {"TOK_FLOAT", nullptr},
-    {"TOK_STRING", nullptr},
-    {"TOK_CHAR", nullptr},
-    {"TOK_BOOL", nullptr},
-    {"TOK_ASSIGN", "="},
-    {"TOK_INCREMENT", "++"},
-    {"TOK_DECREMENT", "--"},
-    {"TOK_MOVE", "<-"},
-    {"TOK_BORROW", "&="},
-    {"TOK_ADD", "+"},
-    {"TOK_SUB", "-"},
-    {"TOK_PROD", "*"},
-    {"TOK_DIV", "/"},
-    {"TOK_DIV_FLOOR", "//"},
-    {"TOK_MOD", "%"},
-    {"TOK_LT", "<"},
-    {"TOK_GT", ">"},
-    {"TOK_LE", "<="},
-    {"TOK_GE", ">="},
-    {"TOK_EQ", "=="},
-    {"TOK_NE", "!="},
-    {"TOK_AND", "&"},
-    {"TOK_DOUBLE_AND", "&&"},
-    {"TOK_OR", "||"},
-    {"TOK_NOT", "!"},
-    {"TOK_LPAREN", "("},
-    {"TOK_RPAREN", ")"},
-    {"TOK_LBRACKET", "["},
-    {"TOK_RBRACKET", "]"},
-    {"TOK_LBRACE", "{"},
-    {"TOK_RBRACE", "}"},
-    {"TOK_COMMA", ","},
-    {"TOK_SEMI", ";"},
-    {"TOK_DOT", "."},
-    {"TOK_RETURN_TYPE", "->"},
-    {"TOK_NEW", "new"},
-    {"TOK_EOF", "<EOF>"},
-    {"TOK_UNKNOWN", "<UNKNOWN>"},
+    {"IDENTIFIER", nullptr},
+    {"IF", "if"},
+    {"ELSE", "else"},
+    {"WHILE", "while"},
+    {"RETURN", "return"},
+    {"CONST", "const"},
+    {"IMPORT", "import"},
+    {"PUBLIC", "public"},
+    {"PRIVATE", "private"},
+    {"PROTECTED", "protected"},
+    {"CONTINUE", "continue"},
+    {"BREAK", "break"},
+    {"LIT_INT", nullptr},
+    {"LIT_FLOAT", nullptr},
+    {"LIT_STRING", nullptr},
+    {"LIT_CHAR", nullptr},
+    {"LIT_BOOL", nullptr},
+    {"ASSIGN", "="},
+    {"INCREMENT", "++"},
+    {"DECREMENT", "--"},
+    {"MOVE", "<-"},
+    {"BORROW", "&="},
+    {"ADD", "+"},
+    {"SUB", "-"},
+    {"PROD", "*"},
+    {"DIV", "/"},
+    {"DIV_FLOOR", "//"},
+    {"MOD", "%"},
+    {"LT", "<"},
+    {"GT", ">"},
+    {"LE", "<="},
+    {"GE", ">="},
+    {"EQ", "=="},
+    {"NE", "!="},
+    {"AND", "&"},
+    {"DOUBLE_AND", "&&"},
+    {"OR", "||"},
+    {"NOT", "!"},
+    {"LPAREN", "("},
+    {"RPAREN", ")"},
+    {"LBRACKET", "["},
+    {"RBRACKET", "]"},
+    {"LBRACE", "{"},
+    {"RBRACE", "}"},
+    {"COMMA", ","},
+    {"SEMI", ";"},
+    {"DOT", "."},
+    {"RETURN_TYPE", "->"},
+    {"NEW", "new"},
+    {"END_OF_FILE", "<EOF>"},
+    {"UNKNOWN", "<UNKNOWN>"},
 };
 
 std::string Token::toString() {
   switch (this->kind) {
-  case TokenKind::TOK_IDENTIFIER:
-    return "TOK_IDENTIFIER  ";
-  case TokenKind::TOK_IF:
-    return "TOK_IF  ";
-  case TokenKind::TOK_ElSE:
-    return "TOK_ELSE  ";
-  case TokenKind::TOK_WHILE:
-    return "TOK_WHILE  ";
-  case TokenKind::TOK_RETURN:
-    return "TOK_RETURN  ";
-  case TokenKind::TOK_CONST:
-    return "TOK_CONST  ";
-  case TokenKind::TOK_IMPORT:
-    return "TOK_IMPORT  ";
-  case TokenKind::TOK_PUBLIC:
-    return "TOK_PUBLIC  ";
-  case TokenKind::TOK_PRIVATE:
-    return "TOK_PRIVATE  ";
-  case TokenKind::TOK_PROTECTED:
-    return "TOK_PROTECTED  ";
-  case TokenKind::TOK_CONTINUE:
-    return "TOK_CONTINUE  ";
-  case TokenKind::TOK_BREAK:
-    return "TOK_BREAK  ";
-  case TokenKind::TOK_INT:
-    return "TOK_INT  ";
-  case TokenKind::TOK_FLOAT:
-    return "TOK_FLOAT  ";
-  case TokenKind::TOK_STRING:
-    return "TOK_STRING  ";
-  case TokenKind::TOK_CHAR:
-    return "TOK_CHAR  ";
-  case TokenKind::TOK_BOOL:
-    return "TOK_BOOL  ";
-  case TokenKind::TOK_ASSIGN:
-    return "TOK_ASSIGN  ";
-  case TokenKind::TOK_INCREMENT:
-    return "TOK_INCREMENT  ";
-  case TokenKind::TOK_DECREMENT:
-    return "TOK_DECREMENT  ";
-  case TokenKind::TOK_MOVE:
-    return "TOK_MOVE  ";
-  case TokenKind::TOK_BORROW:
-    return "TOK_BORROW  ";
-  case TokenKind::TOK_ADD:
-    return "TOK_ADD  ";
-  case TokenKind::TOK_SUB:
-    return "TOK_SUB  ";
-  case TokenKind::TOK_PROD:
-    return "TOK_PROD  ";
-  case TokenKind::TOK_DIV:
-    return "TOK_DIV  ";
-  case TokenKind::TOK_DIV_FLOOR:
-    return "TOK_DIV_FLOOR  ";
-  case TokenKind::TOK_MOD:
-    return "TOK_MOD  ";
-  case TokenKind::TOK_LT:
-    return "TOK_LT  ";
-  case TokenKind::TOK_GT:
-    return "TOK_GT  ";
-  case TokenKind::TOK_LE:
-    return "TOK_LE  ";
-  case TokenKind::TOK_GE:
-    return "TOK_GE  ";
-  case TokenKind::TOK_EQ:
-    return "TOK_EQ  ";
-  case TokenKind::TOK_NE:
-    return "TOK_NE  ";
-  case TokenKind::TOK_AND:
-    return "TOK_AND  ";
-  case TokenKind::TOK_DOUBLE_AND:
-    return "TOK_DOUBLE_AND  ";
-  case TokenKind::TOK_OR:
-    return "TOK_OR  ";
-  case TokenKind::TOK_NOT:
-    return "TOK_NOT  ";
-  case TokenKind::TOK_LPAREN:
-    return "TOK_LPAREN  ";
-  case TokenKind::TOK_RPAREN:
-    return "TOK_RPAREN  ";
-  case TokenKind::TOK_LBRACKET:
-    return "TOK_LBRACKET  ";
-  case TokenKind::TOK_RBRACKET:
-    return "TOK_RBRACKET  ";
-  case TokenKind::TOK_LBRACE:
-    return "\nTOK_LBRACE\n";
-  case TokenKind::TOK_RBRACE:
-    return "TOK_RBRACE\n";
-  case TokenKind::TOK_COMMA:
-    return "TOK_COMMA  ";
-  case TokenKind::TOK_SEMI:
-    return "TOK_SEMI\n";
-  case TokenKind::TOK_DOT:
-    return "TOK_DOT  ";
-  case TokenKind::TOK_RETURN_TYPE:
-    return "TOK_RETURN_TYPE  ";
-  case TokenKind::TOK_NEW:
-    return "TOK_NEW  ";
-  case TokenKind::TOK_EOF:
-    return "TOK_EOF\n\n";
-  case TokenKind::TOK_UNKNOWN:
-    return "TOK_UNKNOWN  ";
+  case TokenKind::IDENTIFIER:
+    return "IDENTIFIER  ";
+  case TokenKind::IF:
+    return "IF  ";
+  case TokenKind::ElSE:
+    return "ELSE  ";
+  case TokenKind::WHILE:
+    return "WHILE  ";
+  case TokenKind::RETURN:
+    return "RETURN  ";
+  case TokenKind::CONST:
+    return "CONST  ";
+  case TokenKind::IMPORT:
+    return "IMPORT  ";
+  case TokenKind::PUBLIC:
+    return "PUBLIC  ";
+  case TokenKind::PRIVATE:
+    return "PRIVATE  ";
+  case TokenKind::PROTECTED:
+    return "PROTECTED  ";
+  case TokenKind::CONTINUE:
+    return "CONTINUE  ";
+  case TokenKind::BREAK:
+    return "BREAK  ";
+  case TokenKind::LIT_INT:
+    return "LIT_INT  ";
+  case TokenKind::LIT_FLOAT:
+    return "LIT_FLOAT  ";
+  case TokenKind::LIT_STRING:
+    return "LIT_STRING  ";
+  case TokenKind::LIT_CHAR:
+    return "LIT_CHAR  ";
+  case TokenKind::LIT_BOOL:
+    return "LIT_BOOL  ";
+  case TokenKind::ASSIGN:
+    return "ASSIGN  ";
+  case TokenKind::INCREMENT:
+    return "INCREMENT  ";
+  case TokenKind::DECREMENT:
+    return "DECREMENT  ";
+  case TokenKind::MOVE:
+    return "MOVE  ";
+  case TokenKind::BORROW:
+    return "BORROW  ";
+  case TokenKind::ADD:
+    return "ADD  ";
+  case TokenKind::SUB:
+    return "SUB  ";
+  case TokenKind::PROD:
+    return "PROD  ";
+  case TokenKind::DIV:
+    return "DIV  ";
+  case TokenKind::DIV_FLOOR:
+    return "DIV_FLOOR  ";
+  case TokenKind::MOD:
+    return "MOD  ";
+  case TokenKind::LT:
+    return "LT  ";
+  case TokenKind::GT:
+    return "GT  ";
+  case TokenKind::LE:
+    return "LE  ";
+  case TokenKind::GE:
+    return "GE  ";
+  case TokenKind::EQ:
+    return "EQ  ";
+  case TokenKind::NE:
+    return "NE  ";
+  case TokenKind::AND:
+    return "AND  ";
+  case TokenKind::DOUBLE_AND:
+    return "DOUBLE_AND  ";
+  case TokenKind::OR:
+    return "OR  ";
+  case TokenKind::NOT:
+    return "NOT  ";
+  case TokenKind::LPAREN:
+    return "LPAREN  ";
+  case TokenKind::RPAREN:
+    return "RPAREN  ";
+  case TokenKind::LBRACKET:
+    return "LBRACKET  ";
+  case TokenKind::RBRACKET:
+    return "RBRACKET  ";
+  case TokenKind::LBRACE:
+    return "\nLBRACE\n";
+  case TokenKind::RBRACE:
+    return "RBRACE\n";
+  case TokenKind::COMMA:
+    return "COMMA  ";
+  case TokenKind::SEMI:
+    return "SEMI\n";
+  case TokenKind::DOT:
+    return "DOT  ";
+  case TokenKind::RETURN_TYPE:
+    return "RETURN_TYPE  ";
+  case TokenKind::NEW:
+    return "NEW  ";
+  case TokenKind::END_OF_FILE:
+    return "EOF\n\n";
+  case TokenKind::UNKNOWN:
+    return "UNKNOWN  ";
   case TokenKind::NUM_TOKENS:
     return "NUM_TOKENS  ";
   default:
