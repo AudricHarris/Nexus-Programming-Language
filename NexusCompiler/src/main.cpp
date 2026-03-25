@@ -1,4 +1,5 @@
 #include "CodeGen/CodeGen.h"
+#include "CodeGen/Manager/ModuleManager.h"
 #include "FileReader/FileReader.h"
 #include "Lexer/Lexer.h"
 #include "Parser/Parser.h"
@@ -6,10 +7,14 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <vector>
+namespace fs = std::filesystem;
+
+#define NEXUS_STDLIB_PATH "/home/wearwqlf/Documents/NexusStandardLibrary/"
 
 bool endsWith(const std::string &str, const std::string &suffix) {
   if (str.length() < suffix.length())
@@ -89,6 +94,12 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
+    fs::path projectRoot = fs::path(file).parent_path();
+    fs::path stdlibRoot = fs::path(NEXUS_STDLIB_PATH);
+
+    ModuleManager mm(projectRoot, stdlibRoot);
+    mm.resolveAll(*parsed);
+
     CodeGenerator cg;
     if (!cg.generate(*parsed, "out")) {
       std::cerr << "Codegen failed for " << file << "\n";
@@ -103,7 +114,7 @@ int main(int argc, char *argv[]) {
                       output;
 
     int res = system(cmd.c_str());
-    system("rm -rf out.ll");
+    // system("rm -rf out.ll");
     if (res != 0) {
       std::cerr << "Clang failed for " << file << "\n";
       continue;

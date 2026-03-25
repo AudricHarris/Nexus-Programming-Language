@@ -75,6 +75,8 @@ protected:
 public:
   explicit Parser(const std::vector<Token> &t) : tokens(t) {}
   std::unique_ptr<Program> parse();
+  std::unique_ptr<ImportDecl> parseImportDecl();
+  std::unique_ptr<GlobalVarDecl> parseGlobalVarDecl();
   std::unique_ptr<Function> parseFunctionDecl();
   std::unique_ptr<Block> parseBlock(bool uni = false);
   std::unique_ptr<Statement> parseStatement();

@@ -93,6 +93,7 @@ enum class TokenKind {
   COMMA,
   SEMI,
   DOT,
+  COLON_COLON,
 
   // SPECIAL
   RETURN_TYPE,

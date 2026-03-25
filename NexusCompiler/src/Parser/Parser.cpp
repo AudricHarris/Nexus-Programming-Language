@@ -104,12 +104,73 @@ std::unique_ptr<Program> Parser::parse() {
   auto prog = std::make_unique<Program>();
   while (!isAtEnd()) {
     try {
+      if (check(TokenKind::IMPORT)) {
+        prog->imports.push_back(parseImportDecl());
+        continue;
+      }
+      if (check(TokenKind::PUBLIC)) {
+        consume();
+        if (looksLikeType(peek())) {
+          prog->globals.push_back(parseGlobalVarDecl());
+        } else {
+          prog->functions.push_back(parseFunctionDecl());
+        }
+        continue;
+      }
       prog->functions.push_back(parseFunctionDecl());
     } catch (const ParseError &) {
       synchronize();
     }
   }
   return prog;
+}
+
+// --------------------------- //
+// GLobal & import Declaration //
+// --------------------------- //
+std::unique_ptr<ImportDecl> Parser::parseImportDecl() {
+  expect(TokenKind::IMPORT, "Expected 'import'");
+
+  auto decl = std::make_unique<ImportDecl>();
+  decl->selective = false;
+
+  Token first = expect(TokenKind::IDENTIFIER, "Expected module name");
+  decl->path.segments.push_back(first.getWord());
+  decl->path.isStdLib = (first.getWord() == "Nexus");
+
+  while (check(TokenKind::COLON_COLON)) {
+    consume();
+    if (check(TokenKind::LBRACE)) {
+      consume();
+      decl->selective = true;
+      if (!check(TokenKind::RBRACE)) {
+        do {
+          Token sym = expect(TokenKind::IDENTIFIER, "Expected symbol name");
+          decl->symbols.push_back(sym.getWord());
+        } while (match(TokenKind::COMMA));
+      }
+      expect(TokenKind::RBRACE, "Expected '}'");
+      break;
+    } else {
+      Token seg = expect(TokenKind::IDENTIFIER, "Expected module path segment");
+      decl->path.segments.push_back(seg.getWord());
+    }
+  }
+
+  expect(TokenKind::SEMI, "Expected ';' after import");
+  return decl;
+}
+
+std::unique_ptr<GlobalVarDecl> Parser::parseGlobalVarDecl() {
+  Token typeTok = expect(TokenKind::IDENTIFIER, "Expected type");
+  Token nameTok = expect(TokenKind::IDENTIFIER, "Expected variable name");
+  expect(TokenKind::ASSIGN, "Global variables must be initialized");
+  auto init = parseExpression();
+  expect(TokenKind::SEMI, "Expected ';'");
+
+  TypeDesc td(Identifier{typeTok}, 0, false);
+  return std::make_unique<GlobalVarDecl>(std::move(td), nameTok.getWord(),
+                                         std::move(init));
 }
 
 // -------------------- //

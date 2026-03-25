@@ -357,6 +357,13 @@ std::vector<Token> Lexer::Tokenize() {
   lstTokens.reserve(this->srcLen / 4 + 8);
 
   while (this->pos < this->srcLen) {
+    if (this->pos + 1 < this->srcLen && this->src[this->pos] == ':' &&
+        this->src[this->pos + 1] == ':') {
+      lstTokens.push_back(makeToken(TokenKind::COLON_COLON, "::"));
+      this->pos += 2;
+      this->col += 2;
+      continue;
+    }
     skipWhitespace();
     if (this->pos >= this->srcLen)
       break;

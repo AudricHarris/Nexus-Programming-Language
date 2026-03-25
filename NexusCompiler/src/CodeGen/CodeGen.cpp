@@ -1182,11 +1182,49 @@ bool CodeGenerator::generate(const Program &program,
                            *module);
   }
 
+  for (const auto &fn : program.functions) {
+    const std::string fname = normalizeFunctionName(fn->name.token.getWord());
+    if (!module->getFunction(fname)) {
+      Type *retTy = TypeResolver::fromTypeDesc(context, fn->returnType);
+      std::vector<Type *> paramTypes;
+      for (const auto &p : fn->params) {
+        Type *pt = TypeResolver::fromTypeDesc(context, p.type);
+        paramTypes.push_back(p.isBorrowRef ? PointerType::get(context, 0) : pt);
+      }
+      auto *ft = FunctionType::get(retTy, paramTypes, false);
+      llvm::Function::Create(ft, llvm::Function::ExternalLinkage, fname,
+                             *module);
+    }
+  }
+
+  for (const auto &gv : program.globals) {
+    llvm::Type *ty = TypeResolver::fromTypeDesc(context, gv->type);
+    if (!ty)
+      return false;
+
+    llvm::Constant *init = nullptr;
+    if (auto *intExpr = dynamic_cast<IntLitExpr *>(gv->init.get())) {
+      init = llvm::ConstantInt::get(ty, std::stoll(intExpr->lit.getWord()));
+    } else if (auto *fltExpr = dynamic_cast<FloatLitExpr *>(gv->init.get())) {
+      init = llvm::ConstantFP::get(ty, std::stod(fltExpr->lit.getWord()));
+    } else {
+      logError(("Global variable '" + gv->name +
+                "' must have a constant initializer")
+                   .c_str());
+      return false;
+    }
+
+    auto *gVar = new llvm::GlobalVariable(*module, ty,
+                                          /*isConstant=*/false,
+                                          llvm::GlobalValue::ExternalLinkage,
+                                          init, gv->name);
+
+    namedValues[gv->name] = VarInfo(gVar, ty, false, false, false, false);
+  }
+
   for (const auto &fn : program.functions)
     if (!codegen(*fn))
       return false;
-
-  // module->print(llvm::outs(), nullptr);
 
   std::error_code ec;
   raw_fd_ostream out(outputFilename + ".ll", ec, sys::fs::OF_None);

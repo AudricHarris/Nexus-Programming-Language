@@ -621,7 +621,29 @@ struct Function {
   }
 };
 
+struct ImportPath {
+  std::vector<std::string> segments;
+  bool isStdLib;
+};
+
+struct ImportDecl {
+  ImportPath path;
+  std::vector<std::string> symbols;
+  bool selective;
+};
+
+struct GlobalVarDecl {
+  TypeDesc type;
+  std::string name;
+  std::unique_ptr<Expression> init;
+
+  GlobalVarDecl(TypeDesc t, std::string n, std::unique_ptr<Expression> i)
+      : type(std::move(t)), name(std::move(n)), init(std::move(i)) {}
+};
+
 struct Program {
+  std::vector<std::unique_ptr<ImportDecl>> imports;
+  std::vector<std::unique_ptr<GlobalVarDecl>> globals; // <-- new
   std::vector<std::unique_ptr<Function>> functions;
 
   Program() = default;
