@@ -34,10 +34,14 @@ public:
 
 private:
   static llvm::Value *intToStr(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
-                               llvm::Module *M, llvm::Value *v);
+                               llvm::Module *M, llvm::Value *v,
+                               bool charAsAscii = false);
 
   static llvm::Value *floatToStr(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
                                  llvm::Module *M, llvm::Value *v);
+
+  static llvm::Value *boolToStr(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
+                                llvm::Module *M, llvm::Value *v);
 };
 
 #endif // !STRING_EMITTER_H

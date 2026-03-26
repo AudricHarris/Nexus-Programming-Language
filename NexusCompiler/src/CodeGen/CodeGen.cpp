@@ -339,9 +339,33 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
   Type *lTy = resolveType(lhs, *expr.left);
   Type *rTy = resolveType(rhs, *expr.right);
 
-  if (TypeResolver::isString(lTy) && TypeResolver::isString(rTy)) {
+  if (expr.op == BinaryOp::Add) {
+    bool lIsStr = TypeResolver::isString(lTy);
+    bool rIsStr = TypeResolver::isString(rTy);
+
+    if (lIsStr || rIsStr) {
+      if (!lIsStr)
+        lhs = StringOps::fromValue(builder, context, module.get(), lhs);
+      if (!rIsStr)
+        rhs = StringOps::fromValue(builder, context, module.get(), rhs);
+
+      Value *cat = StringOps::concat(builder, context, module.get(), lhs, rhs);
+      return cat;
+    } else {
+      return builder.CreateAdd(lhs, rhs, "addtmp");
+    }
+  }
+
+  bool lIsStr = TypeResolver::isString(lTy);
+  bool rIsStr = TypeResolver::isString(rTy);
+  if (lIsStr && rIsStr) {
     switch (expr.op) {
     case BinaryOp::Add: {
+      if (!lIsStr)
+        lhs = StringOps::fromValue(builder, context, module.get(), lhs);
+      if (!rIsStr)
+        rhs = StringOps::fromValue(builder, context, module.get(), rhs);
+
       Value *cat = StringOps::concat(builder, context, module.get(), lhs, rhs);
       if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(cat))
         scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));

@@ -62,6 +62,7 @@ llvm::Value *StringOps::concat(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
   B.CreateStore(cap, B.CreateStructGEP(st, res, 2));
   return res;
 }
+
 llvm::Value *StringOps::equals(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
                                llvm::Module *M, llvm::Value *lhs,
                                llvm::Value *rhs) {
@@ -74,12 +75,10 @@ llvm::Value *StringOps::equals(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
   llvm::Value *ld = B.CreateExtractValue(lv, {0}, "eq.ld");
   llvm::Value *rd = B.CreateExtractValue(rv, {0}, "eq.rd");
 
-  // call strcmp
   llvm::Function *strcmpFn = RTDecl::strcmp_(M, ctx);
 
   llvm::Value *cmp = B.CreateCall(strcmpFn, {ld, rd}, "strcmp");
 
-  // strcmp == 0 → equal
   return B.CreateICmpEQ(
       cmp, llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx), 0), "streq");
 }
@@ -88,13 +87,11 @@ llvm::Value *StringOps::clone(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
 
   llvm::StructType *st = TypeResolver::getStringType(ctx);
 
-  // load original struct
   llvm::Value *val = B.CreateLoad(st, strStruct, "clone.src");
 
   llvm::Value *data = B.CreateExtractValue(val, {0}, "clone.data");
   llvm::Value *len = B.CreateExtractValue(val, {1}, "clone.len");
 
-  // 🔥 reuse your safe constructor
   return fromParts(B, ctx, M, data, len);
 }
 
@@ -103,6 +100,10 @@ llvm::Value *StringOps::fromValue(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
   llvm::Type *ty = val->getType();
   if (TypeResolver::isString(ty))
     return val;
+  if (ty->isIntegerTy(1))
+    return boolToStr(B, ctx, M, val);
+  if (ty->isIntegerTy(8))
+    return intToStr(B, ctx, M, val, true);
   if (ty->isIntegerTy())
     return intToStr(B, ctx, M, val);
   if (ty->isFloatingPointTy())
@@ -117,9 +118,24 @@ llvm::Value *StringOps::fromValue(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
 // Private
 
 llvm::Value *StringOps::intToStr(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
-                                 llvm::Module *M, llvm::Value *v) {
+                                 llvm::Module *M, llvm::Value *v,
+                                 bool charAsAscii) {
   if (v->getType()->getIntegerBitWidth() < 64)
     v = B.CreateSExt(v, llvm::Type::getInt64Ty(ctx));
+
+  if (charAsAscii) {
+    auto *buf =
+        B.CreateAlloca(llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx), 2));
+    B.CreateStore(B.CreateTrunc(v, llvm::Type::getInt8Ty(ctx)), buf);
+    llvm::Value *nullPos =
+        B.CreateGEP(llvm::Type::getInt8Ty(ctx), buf,
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), 1));
+    B.CreateStore(llvm::ConstantInt::get(llvm::Type::getInt8Ty(ctx), 0),
+                  nullPos);
+    return fromParts(B, ctx, M, buf,
+                     llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx), 1));
+  }
+
   llvm::Value *fmt = B.CreateGlobalString("%lld", "ifmt");
   auto *buf = B.CreateAlloca(
       llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx), 32), nullptr, "ibuf");
@@ -138,4 +154,11 @@ llvm::Value *StringOps::floatToStr(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
   B.CreateCall(RTDecl::sprintf_(M, ctx), {buf, fmt, v});
   llvm::Value *len = B.CreateCall(RTDecl::strlen_(M, ctx), {buf}, "fl");
   return fromParts(B, ctx, M, buf, len);
+}
+
+llvm::Value *StringOps::boolToStr(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
+                                  llvm::Module *M, llvm::Value *v) {
+  llvm::Value *trueStr = fromLiteral(B, ctx, M, "true");
+  llvm::Value *falseStr = fromLiteral(B, ctx, M, "false");
+  return B.CreateSelect(v, trueStr, falseStr, "bool.str");
 }
