@@ -1101,6 +1101,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   }
 
   namedValues.clear();
+  namedValues = globalValues;
 
   scopeMgr.pushScope();
 
@@ -1204,22 +1205,36 @@ bool CodeGenerator::generate(const Program &program,
 
     llvm::Constant *init = nullptr;
     if (auto *intExpr = dynamic_cast<IntLitExpr *>(gv->init.get())) {
-      init = llvm::ConstantInt::get(ty, std::stoll(intExpr->lit.getWord()));
+      if (ty->isFloatingPointTy()) {
+        double val = std::stod(intExpr->lit.getWord());
+        init =
+            ty->isFloatTy()
+                ? llvm::ConstantFP::get(llvm::Type::getFloatTy(context), val)
+                : llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), val);
+      } else {
+        init = llvm::ConstantInt::get(ty, std::stoll(intExpr->lit.getWord()));
+      }
     } else if (auto *fltExpr = dynamic_cast<FloatLitExpr *>(gv->init.get())) {
-      init = llvm::ConstantFP::get(ty, std::stod(fltExpr->lit.getWord()));
-    } else {
+      double val = std::stod(fltExpr->lit.getWord());
+      init = ty->isFloatTy()
+                 ? llvm::ConstantFP::get(llvm::Type::getFloatTy(context), val)
+                 : llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), val);
+    }
+
+    if (!init) {
       logError(("Global variable '" + gv->name +
                 "' must have a constant initializer")
                    .c_str());
       return false;
     }
 
-    auto *gVar = new llvm::GlobalVariable(*module, ty,
-                                          /*isConstant=*/false,
+    auto *gVar = new llvm::GlobalVariable(*module, ty, gv->isConst,
                                           llvm::GlobalValue::ExternalLinkage,
                                           init, gv->name);
 
-    namedValues[gv->name] = VarInfo(gVar, ty, false, false, false, false);
+    VarInfo vi(gVar, ty, false, false, false, gv->isConst);
+    namedValues[gv->name] = vi;
+    globalValues[gv->name] = vi;
   }
 
   for (const auto &fn : program.functions)

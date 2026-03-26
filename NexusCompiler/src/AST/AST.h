@@ -636,9 +636,12 @@ struct GlobalVarDecl {
   TypeDesc type;
   std::string name;
   std::unique_ptr<Expression> init;
+  bool isConst = false;
 
-  GlobalVarDecl(TypeDesc t, std::string n, std::unique_ptr<Expression> i)
-      : type(std::move(t)), name(std::move(n)), init(std::move(i)) {}
+  GlobalVarDecl(TypeDesc t, std::string n, std::unique_ptr<Expression> i,
+                bool c = false)
+      : type(std::move(t)), name(std::move(n)), init(std::move(i)), isConst(c) {
+  }
 };
 
 struct Program {

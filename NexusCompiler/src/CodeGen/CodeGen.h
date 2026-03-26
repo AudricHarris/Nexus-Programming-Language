@@ -45,6 +45,7 @@ private:
 
   // Symbol tables
   std::map<std::string, VarInfo> namedValues;
+  std::map<std::string, VarInfo> globalValues;
   std::map<std::string, std::vector<bool>> borrowRefParams;
 
   // Subsystems

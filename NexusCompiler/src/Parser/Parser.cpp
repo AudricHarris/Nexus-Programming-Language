@@ -108,16 +108,28 @@ std::unique_ptr<Program> Parser::parse() {
         prog->imports.push_back(parseImportDecl());
         continue;
       }
+
+      bool isPublic = false;
       if (check(TokenKind::PUBLIC)) {
         consume();
-        if (looksLikeType(peek())) {
-          prog->globals.push_back(parseGlobalVarDecl());
-        } else {
-          prog->functions.push_back(parseFunctionDecl());
-        }
+        isPublic = true;
+      }
+
+      bool nextIsConst = check(TokenKind::CONST);
+      const Token &typeCheck = nextIsConst ? peekAt(1) : peek();
+
+      if (looksLikeType(typeCheck)) {
+        prog->globals.push_back(parseGlobalVarDecl());
         continue;
       }
+
+      if (isPublic) {
+        prog->functions.push_back(parseFunctionDecl());
+        continue;
+      }
+
       prog->functions.push_back(parseFunctionDecl());
+
     } catch (const ParseError &) {
       synchronize();
     }
@@ -136,7 +148,8 @@ std::unique_ptr<ImportDecl> Parser::parseImportDecl() {
 
   Token first = expect(TokenKind::IDENTIFIER, "Expected module name");
   decl->path.segments.push_back(first.getWord());
-  decl->path.isStdLib = (first.getWord() == "Nexus");
+  decl->path.isStdLib =
+      (first.getWord() == "Nexus" || first.getWord() == "Std");
 
   while (check(TokenKind::COLON_COLON)) {
     consume();
@@ -162,15 +175,21 @@ std::unique_ptr<ImportDecl> Parser::parseImportDecl() {
 }
 
 std::unique_ptr<GlobalVarDecl> Parser::parseGlobalVarDecl() {
+  bool isConst = false;
+  if (peek().getKind() == TokenKind::CONST) {
+    consume();
+    isConst = true;
+  }
+
   Token typeTok = expect(TokenKind::IDENTIFIER, "Expected type");
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected variable name");
   expect(TokenKind::ASSIGN, "Global variables must be initialized");
   auto init = parseExpression();
   expect(TokenKind::SEMI, "Expected ';'");
 
-  TypeDesc td(Identifier{typeTok}, 0, false);
+  TypeDesc td(Identifier{typeTok}, 0, isConst);
   return std::make_unique<GlobalVarDecl>(std::move(td), nameTok.getWord(),
-                                         std::move(init));
+                                         std::move(init), isConst);
 }
 
 // -------------------- //
