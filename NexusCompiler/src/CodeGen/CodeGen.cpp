@@ -896,7 +896,7 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
           builder.CreateLoad(ty, srcInfo.allocaInst, srcName + ".move");
       builder.CreateStore(val, alloca);
     } else {
-      builder.CreateStore(init, alloca);
+      builder.CreateStore(TypeResolver::coerce(builder, init, ty), alloca);
     }
 
     vi.ownsHeap = srcInfo.ownsHeap;
@@ -1102,7 +1102,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 
   namedValues.clear();
   namedValues = globalValues;
-
   scopeMgr.pushScope();
 
   size_t idx = 0;
@@ -1145,6 +1144,8 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     scopeMgr.popAll();
     if (retTy->isVoidTy())
       builder.CreateRetVoid();
+    else if (retTy->isFloatingPointTy())
+      builder.CreateRet(llvm::ConstantFP::get(retTy, 0.0));
     else
       builder.CreateRet(ConstantInt::get(retTy, 0));
   }

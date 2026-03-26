@@ -87,11 +87,16 @@ void ModuleManager::resolveAll(Program &prog) {
   for (const auto &imp : prog.imports) {
     auto &mod = resolveImport(*imp);
 
-    for (auto &g : mod.ast->globals)
-      prog.globals.push_back(std::move(g));
+    for (auto it = mod.ast->globals.rbegin(); it != mod.ast->globals.rend();
+         ++it) {
+      prog.globals.insert(prog.globals.begin(), std::move(*it));
+    }
+
     for (auto it = mod.ast->functions.rbegin(); it != mod.ast->functions.rend();
-         ++it)
+         ++it) {
       prog.functions.insert(prog.functions.begin(), std::move(*it));
+    }
+
     mod.ast.reset();
   }
   prog.imports.clear();
