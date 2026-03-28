@@ -211,8 +211,7 @@ Value *CodeGenerator::visitIntLit(const IntLitExpr &e) {
 }
 
 Value *CodeGenerator::visitFloatLit(const FloatLitExpr &e) {
-  return ConstantFP::get(Type::getDoubleTy(context),
-                         std::stod(e.lit.getWord()));
+  return ConstantFP::get(Type::getFloatTy(context), std::stod(e.lit.getWord()));
 }
 
 Value *CodeGenerator::visitBoolLit(const BoolLitExpr &e) {
@@ -798,10 +797,6 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   if (!elemType)
     return logError(("Unknown element type: " + typeName).c_str());
 
-  // Do NOT pre-wrap elemType. buildLevel inside makeND wraps types correctly
-  // per level from the dims array. Pre-wrapping here added one extra nesting
-  // level per dimension (e.g. array.array.array.Cell for a 2-D new Cell[]).
-
   std::vector<Value *> dimValues;
   for (auto &sizeExpr : e.sizes) {
     Value *v = codegen(*sizeExpr);
@@ -866,18 +861,46 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         Type *allocTy = ai->getAllocatedType();
         if (TypeResolver::isString(allocTy)) {
           bool expectsRawPtr = false;
+          bool isExtern = callee->isDeclaration();
           if (i < callee->arg_size()) {
             Type *expectedTy = callee->getFunctionType()->getParamType(i);
             expectsRawPtr = expectedTy->isPointerTy();
           }
           if (expectsRawPtr) {
             Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
-            v = builder.CreateExtractValue(loaded, {0}, "str.data");
+            Value *strData =
+                builder.CreateExtractValue(loaded, {0}, "str.data");
+            if (isExtern) {
+              bool isGL = calleeName.size() >= 2 && calleeName[0] == 'g' &&
+                          calleeName[1] == 'l' &&
+                          (calleeName.size() < 4 || calleeName[2] != 'f');
+              if (isGL) {
+                AllocaInst *slot = builder.CreateAlloca(
+                    PointerType::get(context, 0), nullptr, "strptr.slot");
+                builder.CreateStore(strData, slot);
+                v = slot;
+              } else {
+                v = strData;
+              }
+            } else {
+              v = strData;
+            }
           } else {
             v = builder.CreateLoad(allocTy, ai, "arg.val");
           }
         } else if (TypeResolver::isArray(allocTy)) {
-          v = builder.CreateLoad(allocTy, ai, "arg.val");
+          bool isExtern = callee->isDeclaration();
+          bool expectsRawPtr = false;
+          if (i < callee->arg_size()) {
+            Type *expectedTy = callee->getFunctionType()->getParamType(i);
+            expectsRawPtr = expectedTy->isPointerTy();
+          }
+          if (isExtern && expectsRawPtr) {
+            Value *loaded = builder.CreateLoad(allocTy, ai, "arr.load");
+            v = builder.CreateExtractValue(loaded, {1}, "arr.data");
+          } else {
+            v = builder.CreateLoad(allocTy, ai, "arg.val");
+          }
         }
       } else {
         Type *vTy = v->getType();
@@ -886,6 +909,21 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
           if (vTy->isPointerTy() && (TypeResolver::isString(expectedTy) ||
                                      TypeResolver::isArray(expectedTy))) {
             v = builder.CreateLoad(expectedTy, v, "deref.arg");
+          }
+        }
+      }
+
+      if (callee->isDeclaration() && i < callee->arg_size()) {
+        Type *expectedTy = callee->getFunctionType()->getParamType(i);
+        if (expectedTy->isPointerTy()) {
+          if (auto *id =
+                  dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
+            auto sit = namedValues.find(id->name.token.getWord());
+            if (sit != namedValues.end() &&
+                !TypeResolver::isString(sit->second.type) &&
+                !TypeResolver::isArray(sit->second.type)) {
+              v = sit->second.allocaInst;
+            }
           }
         }
       }

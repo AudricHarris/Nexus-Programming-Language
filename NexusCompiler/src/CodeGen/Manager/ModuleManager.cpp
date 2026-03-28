@@ -4,7 +4,6 @@
 #include "../../Parser/Parser.h"
 #include <algorithm>
 #include <fstream>
-#include <sstream>
 #include <stdexcept>
 
 ModuleManager::ModuleManager(fs::path root, fs::path stdlib)
