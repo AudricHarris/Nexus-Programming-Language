@@ -313,7 +313,6 @@ std::unique_ptr<GlobalVarDecl> Parser::parseGlobalVarDecl() {
 // Function declaration //
 // -------------------- //
 std::unique_ptr<Function> Parser::parseFunctionDecl() {
-  std::cout << peek().getWord();
   Token nameToken = expect(TokenKind::IDENTIFIER, "Expected function name");
   expect(TokenKind::LPAREN, "Expected '(' after function name");
 

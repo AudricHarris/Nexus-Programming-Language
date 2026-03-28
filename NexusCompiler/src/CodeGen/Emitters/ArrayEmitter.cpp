@@ -101,11 +101,15 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
                          Type *elementType, ArrayRef<Value *> dims,
                          unsigned depth) {
   Type *i64Ty = Type::getInt64Ty(C);
-  StructType *arrTy = TypeResolver::getOrCreateArrayStruct(C, elementType);
+
+  Type *childElemTy = elementType;
+  for (unsigned i = depth + 1; i < dims.size(); ++i)
+    childElemTy = TypeResolver::getOrCreateArrayStruct(C, childElemTy);
+
+  StructType *arrTy = TypeResolver::getOrCreateArrayStruct(C, childElemTy);
   Value *len = dims[depth];
 
   Value *descriptor = B.CreateAlloca(arrTy);
-
   Value *lenPtr = B.CreateStructGEP(arrTy, descriptor, 0);
   B.CreateStore(B.CreateZExt(len, i64Ty), lenPtr);
 
@@ -116,9 +120,10 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
     Value *buffer = emitMalloc(B, C, M, elementType, len);
     B.CreateStore(buffer, dataPtr);
   } else {
-    StructType *childTy = TypeResolver::getOrCreateArrayStruct(C, elementType);
-    Value *childArray = emitMalloc(B, C, M, childTy, len);
+    Value *childArray = emitMalloc(B, C, M, childElemTy, len);
     B.CreateStore(childArray, dataPtr);
+
+    StructType *childSt = cast<StructType>(childElemTy);
 
     llvm::Function *fn = B.GetInsertBlock()->getParent();
     BasicBlock *loopBB = BasicBlock::Create(C, "nd.loop", fn);
@@ -135,9 +140,10 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
     B.CreateCondBr(cond, bodyBB, afterBB);
 
     B.SetInsertPoint(bodyBB);
-    Value *slot = B.CreateGEP(childTy, childArray, iVal);
+    Value *slot =
+        B.CreateGEP(childSt, childArray, iVal); // ← childSt not childTy
     Value *childDesc = buildLevel(B, C, M, elementType, dims, depth + 1);
-    Value *childVal = B.CreateLoad(childTy, childDesc);
+    Value *childVal = B.CreateLoad(childSt, childDesc);
     B.CreateStore(childVal, slot);
     Value *next = B.CreateAdd(iVal, ConstantInt::get(i64Ty, 1));
     B.CreateStore(next, index);

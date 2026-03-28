@@ -798,11 +798,11 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   if (!elemType)
     return logError(("Unknown element type: " + typeName).c_str());
 
-  for (int i = 0; i < e.arrayType.dimensions; ++i) {
-    elemType = TypeResolver::getOrCreateArrayStruct(context, elemType);
-    if (!elemType)
-      return logError("Failed to build nested array type");
-  }
+  // Do NOT pre-wrap elemType here. ArrayEmitter::makeND / buildLevel
+  // computes the correct intermediate array-struct types itself based on
+  // the dims array. Pre-wrapping caused one extra level of nesting per
+  // dimension (e.g. array.array.array.Cell instead of array.array.Cell
+  // for a 2-D new).
 
   std::vector<Value *> dimValues;
   for (auto &sizeExpr : e.sizes) {
@@ -1193,10 +1193,9 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   if (!ty)
     return logError(("Unknown type: " + typeName).c_str());
 
-  AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
-  VarInfo vi(alloca, ty, false, false, false, d.isConst);
-
   if (!d.initializer) {
+    AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
+    VarInfo vi(alloca, ty, false, false, false, d.isConst);
     namedValues[name] = vi;
     scopeMgr.declare(name);
     return alloca;
@@ -1209,6 +1208,20 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   Value *init = codegen(*d.initializer);
   if (!init)
     return nullptr;
+
+  // When the initializer is `new T[...]`, makeND returns an AllocaInst whose
+  // allocated type is the correct outermost array-struct (e.g. array.array.Cell
+  // for Cell[10][20]). Using the declared type `ty` here (which resolves to the
+  // element type Cell) produces a 4-byte alloca that is immediately overwritten
+  // with 16 bytes of array descriptor, corrupting the stack and causing a SEGV
+  // in the first function that tries to read it back as an array.
+  if (dynamic_cast<const NewArrayExpr *>(d.initializer.get())) {
+    if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(init))
+      ty = srcAI->getAllocatedType();
+  }
+
+  AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
+  VarInfo vi(alloca, ty, false, false, false, d.isConst);
 
   switch (d.kind) {
   case AssignKind::Copy: {
