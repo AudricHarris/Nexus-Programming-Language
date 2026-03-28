@@ -552,6 +552,28 @@ Value *CodeGenerator::generateIncrDecr(const std::string &name, bool isInc) {
   return res;
 }
 
+// Helper: get the element type of an array struct, falling back to name parsing
+// if TypeResolver::elemType returns null. Array structs are named
+// "array.<elem>" per TypeDesc::fullName(), so "array.array.Cell" ->
+// "array.Cell" -> "Cell".
+static Type *resolveElemType(llvm::LLVMContext &context,
+                             llvm::StructType *arrSt) {
+  Type *elemTy = TypeResolver::elemType(context, arrSt);
+  if (elemTy)
+    return elemTy;
+  llvm::StringRef name = arrSt->getName();
+  if (name.starts_with("array.")) {
+    std::string innerName = name.substr(6).str();
+    Type *t = llvm::StructType::getTypeByName(context, innerName);
+    if (t)
+      return t;
+    t = TypeResolver::fromName(context, innerName);
+    if (t)
+      return t;
+  }
+  return nullptr;
+}
+
 Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
   const std::string &name = e.array.token.getWord();
   auto it = namedValues.find(name);
@@ -585,6 +607,19 @@ Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
       ty = it->second.pointeeType;
   }
 
+  // If ty is the leaf element type instead of the array type (pointeeType bug),
+  // wrap it up to the correct depth.
+  {
+    auto *maybeSt = llvm::dyn_cast<llvm::StructType>(ty);
+    if (!maybeSt || !TypeResolver::isArray(maybeSt)) {
+      for (size_t i = 0; i < e.indices.size(); ++i) {
+        ty = TypeResolver::getOrCreateArrayStruct(context, ty);
+        if (!ty)
+          return logError("Failed to reconstruct array type");
+      }
+    }
+  }
+
   for (size_t d = 0; d < e.indices.size(); ++d) {
     Value *idx = codegen(*e.indices[d]);
     if (!idx)
@@ -598,7 +633,7 @@ Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
 
     Value *loaded = builder.CreateLoad(arrSt, ptr, "arr.load");
     Value *dataPtr = builder.CreateExtractValue(loaded, {1}, "arr.data");
-    Type *elemTy = TypeResolver::elemType(context, arrSt);
+    Type *elemTy = resolveElemType(context, arrSt);
     if (!elemTy)
       return logError("Cannot resolve element type");
 
@@ -635,6 +670,19 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
       ty = it->second.pointeeType;
   }
 
+  // If ty is the leaf element type instead of the array type (pointeeType bug),
+  // wrap it up to the correct depth.
+  {
+    auto *maybeSt = llvm::dyn_cast<llvm::StructType>(ty);
+    if (!maybeSt || !TypeResolver::isArray(maybeSt)) {
+      for (size_t i = 0; i < e.indices.size(); ++i) {
+        ty = TypeResolver::getOrCreateArrayStruct(context, ty);
+        if (!ty)
+          return logError("Failed to reconstruct array type");
+      }
+    }
+  }
+
   for (size_t d = 0; d < e.indices.size(); ++d) {
     Value *idx = codegen(*e.indices[d]);
     if (!idx)
@@ -648,18 +696,33 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
 
     Value *loaded = builder.CreateLoad(arrSt, ptr, "arr.load");
     Value *dataPtr = builder.CreateExtractValue(loaded, {1}, "arr.data");
-    Type *elemTy = TypeResolver::elemType(context, arrSt);
+    Type *elemTy = resolveElemType(context, arrSt);
     if (!elemTy)
       return logError("Cannot resolve element type");
 
     Value *elemPtr = builder.CreateGEP(elemTy, dataPtr, idx, "elem.ptr");
 
     if (d == e.indices.size() - 1) {
-      if (TypeResolver::isArray(elemTy) || TypeResolver::isString(elemTy))
-        return logError("Cannot assign scalar to array slot");
+      // Allow struct assignment; only reject array/string on the rhs
       Value *val = codegen(*e.value);
       if (!val)
         return nullptr;
+      if (TypeResolver::isArray(elemTy) || TypeResolver::isString(elemTy)) {
+        // Assigning an array/string value into a slot — load and store
+        if (val->getType()->isPointerTy())
+          val = builder.CreateLoad(elemTy, val, "slot.val");
+        builder.CreateStore(val, elemPtr);
+        return val;
+      }
+      // Scalar or struct element
+      if (auto *st = llvm::dyn_cast<llvm::StructType>(elemTy)) {
+        // Struct assignment: load the struct value if we got a pointer
+        Value *structVal = val;
+        if (val->getType()->isPointerTy())
+          structVal = builder.CreateLoad(elemTy, val, "struct.val");
+        builder.CreateStore(structVal, elemPtr);
+        return val;
+      }
       val = TypeResolver::coerce(builder, val, elemTy);
       builder.CreateStore(val, elemPtr);
       return val;
@@ -710,7 +773,7 @@ Value *CodeGenerator::visitIndexedLength(const IndexedLengthExpr &e) {
 
     Value *loaded = builder.CreateLoad(arrSt, ptr, "arr.load");
     Value *dataPtr = builder.CreateExtractValue(loaded, {1}, "arr.data");
-    Type *elemTy = TypeResolver::elemType(context, arrSt);
+    Type *elemTy = resolveElemType(context, arrSt);
     if (!elemTy)
       return logError("Cannot resolve element type");
 
@@ -899,39 +962,99 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
     Value *ptr = it->second.allocaInst;
     Type *ty = it->second.type;
 
+    // ensureArrayDepth: if ty is the leaf element type (pointeeType bug),
+    // wrap it up to the correct array depth using getOrCreateArrayStruct.
+    auto ensureArrayDepth = [&](Type *t, size_t depth) -> Type * {
+      auto *maybeSt = llvm::dyn_cast<llvm::StructType>(t);
+      if (maybeSt && TypeResolver::isArray(maybeSt))
+        return t;
+      for (size_t i = 0; i < depth; ++i) {
+        t = TypeResolver::getOrCreateArrayStruct(context, t);
+        if (!t)
+          return nullptr;
+      }
+      return t;
+    };
+
     if (it->second.isReference) {
-      ptr =
-          builder.CreateLoad(PointerType::get(context, 0), ptr, name + ".ref");
+      ptr = builder.CreateLoad(PointerType::get(context, 0), ptr);
       if (it->second.pointeeType)
         ty = it->second.pointeeType;
+      ty = ensureArrayDepth(ty, ai->indices.size());
+      if (!ty)
+        return {nullptr, nullptr};
+    } else {
+      ty = ensureArrayDepth(ty, ai->indices.size());
+      if (!ty)
+        return {nullptr, nullptr};
     }
 
     for (size_t d = 0; d < ai->indices.size(); ++d) {
-      auto *arrSt = dyn_cast<StructType>(ty);
-      if (!arrSt || !TypeResolver::isArray(arrSt))
-        return {nullptr, nullptr};
-
       Value *idx = codegen(*ai->indices[d]);
       if (!idx)
         return {nullptr, nullptr};
       if (idx->getType()->isIntegerTy(32))
         idx = builder.CreateSExt(idx, Type::getInt64Ty(context));
 
+      auto *arrSt = dyn_cast<StructType>(ty);
+      if (!arrSt || !TypeResolver::isArray(arrSt))
+        return {nullptr, nullptr};
+
       Value *loaded = builder.CreateLoad(arrSt, ptr, "arr.load");
       Value *dataPtr = builder.CreateExtractValue(loaded, {1}, "arr.data");
-      Type *elemTy = TypeResolver::elemType(context, arrSt);
+      Type *elemTy = resolveElemType(context, arrSt);
       if (!elemTy)
         return {nullptr, nullptr};
 
-      ptr = builder.CreateGEP(elemTy, dataPtr, idx, "elem.ptr");
+      Value *elemPtr = builder.CreateGEP(elemTy, dataPtr, idx, "elem.ptr");
+
+      if (d == ai->indices.size() - 1) {
+        auto *st = llvm::dyn_cast<llvm::StructType>(elemTy);
+        if (!st)
+          return {nullptr, nullptr};
+        for (const auto *sd : structDefs)
+          if (sd->name == st->getName().str())
+            return {elemPtr, st};
+        return {nullptr, nullptr};
+      }
+
+      ptr = elemPtr;
       ty = elemTy;
     }
+    return {nullptr, nullptr};
+  }
 
-    auto *st = llvm::dyn_cast<llvm::StructType>(ty);
-    if (!st || TypeResolver::isArray(st))
+  // Handle a FieldAccessExpr as the base object (e.g. a.b.c).
+  if (auto *fa = dynamic_cast<const FieldAccessExpr *>(&expr)) {
+    auto [basePtr, baseSt] = resolveStructPtr(*fa->object);
+    if (!basePtr || !baseSt)
       return {nullptr, nullptr};
 
-    return {ptr, st};
+    const std::string baseStructName = baseSt->getName().str();
+    unsigned idx = 0;
+    bool found = false;
+    Type *fieldTy = nullptr;
+    for (const auto &s : structDefs) {
+      if (s->name == baseStructName) {
+        for (unsigned i = 0; i < s->fields.size(); ++i) {
+          if (s->fields[i].name == fa->field) {
+            idx = i;
+            found = true;
+            fieldTy = baseSt->getElementType(i);
+            break;
+          }
+        }
+      }
+    }
+    if (!found || !fieldTy)
+      return {nullptr, nullptr};
+
+    Value *gep =
+        builder.CreateStructGEP(baseSt, basePtr, idx, fa->field + ".ptr");
+    auto *st = llvm::dyn_cast<llvm::StructType>(fieldTy);
+    if (!st || TypeResolver::isArray(st))
+      return {nullptr, nullptr};
+    return {gep, st};
   }
 
   return {nullptr, nullptr};
