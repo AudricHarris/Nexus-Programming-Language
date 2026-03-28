@@ -812,7 +812,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         }
       }
 
-      // coerce to expected parameter type for extern functions
       if (!callee->isVarArg() && i < callee->arg_size()) {
         Type *expectedTy = callee->getFunctionType()->getParamType(i);
         v = TypeResolver::coerce(builder, v, expectedTy);
@@ -837,13 +836,7 @@ Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
 
   unsigned idx = 0;
   bool found = false;
-  for (unsigned i = 0; i < st->getNumElements(); ++i) {
-    if (st->getName().str() != "") {
-      // match field by index using the program's struct table
-    }
-  }
 
-  // look up field index from the struct name
   const std::string structName = st->getName().str();
   for (const auto &s : structDefs) {
     if (s->name == structName) {
