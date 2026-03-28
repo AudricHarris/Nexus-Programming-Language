@@ -614,7 +614,7 @@ std::unique_ptr<Expression> Parser::parseAssignment() {
     }
     if (auto *fa = dynamic_cast<FieldAccessExpr *>(left.get())) {
       auto val = parseAssignment();
-      return std::make_unique<FieldAssignExpr>(fa->object, fa->field,
+      return std::make_unique<FieldAssignExpr>(std::move(fa->object), fa->field,
                                                std::move(val));
     }
     throw ParseError(peek().getLine(), peek().getColumn(),
@@ -772,12 +772,8 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
                          "'.length' requires an array identifier");
       }
 
-      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
-        expr = std::make_unique<FieldAccessExpr>(id->name, prop.getWord());
-        continue;
-      }
-      throw ParseError(prop.getLine(), prop.getColumn(),
-                       "Field access requires an identifier on the left");
+      expr = std::make_unique<FieldAccessExpr>(std::move(expr), prop.getWord());
+      continue;
     }
 
     if (match(TokenKind::INCREMENT)) {

@@ -475,36 +475,35 @@ struct IndexedLengthExpr : Expression {
 // Struct field access / assign  //
 // ----------------------------- //
 struct FieldAccessExpr : Expression {
-  Identifier object;
+  ExprPtr object;
   std::string field;
 
-  FieldAccessExpr(Identifier obj, std::string f)
+  FieldAccessExpr(ExprPtr obj, std::string f)
       : object(std::move(obj)), field(std::move(f)) {}
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
-    os << p << "{\"kind\":\"FieldAccessExpr\",\"object\":"
-       << json_utils::escape(object.token.getWord())
-       << ",\"field\":" << json_utils::escape(field) << "}";
-  }
-};
-
-struct FieldAssignExpr : Expression {
-  Identifier object;
-  std::string field;
-  ExprPtr value;
-
-  FieldAssignExpr(Identifier obj, std::string f, ExprPtr val)
-      : object(std::move(obj)), field(std::move(f)), value(std::move(val)) {}
-  void toJson(std::ostream &os, int indent) const override {
-    std::string p(indent, ' ');
-    os << p << "{\"kind\":\"FieldAssignExpr\",\"object\":"
-       << json_utils::escape(object.token.getWord())
-       << ",\"field\":" << json_utils::escape(field) << ",\"value\":";
-    value->toJson(os, indent + 2);
+    os << p << "{\"kind\":\"FieldAccessExpr\","
+       << "\"field\":" << json_utils::escape(field) << ",\"object\":";
+    object->toJson(os, indent + 2);
     os << "}";
   }
 };
 
+struct FieldAssignExpr : Expression {
+  ExprPtr object;
+  std::string field;
+  ExprPtr value;
+
+  FieldAssignExpr(ExprPtr obj, std::string f, ExprPtr val)
+      : object(std::move(obj)), field(std::move(f)), value(std::move(val)) {}
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"FieldAssignExpr\","
+       << "\"field\":" << json_utils::escape(field) << ",\"value\":";
+    value->toJson(os, indent + 2);
+    os << "}";
+  }
+};
 // --------------------------------- //
 // Struct literal: MyType{v0, v1, …} //
 // --------------------------------- //

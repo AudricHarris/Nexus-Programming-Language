@@ -66,6 +66,8 @@ private:
   llvm::Value *visitFieldAccess(const FieldAccessExpr &e);
   llvm::Value *visitFieldAssign(const FieldAssignExpr &e);
   llvm::Value *visitStructLit(const StructLitExpr &e);
+  std::pair<llvm::Value *, llvm::StructType *>
+  resolveStructPtr(const Expression &expr);
   llvm::Value *visitIncrement(const Increment &e);
   llvm::Value *visitDecrement(const Decrement &e);
   llvm::Value *visitCall(const CallExpr &e);

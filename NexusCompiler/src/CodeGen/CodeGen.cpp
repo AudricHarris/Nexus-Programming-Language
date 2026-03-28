@@ -801,10 +801,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (!v)
         return nullptr;
 
-      // Normalise the value so the coerce + pass path below always has
-      // a plain scalar (or loaded struct value) to work with.
       if (auto *ai = dyn_cast<AllocaInst>(v)) {
-        // AllocaInst from a string/array local — load to a value.
         Type *allocTy = ai->getAllocatedType();
         if (TypeResolver::isString(allocTy)) {
           bool expectsRawPtr = false;
@@ -822,9 +819,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
           v = builder.CreateLoad(allocTy, ai, "arg.val");
         }
       } else {
-        // Non-AllocaInst: could be a raw GEP pointer into an array element
-        // that holds a sub-array or string struct.  If the value's type is a
-        // pointer and the callee expects a struct, load through it.
         Type *vTy = v->getType();
         if (i < callee->arg_size()) {
           Type *expectedTy = callee->getFunctionType()->getParamType(i);
@@ -849,30 +843,13 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
 }
 
 Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
-  const std::string &objName = e.object.token.getWord();
-  auto it = namedValues.find(objName);
-  if (it == namedValues.end())
-    return logError(("Unknown variable: " + objName).c_str());
+  auto [structPtr, st] = resolveStructPtr(*e.object);
+  if (!structPtr || !st)
+    return logError("Field access requires a struct expression");
 
-  Value *structPtr = it->second.allocaInst;
-  llvm::StructType *st = nullptr;
-
-  if (it->second.isReference) {
-    structPtr = builder.CreateLoad(PointerType::get(context, 0),
-                                   it->second.allocaInst, objName + ".ref");
-    Type *pointee =
-        it->second.pointeeType ? it->second.pointeeType : it->second.type;
-    st = llvm::dyn_cast<llvm::StructType>(pointee);
-  } else {
-    st = llvm::dyn_cast<llvm::StructType>(it->second.type);
-  }
-
-  if (!st)
-    return logError(("Variable is not a struct: " + objName).c_str());
-
+  const std::string structName = st->getName().str();
   unsigned idx = 0;
   bool found = false;
-  const std::string structName = st->getName().str();
   for (const auto &s : structDefs) {
     if (s->name == structName) {
       for (unsigned i = 0; i < s->fields.size(); ++i) {
@@ -887,14 +864,77 @@ Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
   if (!found)
     return logError(("Unknown field: " + e.field).c_str());
 
-  Value *gep = builder.CreateStructGEP(st, structPtr, idx,
-                                       objName + "." + e.field + ".ptr");
+  Value *gep = builder.CreateStructGEP(st, structPtr, idx, e.field + ".ptr");
   Type *fieldTy = st->getElementType(idx);
 
   if (TypeResolver::isString(fieldTy) || TypeResolver::isArray(fieldTy))
     return gep;
 
-  return builder.CreateLoad(fieldTy, gep, objName + "." + e.field);
+  return builder.CreateLoad(fieldTy, gep, e.field);
+}
+
+std::pair<Value *, llvm::StructType *>
+CodeGenerator::resolveStructPtr(const Expression &expr) {
+  if (auto *id = dynamic_cast<const IdentExpr *>(&expr)) {
+    const std::string &name = id->name.token.getWord();
+    auto it = namedValues.find(name);
+    if (it == namedValues.end())
+      return {nullptr, nullptr};
+    auto *st = llvm::dyn_cast<llvm::StructType>(it->second.type);
+    if (!st)
+      return {nullptr, nullptr};
+    Value *ptr = it->second.allocaInst;
+    if (it->second.isReference)
+      ptr =
+          builder.CreateLoad(PointerType::get(context, 0), ptr, name + ".ref");
+    return {ptr, st};
+  }
+
+  if (auto *ai = dynamic_cast<const ArrayIndexExpr *>(&expr)) {
+    const std::string &name = ai->array.token.getWord();
+    auto it = namedValues.find(name);
+    if (it == namedValues.end())
+      return {nullptr, nullptr};
+
+    Value *ptr = it->second.allocaInst;
+    Type *ty = it->second.type;
+
+    if (it->second.isReference) {
+      ptr =
+          builder.CreateLoad(PointerType::get(context, 0), ptr, name + ".ref");
+      if (it->second.pointeeType)
+        ty = it->second.pointeeType;
+    }
+
+    for (size_t d = 0; d < ai->indices.size(); ++d) {
+      auto *arrSt = dyn_cast<StructType>(ty);
+      if (!arrSt || !TypeResolver::isArray(arrSt))
+        return {nullptr, nullptr};
+
+      Value *idx = codegen(*ai->indices[d]);
+      if (!idx)
+        return {nullptr, nullptr};
+      if (idx->getType()->isIntegerTy(32))
+        idx = builder.CreateSExt(idx, Type::getInt64Ty(context));
+
+      Value *loaded = builder.CreateLoad(arrSt, ptr, "arr.load");
+      Value *dataPtr = builder.CreateExtractValue(loaded, {1}, "arr.data");
+      Type *elemTy = TypeResolver::elemType(context, arrSt);
+      if (!elemTy)
+        return {nullptr, nullptr};
+
+      ptr = builder.CreateGEP(elemTy, dataPtr, idx, "elem.ptr");
+      ty = elemTy;
+    }
+
+    auto *st = llvm::dyn_cast<llvm::StructType>(ty);
+    if (!st || TypeResolver::isArray(st))
+      return {nullptr, nullptr};
+
+    return {ptr, st};
+  }
+
+  return {nullptr, nullptr};
 }
 
 Value *CodeGenerator::visitStructLit(const StructLitExpr &e) {
@@ -938,14 +978,9 @@ Value *CodeGenerator::visitStructLit(const StructLitExpr &e) {
 }
 
 Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
-  const std::string &objName = e.object.token.getWord();
-  auto it = namedValues.find(objName);
-  if (it == namedValues.end())
-    return logError(("Unknown variable: " + objName).c_str());
-
-  llvm::StructType *st = llvm::dyn_cast<llvm::StructType>(it->second.type);
-  if (!st)
-    return logError(("Variable is not a struct: " + objName).c_str());
+  auto [structPtr, st] = resolveStructPtr(*e.object);
+  if (!structPtr || !st)
+    return logError("Field assign requires a struct expression");
 
   const std::string structName = st->getName().str();
   unsigned idx = 0;
@@ -968,8 +1003,7 @@ Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
   if (!val)
     return nullptr;
 
-  Value *gep = builder.CreateStructGEP(st, it->second.allocaInst, idx,
-                                       objName + "." + e.field + ".ptr");
+  Value *gep = builder.CreateStructGEP(st, structPtr, idx, e.field + ".ptr");
   Type *fieldTy = st->getElementType(idx);
   builder.CreateStore(TypeResolver::coerce(builder, val, fieldTy), gep);
   return val;
