@@ -731,7 +731,15 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   std::string typeName = e.arrayType.base.token.getWord();
   Type *elemType = TypeResolver::fromName(context, typeName);
   if (!elemType)
-    return nullptr;
+    elemType = llvm::StructType::getTypeByName(context, typeName);
+  if (!elemType)
+    return logError(("Unknown element type: " + typeName).c_str());
+
+  for (int i = 0; i < e.arrayType.dimensions; ++i) {
+    elemType = TypeResolver::getOrCreateArrayStruct(context, elemType);
+    if (!elemType)
+      return logError("Failed to build nested array type");
+  }
 
   std::vector<Value *> dimValues;
   for (auto &sizeExpr : e.sizes) {
@@ -750,7 +758,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
   if ((calleeName == "printf" || rawName == "Printf") &&
       e.arguments.size() == 1)
     return PrintEmitter::handlePrintf(e, builder, context, module.get(),
-                                      namedValues);
+                                      namedValues, structDefs);
   if (rawName == "Print" && e.arguments.size() == 1)
     return PrintEmitter::handlePrint(e, builder, context, module.get());
 
@@ -793,7 +801,10 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (!v)
         return nullptr;
 
+      // Normalise the value so the coerce + pass path below always has
+      // a plain scalar (or loaded struct value) to work with.
       if (auto *ai = dyn_cast<AllocaInst>(v)) {
+        // AllocaInst from a string/array local — load to a value.
         Type *allocTy = ai->getAllocatedType();
         if (TypeResolver::isString(allocTy)) {
           bool expectsRawPtr = false;
@@ -810,6 +821,18 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         } else if (TypeResolver::isArray(allocTy)) {
           v = builder.CreateLoad(allocTy, ai, "arg.val");
         }
+      } else {
+        // Non-AllocaInst: could be a raw GEP pointer into an array element
+        // that holds a sub-array or string struct.  If the value's type is a
+        // pointer and the callee expects a struct, load through it.
+        Type *vTy = v->getType();
+        if (i < callee->arg_size()) {
+          Type *expectedTy = callee->getFunctionType()->getParamType(i);
+          if (vTy->isPointerTy() && (TypeResolver::isString(expectedTy) ||
+                                     TypeResolver::isArray(expectedTy))) {
+            v = builder.CreateLoad(expectedTy, v, "deref.arg");
+          }
+        }
       }
 
       if (!callee->isVarArg() && i < callee->arg_size()) {
@@ -824,19 +847,31 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
   bool isVoid = callee->getReturnType()->isVoidTy();
   return builder.CreateCall(callee, args, isVoid ? "" : "call");
 }
+
 Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
   const std::string &objName = e.object.token.getWord();
   auto it = namedValues.find(objName);
   if (it == namedValues.end())
     return logError(("Unknown variable: " + objName).c_str());
 
-  llvm::StructType *st = llvm::dyn_cast<llvm::StructType>(it->second.type);
+  Value *structPtr = it->second.allocaInst;
+  llvm::StructType *st = nullptr;
+
+  if (it->second.isReference) {
+    structPtr = builder.CreateLoad(PointerType::get(context, 0),
+                                   it->second.allocaInst, objName + ".ref");
+    Type *pointee =
+        it->second.pointeeType ? it->second.pointeeType : it->second.type;
+    st = llvm::dyn_cast<llvm::StructType>(pointee);
+  } else {
+    st = llvm::dyn_cast<llvm::StructType>(it->second.type);
+  }
+
   if (!st)
     return logError(("Variable is not a struct: " + objName).c_str());
 
   unsigned idx = 0;
   bool found = false;
-
   const std::string structName = st->getName().str();
   for (const auto &s : structDefs) {
     if (s->name == structName) {
@@ -852,10 +887,54 @@ Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
   if (!found)
     return logError(("Unknown field: " + e.field).c_str());
 
-  Value *gep = builder.CreateStructGEP(st, it->second.allocaInst, idx,
+  Value *gep = builder.CreateStructGEP(st, structPtr, idx,
                                        objName + "." + e.field + ".ptr");
   Type *fieldTy = st->getElementType(idx);
+
+  if (TypeResolver::isString(fieldTy) || TypeResolver::isArray(fieldTy))
+    return gep;
+
   return builder.CreateLoad(fieldTy, gep, objName + "." + e.field);
+}
+
+Value *CodeGenerator::visitStructLit(const StructLitExpr &e) {
+  llvm::StructType *st = llvm::StructType::getTypeByName(context, e.typeName);
+  if (!st)
+    return logError(("Unknown struct type: " + e.typeName).c_str());
+
+  AllocaInst *alloca = builder.CreateAlloca(st, nullptr, e.typeName + ".lit");
+
+  for (unsigned i = 0; i < e.values.size(); ++i) {
+    if (i >= st->getNumElements())
+      return logError("Too many values in struct literal");
+
+    Value *val = codegen(*e.values[i]);
+    if (!val)
+      return nullptr;
+
+    Type *fieldTy = st->getElementType(i);
+
+    if (TypeResolver::isString(fieldTy)) {
+      if (auto *ai = dyn_cast<AllocaInst>(val)) {
+        val = builder.CreateLoad(fieldTy, ai, "field.load");
+        llvm::StructType *strSt = TypeResolver::getStringType(context);
+        Value *dataGep = builder.CreateStructGEP(strSt, ai, 0, "src.data.ptr");
+        builder.CreateStore(
+            llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
+            dataGep);
+      }
+    } else if (TypeResolver::isArray(fieldTy)) {
+      if (auto *ai = dyn_cast<AllocaInst>(val))
+        val = builder.CreateLoad(fieldTy, ai, "field.load");
+    } else {
+      val = TypeResolver::coerce(builder, val, fieldTy);
+    }
+
+    Value *gep = builder.CreateStructGEP(st, alloca, i,
+                                         e.typeName + ".f" + std::to_string(i));
+    builder.CreateStore(val, gep);
+  }
+  return alloca;
 }
 
 Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
@@ -919,6 +998,8 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitFieldAccess(*p);
   if (auto *p = dynamic_cast<const FieldAssignExpr *>(&expr))
     return visitFieldAssign(*p);
+  if (auto *p = dynamic_cast<const StructLitExpr *>(&expr))
+    return visitStructLit(*p);
   if (auto *p = dynamic_cast<const Increment *>(&expr))
     return visitIncrement(*p);
   if (auto *p = dynamic_cast<const Decrement *>(&expr))
@@ -965,42 +1046,99 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   }
 
   std::string srcName;
-  if (auto *id = dynamic_cast<IdentExpr *>(d.initializer.get())) {
+  if (auto *id = dynamic_cast<IdentExpr *>(d.initializer.get()))
     srcName = id->name.token.getWord();
-  }
 
   Value *init = codegen(*d.initializer);
+  if (!init)
+    return nullptr;
 
   switch (d.kind) {
   case AssignKind::Copy: {
     if (TypeResolver::isString(ty)) {
+      Value *initPtr = init;
+      if (!llvm::isa<llvm::AllocaInst>(init) &&
+          !init->getType()->isPointerTy()) {
+        AllocaInst *tmp = builder.CreateAlloca(ty, nullptr, name + ".init.tmp");
+        builder.CreateStore(init, tmp);
+        initPtr = tmp;
+      }
+
       Value *empty = StringOps::fromLiteral(builder, context, module.get(), "");
       Value *copy =
-          StringOps::concat(builder, context, module.get(), init, empty);
+          StringOps::concat(builder, context, module.get(), initPtr, empty);
       Value *copyVal = builder.CreateLoad(ty, copy);
       builder.CreateStore(copyVal, alloca);
+
       llvm::StructType *st = TypeResolver::getStringType(context);
       Value *emptyData = builder.CreateExtractValue(
           builder.CreateLoad(st, empty), {0}, "empty.data");
       builder.CreateCall(getFree(), {emptyData});
+
       if (srcName.empty()) {
-        llvm::AllocaInst *initAI = llvm::dyn_cast<llvm::AllocaInst>(init);
+        llvm::AllocaInst *initAI = llvm::dyn_cast<llvm::AllocaInst>(initPtr);
         if (initAI && !scopeMgr.isTmp(initAI)) {
           Value *initData = builder.CreateExtractValue(
-              builder.CreateLoad(st, init), {0}, "init.data");
+              builder.CreateLoad(st, initPtr), {0}, "init.data");
           builder.CreateCall(getFree(), {initData});
         }
       }
       vi.ownsHeap = true;
+
     } else if (TypeResolver::isArray(ty)) {
-      Value *arrVal = builder.CreateLoad(ty, init);
+      Value *arrVal = init->getType()->isPointerTy()
+                          ? builder.CreateLoad(ty, init, name + ".arr.load")
+                          : init;
       builder.CreateStore(arrVal, alloca);
-      vi.ownsHeap = true;
+      vi.ownsHeap =
+          dynamic_cast<const NewArrayExpr *>(d.initializer.get()) != nullptr;
+
+    } else if (ty->isStructTy()) {
+      Value *structVal = init;
+      if (init->getType()->isPointerTy())
+        structVal = builder.CreateLoad(ty, init, name + ".structval");
+      builder.CreateStore(structVal, alloca);
+      vi.ownsHeap = false;
+
+      if (dynamic_cast<const StructLitExpr *>(d.initializer.get())) {
+        auto *st = llvm::dyn_cast<llvm::StructType>(ty);
+        const StructDecl *def = nullptr;
+        for (const auto *sd : structDefs)
+          if (sd->name == st->getName().str()) {
+            def = sd;
+            break;
+          }
+
+        if (def) {
+          for (unsigned i = 0; i < def->fields.size(); ++i) {
+            Type *fieldTy = st->getElementType(i);
+            if (!TypeResolver::isString(fieldTy))
+              continue;
+            Value *fieldGep = builder.CreateStructGEP(
+                st, alloca, i, name + ".f" + std::to_string(i) + ".own");
+            AllocaInst *fieldAlloca = llvm::dyn_cast<AllocaInst>(fieldGep);
+            if (fieldAlloca) {
+              scopeMgr.declareTmp(fieldAlloca,
+                                  TypeResolver::getStringType(context));
+            } else {
+              AllocaInst *strCopy = builder.CreateAlloca(
+                  TypeResolver::getStringType(context), nullptr,
+                  name + ".f" + std::to_string(i) + ".destructor");
+              Value *fieldVal =
+                  builder.CreateLoad(fieldTy, fieldGep, "field.for.dtor");
+              builder.CreateStore(fieldVal, strCopy);
+              scopeMgr.declareTmp(strCopy,
+                                  TypeResolver::getStringType(context));
+            }
+          }
+        }
+      }
     } else {
       builder.CreateStore(TypeResolver::coerce(builder, init, ty), alloca);
     }
     break;
   }
+
   case AssignKind::Move: {
     if (srcName.empty())
       return logError("Move requires identifier");
@@ -1017,6 +1155,7 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
     srcInfo.isMoved = true;
     break;
   }
+
   case AssignKind::Borrow: {
     if (srcName.empty())
       return logError("Borrow requires identifier");
@@ -1300,9 +1439,14 @@ bool CodeGenerator::generate(const Program &program,
 
   for (const auto &s : program.structs) {
     std::vector<llvm::Type *> fieldTypes;
-    for (const auto &f : s->fields)
-      fieldTypes.push_back(
-          TypeResolver::fromName(context, f.type.base.token.getWord()));
+    for (const auto &f : s->fields) {
+      llvm::Type *ft = TypeResolver::fromTypeDesc(context, f.type);
+      if (!ft)
+        ft = llvm::StructType::getTypeByName(context,
+                                             f.type.base.token.getWord());
+      if (ft)
+        fieldTypes.push_back(ft);
+    }
     if (!llvm::StructType::getTypeByName(context, s->name)) {
       llvm::StructType::create(context, fieldTypes, s->name);
     }

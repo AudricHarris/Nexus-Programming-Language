@@ -102,16 +102,22 @@ void ScopeManager::emitDestructorsFor(const std::vector<std::string> &names) {
     if (vi.isMoved || vi.isBorrowed || vi.isReference)
       continue;
 
+    if (vi.type && vi.type->isStructTy() && !TypeResolver::isString(vi.type) &&
+        !TypeResolver::isArray(vi.type))
+      continue;
+
     emitDestructor(vi);
   }
 }
 
 void ScopeManager::emitDestructor(VarInfo &vi) {
   Type *ty = vi.type;
-
-  if (!ty) {
+  if (!ty)
     return;
-  }
+
+  if (ty->isStructTy() && !TypeResolver::isString(ty) &&
+      !TypeResolver::isArray(ty))
+    return;
 
   if (TypeResolver::isString(ty)) {
     StructType *st = cast<StructType>(ty);
@@ -138,9 +144,8 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
   }
 
   if (TypeResolver::isArray(ty)) {
-    if (vi.allocaInst) {
+    if (vi.allocaInst)
       emitArrayFree(vi.allocaInst, cast<StructType>(ty), 0);
-    }
     return;
   }
 }

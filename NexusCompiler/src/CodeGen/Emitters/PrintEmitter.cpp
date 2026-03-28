@@ -81,6 +81,46 @@ static Value *evalInterp(const std::string &inner, LLVMContext &ctx,
     }
     return nullptr;
   }
+
+  auto dot = inner.find('.');
+  if (dot != std::string::npos && dot > 0 && dot + 1 < inner.size()) {
+    std::string objName = inner.substr(0, dot);
+    std::string fieldName = inner.substr(dot + 1);
+
+    auto isIdentStr = [](const std::string &s) {
+      if (s.empty())
+        return false;
+      for (char c : s)
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
+          return false;
+      return true;
+    };
+
+    if (isIdentStr(objName) && isIdentStr(fieldName)) {
+      auto it = vars.find(objName);
+      if (it != vars.end() && !it->second.isMoved) {
+        llvm::StructType *st =
+            llvm::dyn_cast<llvm::StructType>(it->second.type);
+        if (st) {
+          unsigned numElems = st->getNumElements();
+          {
+            std::string composed = objName + "." + fieldName;
+            auto fit = vars.find(composed);
+            if (fit != vars.end() && !fit->second.isMoved) {
+              if (TypeResolver::isString(fit->second.type) ||
+                  TypeResolver::isArray(fit->second.type))
+                return fit->second.allocaInst;
+              return B.CreateLoad(fit->second.type, fit->second.allocaInst,
+                                  composed + ".load");
+            }
+          }
+
+          (void)numElems;
+        }
+      }
+    }
+  }
+
   try {
     size_t pos;
     long long v = std::stoll(inner, &pos);
@@ -88,6 +128,7 @@ static Value *evalInterp(const std::string &inner, LLVMContext &ctx,
       return ConstantInt::get(Type::getInt32Ty(ctx), v);
   } catch (...) {
   }
+
   try {
     size_t pos;
     double v = std::stod(inner, &pos);
@@ -95,6 +136,7 @@ static Value *evalInterp(const std::string &inner, LLVMContext &ctx,
       return ConstantFP::get(Type::getDoubleTy(ctx), v);
   } catch (...) {
   }
+
   return nullptr;
 }
 
@@ -215,7 +257,8 @@ std::string PrintEmitter::replaceHexColors(const std::string &input) {
 
 Value *PrintEmitter::handlePrintf(const CallExpr &e, IRBuilder<> &B,
                                   LLVMContext &ctx, Module *M,
-                                  const std::map<std::string, VarInfo> &vars) {
+                                  const std::map<std::string, VarInfo> &vars,
+                                  const std::vector<StructDecl *> &structDefs) {
   auto *strArg = dynamic_cast<const StrLitExpr *>(e.arguments[0].get());
   if (!strArg)
     return nullptr;

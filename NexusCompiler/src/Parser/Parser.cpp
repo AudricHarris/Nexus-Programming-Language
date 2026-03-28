@@ -234,9 +234,18 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
 
   while (!check(TokenKind::RBRACE) && !isAtEnd()) {
     Token typeTok = expect(TokenKind::IDENTIFIER, "Expected field type");
+
+    int dims = 0;
+    while (peek().getKind() == TokenKind::LBRACKET &&
+           peekAt(1).getKind() == TokenKind::RBRACKET) {
+      consume();
+      consume();
+      ++dims;
+    }
+
     Token fieldTok = expect(TokenKind::IDENTIFIER, "Expected field name");
     expect(TokenKind::SEMI, "Expected ';' after field");
-    decl->fields.emplace_back(TypeDesc{Identifier{typeTok}},
+    decl->fields.emplace_back(TypeDesc{Identifier{typeTok}, dims},
                               fieldTok.getWord());
   }
 
@@ -557,7 +566,22 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
     throw ParseError(peek().getLine(), peek().getColumn(),
                      "Expected '=', '<-', or '&='");
 
-  auto init = parseExpression();
+  // If the initializer starts with '{', treat it as a positional struct
+  // literal.
+  std::unique_ptr<Expression> init;
+  if (check(TokenKind::LBRACE)) {
+    consume(); // '{'
+    std::vector<ExprPtr> vals;
+    if (!check(TokenKind::RBRACE)) {
+      do {
+        vals.push_back(parseExpression());
+      } while (match(TokenKind::COMMA));
+    }
+    expect(TokenKind::RBRACE, "Expected '}' to close struct literal");
+    init = std::make_unique<StructLitExpr>(typeTok.getWord(), std::move(vals));
+  } else {
+    init = parseExpression();
+  }
   expect(TokenKind::SEMI, "Expected ';'");
 
   TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),

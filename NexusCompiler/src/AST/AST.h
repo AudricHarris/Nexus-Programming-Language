@@ -505,6 +505,28 @@ struct FieldAssignExpr : Expression {
   }
 };
 
+// --------------------------------- //
+// Struct literal: MyType{v0, v1, …} //
+// --------------------------------- //
+struct StructLitExpr : Expression {
+  std::string typeName;
+  std::vector<ExprPtr> values;
+
+  StructLitExpr(std::string tn, std::vector<ExprPtr> vals)
+      : typeName(std::move(tn)), values(std::move(vals)) {}
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"StructLitExpr\",\"type\":"
+       << json_utils::escape(typeName) << ",\"values\":[";
+    for (size_t i = 0; i < values.size(); ++i) {
+      if (i)
+        os << ",";
+      values[i]->toJson(os, indent + 2);
+    }
+    os << "]}";
+  }
+};
+
 // -------------- //
 // Statement base //
 // -------------- //

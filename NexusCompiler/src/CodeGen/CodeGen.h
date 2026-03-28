@@ -65,6 +65,7 @@ private:
   llvm::Value *visitAssign(const AssignExpr &e);
   llvm::Value *visitFieldAccess(const FieldAccessExpr &e);
   llvm::Value *visitFieldAssign(const FieldAssignExpr &e);
+  llvm::Value *visitStructLit(const StructLitExpr &e);
   llvm::Value *visitIncrement(const Increment &e);
   llvm::Value *visitDecrement(const Decrement &e);
   llvm::Value *visitCall(const CallExpr &e);
