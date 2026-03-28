@@ -46,6 +46,8 @@ llvm::Type *TypeResolver::fromName(llvm::LLVMContext &ctx,
     return llvm::Type::getVoidTy(ctx);
   if (t == "str" || t == "string")
     return getStringType(ctx);
+  if (t == "ptr")
+    return llvm::PointerType::get(ctx, 0);
 
   if (t.size() > 6 && t.substr(0, 6) == "array.") {
     std::string innerName = t.substr(6);
@@ -112,6 +114,8 @@ bool TypeResolver::isArray(llvm::Type *ty) {
 bool TypeResolver::isNumeric(llvm::Type *ty) {
   return ty && (ty->isIntegerTy() || ty->isFloatingPointTy());
 }
+
+bool TypeResolver::isPtr(llvm::Type *ty) { return ty && ty->isPointerTy(); }
 
 llvm::Type *TypeResolver::elemType(llvm::LLVMContext &ctx,
                                    llvm::StructType *arrTy) {

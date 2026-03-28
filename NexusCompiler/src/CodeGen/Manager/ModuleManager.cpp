@@ -39,29 +39,37 @@ std::unique_ptr<Program> ModuleManager::parseFile(const fs::path &file) {
 
 void ModuleManager::applyFilter(Program &src,
                                 const std::vector<std::string> &symbols) {
-  if (symbols.empty())
+  if (!symbols.empty()) {
+    std::unordered_set<std::string> wanted(symbols.begin(), symbols.end());
+    src.globals.erase(
+        std::remove_if(src.globals.begin(), src.globals.end(),
+                       [&](const auto &g) { return !wanted.count(g->name); }),
+        src.globals.end());
+    src.functions.erase(
+        std::remove_if(src.functions.begin(), src.functions.end(),
+                       [&](const auto &fn) {
+                         return !wanted.count(fn->name.token.getWord());
+                       }),
+        src.functions.end());
     return;
+  }
 
-  std::unordered_set<std::string> wanted(symbols.begin(), symbols.end());
-
-  auto &gs = src.globals;
-  gs.erase(
-      std::remove_if(gs.begin(), gs.end(),
-                     [&](const auto &g) { return !wanted.count(g->name); }),
-      gs.end());
-
-  auto &fs = src.functions;
-  fs.erase(std::remove_if(fs.begin(), fs.end(),
-                          [&](const auto &fn) {
-                            return !wanted.count(fn->name.token.getWord());
-                          }),
-           fs.end());
+  src.globals.erase(std::remove_if(src.globals.begin(), src.globals.end(),
+                                   [](const auto &g) { return !g->isPublic; }),
+                    src.globals.end());
+  src.functions.erase(
+      std::remove_if(src.functions.begin(), src.functions.end(),
+                     [](const auto &fn) { return !fn->isPublic; }),
+      src.functions.end());
+  src.structs.erase(std::remove_if(src.structs.begin(), src.structs.end(),
+                                   [](const auto &s) { return !s->isPublic; }),
+                    src.structs.end());
 }
 
 ResolvedModule &ModuleManager::resolveImport(const ImportDecl &decl) {
   fs::path filePath = importPathToFile(decl.path, decl.path.isStdLib);
   std::string canonical = fs::weakly_canonical(filePath).string();
-
+  std::cerr << "DEBUG resolving: " << filePath << "\n";
   if (resolved.count(canonical))
     return resolved[canonical];
 
@@ -87,15 +95,21 @@ void ModuleManager::resolveAll(Program &prog) {
   for (const auto &imp : prog.imports) {
     auto &mod = resolveImport(*imp);
 
+    for (auto it = mod.ast->structs.rbegin(); it != mod.ast->structs.rend();
+         ++it)
+      prog.structs.insert(prog.structs.begin(), std::move(*it));
+
+    for (auto it = mod.ast->externBlocks.rbegin();
+         it != mod.ast->externBlocks.rend(); ++it)
+      prog.externBlocks.insert(prog.externBlocks.begin(), std::move(*it));
+
     for (auto it = mod.ast->globals.rbegin(); it != mod.ast->globals.rend();
-         ++it) {
+         ++it)
       prog.globals.insert(prog.globals.begin(), std::move(*it));
-    }
 
     for (auto it = mod.ast->functions.rbegin(); it != mod.ast->functions.rend();
-         ++it) {
+         ++it)
       prog.functions.insert(prog.functions.begin(), std::move(*it));
-    }
 
     mod.ast.reset();
   }

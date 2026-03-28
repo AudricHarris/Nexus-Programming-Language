@@ -18,13 +18,9 @@
 #include <string>
 #include <vector>
 
-// -------------- //
-// Code generator //
-// -------------- //
-
 struct LoopContext {
-  llvm::BasicBlock *condBB; // continue target
-  llvm::BasicBlock *exitBB; // break target
+  llvm::BasicBlock *condBB;
+  llvm::BasicBlock *exitBB;
 };
 
 class CodeGenerator {
@@ -48,6 +44,9 @@ private:
   std::map<std::string, VarInfo> globalValues;
   std::map<std::string, std::vector<bool>> borrowRefParams;
 
+  // Struct definitions (populated at start of generate())
+  std::vector<StructDecl *> structDefs;
+
   // Subsystems
   ScopeManager scopeMgr;
 
@@ -64,6 +63,8 @@ private:
   llvm::Value *visitBinary(const BinaryExpr &e);
   llvm::Value *visitUnary(const UnaryExpr &e);
   llvm::Value *visitAssign(const AssignExpr &e);
+  llvm::Value *visitFieldAccess(const FieldAccessExpr &e);
+  llvm::Value *visitFieldAssign(const FieldAssignExpr &e);
   llvm::Value *visitIncrement(const Increment &e);
   llvm::Value *visitDecrement(const Decrement &e);
   llvm::Value *visitCall(const CallExpr &e);

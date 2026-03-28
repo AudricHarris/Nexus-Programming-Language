@@ -77,6 +77,10 @@ public:
   std::unique_ptr<Program> parse();
   std::unique_ptr<ImportDecl> parseImportDecl();
   std::unique_ptr<GlobalVarDecl> parseGlobalVarDecl();
+  bool isIdentWord(std::string_view word) const;
+  ExternBlock parseExternBlock();
+  std::unique_ptr<StructDecl> parseStructDecl();
+  std::unique_ptr<VarDecl> parseVarDeclNoInit();
   std::unique_ptr<Function> parseFunctionDecl();
   std::unique_ptr<Block> parseBlock(bool uni = false);
   std::unique_ptr<Statement> parseStatement();

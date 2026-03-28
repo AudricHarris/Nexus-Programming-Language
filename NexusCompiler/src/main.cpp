@@ -274,12 +274,12 @@ int main(int argc, char *argv[]) {
     std::string output = getOutputName(file);
 
     std::string cmd = "clang -Wno-override-module -fsanitize=address "
-                      "-fsanitize=leak -g out.ll -o \"" +
+                      "-fsanitize=leak -g out.ll -lglfw -lGL -o \"" +
                       output + "\"";
 
     std::cout << "Linking with Clang...\n";
     int res = std::system(cmd.c_str());
-    system("rm -rf out.ll");
+    // system("rm -rf out.ll");
 
     if (res != 0) {
       std::cerr << "Clang compilation failed for " << file << "\n";

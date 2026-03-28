@@ -795,16 +795,112 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
 
       if (auto *ai = dyn_cast<AllocaInst>(v)) {
         Type *allocTy = ai->getAllocatedType();
-        if (TypeResolver::isArray(allocTy) || TypeResolver::isString(allocTy)) {
+        if (TypeResolver::isString(allocTy)) {
+          bool expectsRawPtr = false;
+          if (i < callee->arg_size()) {
+            Type *expectedTy = callee->getFunctionType()->getParamType(i);
+            expectsRawPtr = expectedTy->isPointerTy();
+          }
+          if (expectsRawPtr) {
+            Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
+            v = builder.CreateExtractValue(loaded, {0}, "str.data");
+          } else {
+            v = builder.CreateLoad(allocTy, ai, "arg.val");
+          }
+        } else if (TypeResolver::isArray(allocTy)) {
           v = builder.CreateLoad(allocTy, ai, "arg.val");
         }
       }
+
+      // coerce to expected parameter type for extern functions
+      if (!callee->isVarArg() && i < callee->arg_size()) {
+        Type *expectedTy = callee->getFunctionType()->getParamType(i);
+        v = TypeResolver::coerce(builder, v, expectedTy);
+      }
+
       args.push_back(v);
     }
   }
 
   bool isVoid = callee->getReturnType()->isVoidTy();
   return builder.CreateCall(callee, args, isVoid ? "" : "call");
+}
+Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
+  const std::string &objName = e.object.token.getWord();
+  auto it = namedValues.find(objName);
+  if (it == namedValues.end())
+    return logError(("Unknown variable: " + objName).c_str());
+
+  llvm::StructType *st = llvm::dyn_cast<llvm::StructType>(it->second.type);
+  if (!st)
+    return logError(("Variable is not a struct: " + objName).c_str());
+
+  unsigned idx = 0;
+  bool found = false;
+  for (unsigned i = 0; i < st->getNumElements(); ++i) {
+    if (st->getName().str() != "") {
+      // match field by index using the program's struct table
+    }
+  }
+
+  // look up field index from the struct name
+  const std::string structName = st->getName().str();
+  for (const auto &s : structDefs) {
+    if (s->name == structName) {
+      for (unsigned i = 0; i < s->fields.size(); ++i) {
+        if (s->fields[i].name == e.field) {
+          idx = i;
+          found = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!found)
+    return logError(("Unknown field: " + e.field).c_str());
+
+  Value *gep = builder.CreateStructGEP(st, it->second.allocaInst, idx,
+                                       objName + "." + e.field + ".ptr");
+  Type *fieldTy = st->getElementType(idx);
+  return builder.CreateLoad(fieldTy, gep, objName + "." + e.field);
+}
+
+Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
+  const std::string &objName = e.object.token.getWord();
+  auto it = namedValues.find(objName);
+  if (it == namedValues.end())
+    return logError(("Unknown variable: " + objName).c_str());
+
+  llvm::StructType *st = llvm::dyn_cast<llvm::StructType>(it->second.type);
+  if (!st)
+    return logError(("Variable is not a struct: " + objName).c_str());
+
+  const std::string structName = st->getName().str();
+  unsigned idx = 0;
+  bool found = false;
+  for (const auto &s : structDefs) {
+    if (s->name == structName) {
+      for (unsigned i = 0; i < s->fields.size(); ++i) {
+        if (s->fields[i].name == e.field) {
+          idx = i;
+          found = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!found)
+    return logError(("Unknown field: " + e.field).c_str());
+
+  Value *val = codegen(*e.value);
+  if (!val)
+    return nullptr;
+
+  Value *gep = builder.CreateStructGEP(st, it->second.allocaInst, idx,
+                                       objName + "." + e.field + ".ptr");
+  Type *fieldTy = st->getElementType(idx);
+  builder.CreateStore(TypeResolver::coerce(builder, val, fieldTy), gep);
+  return val;
 }
 
 Value *CodeGenerator::codegen(const Expression &expr) {
@@ -826,6 +922,10 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitUnary(*p);
   if (auto *p = dynamic_cast<const AssignExpr *>(&expr))
     return visitAssign(*p);
+  if (auto *p = dynamic_cast<const FieldAccessExpr *>(&expr))
+    return visitFieldAccess(*p);
+  if (auto *p = dynamic_cast<const FieldAssignExpr *>(&expr))
+    return visitFieldAssign(*p);
   if (auto *p = dynamic_cast<const Increment *>(&expr))
     return visitIncrement(*p);
   if (auto *p = dynamic_cast<const Decrement *>(&expr))
@@ -842,6 +942,8 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitLengthProperty(*p);
   if (auto *p = dynamic_cast<const IndexedLengthExpr *>(&expr))
     return visitIndexedLength(*p);
+  if (auto *p = dynamic_cast<const NullLitExpr *>(&expr))
+    return llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
 
   return logError("Unknown expression node");
 }
@@ -852,10 +954,15 @@ Value *CodeGenerator::codegen(const Expression &expr) {
 
 Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   const std::string name = d.name.token.getWord();
+  const std::string typeName = d.type.base.token.getWord();
 
   Type *ty = TypeResolver::fromTypeDesc(context, d.type);
-  AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
+  if (!ty)
+    ty = llvm::StructType::getTypeByName(context, typeName);
+  if (!ty)
+    return logError(("Unknown type: " + typeName).c_str());
 
+  AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
   VarInfo vi(alloca, ty, false, false, false, d.isConst);
 
   if (!d.initializer) {
@@ -872,10 +979,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   Value *init = codegen(*d.initializer);
 
   switch (d.kind) {
-
-  // -------------------------
-  // COPY (DEEP COPY FOR STRING)
-  // -------------------------
   case AssignKind::Copy: {
     if (TypeResolver::isString(ty)) {
       Value *empty = StringOps::fromLiteral(builder, context, module.get(), "");
@@ -905,16 +1008,10 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
     }
     break;
   }
-
-  // -------------------------
-  // MOVE
-  // -------------------------
   case AssignKind::Move: {
     if (srcName.empty())
       return logError("Move requires identifier");
-
     auto &srcInfo = namedValues[srcName];
-
     if (TypeResolver::isString(ty) || TypeResolver::isArray(ty)) {
       Value *val =
           builder.CreateLoad(ty, srcInfo.allocaInst, srcName + ".move");
@@ -922,30 +1019,20 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
     } else {
       builder.CreateStore(TypeResolver::coerce(builder, init, ty), alloca);
     }
-
     vi.ownsHeap = srcInfo.ownsHeap;
     srcInfo.ownsHeap = false;
     srcInfo.isMoved = true;
-
     break;
   }
-
-  // -------------------------
-  // BORROW
-  // -------------------------
   case AssignKind::Borrow: {
     if (srcName.empty())
       return logError("Borrow requires identifier");
-
     auto &srcInfo = namedValues[srcName];
-
     vi.allocaInst = srcInfo.allocaInst;
     vi.type = srcInfo.type;
-
     vi.isBorrowed = true;
     vi.isReference = true;
     vi.ownsHeap = false;
-
     namedValues[name] = vi;
     scopeMgr.declare(name);
     return alloca;
@@ -1094,7 +1181,11 @@ Value *CodeGenerator::visitReturn(const Return &s) {
 
 llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   const std::string fname = normalizeFunctionName(func.name.token.getWord());
+
   Type *retTy = TypeResolver::fromTypeDesc(context, func.returnType);
+  if (!retTy)
+    retTy = llvm::StructType::getTypeByName(
+        context, func.returnType.base.token.getWord());
   if (!retTy)
     return nullptr;
 
@@ -1102,6 +1193,9 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   std::vector<bool> paramIsRef;
   for (const auto &p : func.params) {
     Type *pt = TypeResolver::fromTypeDesc(context, p.type);
+    if (!pt)
+      pt =
+          llvm::StructType::getTypeByName(context, p.type.base.token.getWord());
     if (!pt)
       return nullptr;
     paramTypes.push_back(p.isBorrowRef ? PointerType::get(context, 0) : pt);
@@ -1138,6 +1232,9 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
                                                    nullptr, pname + ".refptr");
       builder.CreateStore(&arg, ptrAlloca);
       Type *pointee = TypeResolver::fromTypeDesc(context, param.type);
+      if (!pointee)
+        pointee = llvm::StructType::getTypeByName(
+            context, param.type.base.token.getWord());
       VarInfo vi(ptrAlloca, PointerType::get(context, 0), false, false, true,
                  param.isConst);
       vi.pointeeType = pointee;
@@ -1145,19 +1242,16 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     } else {
       Type *declaredTy = TypeResolver::fromTypeDesc(context, param.type);
       if (!declaredTy)
+        declaredTy = llvm::StructType::getTypeByName(
+            context, param.type.base.token.getWord());
+      if (!declaredTy)
         declaredTy = arg.getType();
 
       AllocaInst *a = builder.CreateAlloca(declaredTy, nullptr, pname);
-
-      if (TypeResolver::isArray(declaredTy) ||
-          TypeResolver::isString(declaredTy)) {
-        builder.CreateStore(&arg, a);
-      } else {
-        builder.CreateStore(&arg, a);
-      }
-
+      builder.CreateStore(&arg, a);
+      bool ownsHeap = false;
       namedValues[pname] =
-          VarInfo(a, declaredTy, false, false, false, param.isConst);
+          VarInfo(a, declaredTy, ownsHeap, false, false, param.isConst);
     }
     scopeMgr.declare(pname);
   }
@@ -1188,6 +1282,9 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 bool CodeGenerator::generate(const Program &program,
                              const std::string &outputFilename) {
   namedValues.clear();
+  structDefs.clear();
+  for (const auto &s : program.structs)
+    structDefs.push_back(s.get());
 
   Type *ptrTy = PointerType::get(context, 0);
   Type *i32 = Type::getInt32Ty(context);
@@ -1208,13 +1305,55 @@ bool CodeGenerator::generate(const Program &program,
                            *module);
   }
 
+  for (const auto &s : program.structs) {
+    std::vector<llvm::Type *> fieldTypes;
+    for (const auto &f : s->fields)
+      fieldTypes.push_back(
+          TypeResolver::fromName(context, f.type.base.token.getWord()));
+    if (!llvm::StructType::getTypeByName(context, s->name)) {
+      llvm::StructType::create(context, fieldTypes, s->name);
+    }
+  }
+
+  for (const auto &block : program.externBlocks) {
+    for (const auto &decl : block.decls) {
+      if (module->getFunction(decl.name))
+        continue;
+      std::vector<llvm::Type *> pts;
+      for (const auto &p : decl.paramTypes) {
+        const std::string tname = p.base.token.getWord();
+        // extern "C" str params must be raw ptr, not %string struct
+        if (tname == "str" || tname == "string")
+          pts.push_back(llvm::PointerType::get(context, 0));
+        else
+          pts.push_back(TypeResolver::fromName(context, tname));
+      }
+      auto *retTy =
+          TypeResolver::fromName(context, decl.returnType.base.token.getWord());
+      auto *ft = llvm::FunctionType::get(retTy, pts, false);
+      llvm::Function::Create(ft, llvm::Function::ExternalLinkage, decl.name,
+                             *module);
+    }
+  }
+
   for (const auto &fn : program.functions) {
     const std::string fname = normalizeFunctionName(fn->name.token.getWord());
     if (!module->getFunction(fname)) {
       Type *retTy = TypeResolver::fromTypeDesc(context, fn->returnType);
+      if (!retTy)
+        retTy = llvm::StructType::getTypeByName(
+            context, fn->returnType.base.token.getWord());
+      if (!retTy)
+        retTy = llvm::Type::getVoidTy(context);
+
       std::vector<Type *> paramTypes;
       for (const auto &p : fn->params) {
         Type *pt = TypeResolver::fromTypeDesc(context, p.type);
+        if (!pt)
+          pt = llvm::StructType::getTypeByName(context,
+                                               p.type.base.token.getWord());
+        if (!pt)
+          continue;
         paramTypes.push_back(p.isBorrowRef ? PointerType::get(context, 0) : pt);
       }
       auto *ft = FunctionType::get(retTy, paramTypes, false);

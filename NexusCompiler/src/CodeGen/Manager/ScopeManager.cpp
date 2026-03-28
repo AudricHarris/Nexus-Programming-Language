@@ -97,8 +97,7 @@ void ScopeManager::emitDestructorsFor(const std::vector<std::string> &names) {
 
     VarInfo &vi = nv->second;
 
-    if (!TypeResolver::isArray(vi.type) && !TypeResolver::isString(vi.type) &&
-        !vi.ownsHeap)
+    if (!vi.ownsHeap)
       continue;
     if (vi.isMoved || vi.isBorrowed || vi.isReference)
       continue;

@@ -18,6 +18,7 @@ public:
   static bool isString(llvm::Type *ty);
   static bool isArray(llvm::Type *ty);
   static bool isNumeric(llvm::Type *ty);
+  static bool isPtr(llvm::Type *ty);
   static llvm::Type *elemType(llvm::LLVMContext &ctx, llvm::StructType *arrTy);
   static llvm::Type *largerType(llvm::Type *a, llvm::Type *b);
   static llvm::Value *coerce(llvm::IRBuilder<> &B, llvm::Value *val,

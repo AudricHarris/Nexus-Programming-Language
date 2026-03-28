@@ -80,15 +80,23 @@ struct TypeDesc {
   Identifier base;
   int dimensions = 0;
   bool isConst = false;
+  bool isPtr = false; // true when base name is "ptr"
 
-  explicit TypeDesc(const Identifier &b, int dims = 0, bool c = false)
-      : base(b), dimensions(dims), isConst(c) {}
-  explicit TypeDesc(Identifier &&b, int dims = 0, bool c = false)
-      : base(std::move(b)), dimensions(dims), isConst(c) {}
+  explicit TypeDesc(const Identifier &b, int dims = 0, bool c = false,
+                    bool ptr = false)
+      : base(b), dimensions(dims), isConst(c),
+        isPtr(ptr || b.token.getWord() == "ptr") {}
+
+  explicit TypeDesc(Identifier &&b, int dims = 0, bool c = false,
+                    bool ptr = false)
+      : base(std::move(b)), dimensions(dims), isConst(c),
+        isPtr(ptr || base.token.getWord() == "ptr") {}
 
   const Identifier &elementType() const { return base; }
 
   std::string fullName() const {
+    if (isPtr)
+      return "ptr";
     std::string name = base.token.getWord();
     for (int i = 0; i < dimensions; ++i)
       name = "array." + name;
@@ -247,6 +255,16 @@ struct CharLitExpr : Expression {
   }
 };
 
+// -------------------- //
+// Null pointer literal //
+// -------------------- //
+struct NullLitExpr : Expression {
+  NullLitExpr() = default;
+  void toJson(std::ostream &os, int indent) const override {
+    os << std::string(indent, ' ') << "{\"kind\":\"NullLitExpr\"}";
+  }
+};
+
 // --------------------- //
 // Identifier expression //
 // --------------------- //
@@ -303,8 +321,8 @@ struct UnaryExpr : Expression {
 // --------------- //
 struct CallExpr : Expression {
   Identifier callee;
-
   std::vector<ExprPtr> arguments;
+
   CallExpr(const Identifier &c, std::vector<ExprPtr> args)
       : callee(c), arguments(std::move(args)) {}
   void toJson(std::ostream &os, int indent) const override {
@@ -388,13 +406,12 @@ struct ArrayIndexExpr : Expression {
 
   ArrayIndexExpr(Identifier arr, std::vector<ExprPtr> idxs)
       : array(std::move(arr)), indices(std::move(idxs)) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"ArrayIndexExpr\",\"array\":"
        << json_utils::escape(array.token.getWord()) << ",\"indices\":[";
     for (size_t i = 0; i < indices.size(); ++i) {
-      if (i > 0)
+      if (i)
         os << ",";
       indices[i]->toJson(os, indent + 2);
     }
@@ -413,13 +430,12 @@ struct ArrayIndexAssignExpr : Expression {
   ArrayIndexAssignExpr(Identifier arr, std::vector<ExprPtr> idxs, ExprPtr val)
       : array(std::move(arr)), indices(std::move(idxs)), value(std::move(val)) {
   }
-
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"ArrayIndexAssignExpr\",\"array\":"
        << json_utils::escape(array.token.getWord()) << ",\"indices\":[";
     for (size_t i = 0; i < indices.size(); ++i) {
-      if (i > 0)
+      if (i)
         os << ",";
       indices[i]->toJson(os, indent + 2);
     }
@@ -447,12 +463,45 @@ struct IndexedLengthExpr : Expression {
 
   IndexedLengthExpr(Identifier name, std::vector<ExprPtr> idxs)
       : arrayName(std::move(name)), indices(std::move(idxs)) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"IndexedLengthExpr\",\"name\":"
        << json_utils::escape(arrayName.token.getWord())
        << ",\"depth\":" << indices.size() << "}";
+  }
+};
+
+// ----------------------------- //
+// Struct field access / assign  //
+// ----------------------------- //
+struct FieldAccessExpr : Expression {
+  Identifier object;
+  std::string field;
+
+  FieldAccessExpr(Identifier obj, std::string f)
+      : object(std::move(obj)), field(std::move(f)) {}
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"FieldAccessExpr\",\"object\":"
+       << json_utils::escape(object.token.getWord())
+       << ",\"field\":" << json_utils::escape(field) << "}";
+  }
+};
+
+struct FieldAssignExpr : Expression {
+  Identifier object;
+  std::string field;
+  ExprPtr value;
+
+  FieldAssignExpr(Identifier obj, std::string f, ExprPtr val)
+      : object(std::move(obj)), field(std::move(f)), value(std::move(val)) {}
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"FieldAssignExpr\",\"object\":"
+       << json_utils::escape(object.token.getWord())
+       << ",\"field\":" << json_utils::escape(field) << ",\"value\":";
+    value->toJson(os, indent + 2);
+    os << "}";
   }
 };
 
@@ -478,7 +527,6 @@ struct VarDecl : Statement {
           AssignKind k = AssignKind::Copy, bool c = false)
       : type(std::move(t)), name(std::move(n)), initializer(std::move(init)),
         kind(k), isConst(c) {}
-
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"VarDecl\","
@@ -607,52 +655,196 @@ struct Function {
   std::vector<Parameter> params;
   std::unique_ptr<Block> body;
   TypeDesc returnType;
+  bool isPublic = false;
 
   Function(Identifier n, std::vector<Parameter> p, std::unique_ptr<Block> b,
-           TypeDesc ret)
+           TypeDesc ret, bool pub = false)
       : name(std::move(n)), params(std::move(p)), body(std::move(b)),
-        returnType(std::move(ret)) {}
-
+        returnType(std::move(ret)), isPublic(pub) {}
   void toJson(std::ostream &os, int indent = 0) const {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"Function\","
        << "\"name\":" << json_utils::escape(name.token.getWord()) << ","
+       << "\"public\":" << (isPublic ? "true" : "false") << ","
        << "\"return\":" << json_utils::escape(returnType.fullName()) << "}";
   }
 };
 
+// --------------------------------- //
+// Extern "C" function declarations  //
+// --------------------------------- //
+
+// A single declaration inside an extern "C" { } block.
+// Parameters are type-only (names are optional in C FFI declarations).
+struct ExternFuncDecl {
+  std::string name;
+  std::vector<TypeDesc> paramTypes;
+  TypeDesc returnType;
+  bool isPrivate = false; // declared private in source (limits export)
+
+  ExternFuncDecl(std::string n, std::vector<TypeDesc> pts, TypeDesc ret,
+                 bool priv = false)
+      : name(std::move(n)), paramTypes(std::move(pts)),
+        returnType(std::move(ret)), isPrivate(priv) {}
+  void toJson(std::ostream &os, int indent = 0) const {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"ExternFuncDecl\","
+       << "\"name\":" << json_utils::escape(name) << ","
+       << "\"private\":" << (isPrivate ? "true" : "false") << ","
+       << "\"return\":" << json_utils::escape(returnType.fullName()) << "}";
+  }
+};
+
+// One extern "C" { } block; a file may have several.
+struct ExternBlock {
+  std::vector<ExternFuncDecl> decls;
+
+  ExternBlock() = default;
+  explicit ExternBlock(std::vector<ExternFuncDecl> d) : decls(std::move(d)) {}
+  void toJson(std::ostream &os, int indent = 0) const {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"ExternBlock\",\"decls\":[";
+    for (size_t i = 0; i < decls.size(); ++i) {
+      if (i)
+        os << ",";
+      decls[i].toJson(os, indent + 2);
+    }
+    os << "]}";
+  }
+};
+
+// -------------------- //
+// Struct declarations  //
+// -------------------- //
+struct StructField {
+  TypeDesc type;
+  std::string name;
+
+  StructField(TypeDesc t, std::string n)
+      : type(std::move(t)), name(std::move(n)) {}
+  void toJson(std::ostream &os, int indent = 0) const {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"StructField\","
+       << "\"type\":" << json_utils::escape(type.fullName()) << ","
+       << "\"name\":" << json_utils::escape(name) << "}";
+  }
+};
+
+struct StructDecl {
+  std::string name;
+  std::vector<StructField> fields;
+  bool isPublic = false;
+
+  StructDecl() = default;
+  StructDecl(std::string n, std::vector<StructField> f, bool pub = false)
+      : name(std::move(n)), fields(std::move(f)), isPublic(pub) {}
+  void toJson(std::ostream &os, int indent = 0) const {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"StructDecl\","
+       << "\"name\":" << json_utils::escape(name) << ","
+       << "\"public\":" << (isPublic ? "true" : "false") << ","
+       << "\"fields\":[";
+    for (size_t i = 0; i < fields.size(); ++i) {
+      if (i)
+        os << ",";
+      fields[i].toJson(os, indent + 2);
+    }
+    os << "]}";
+  }
+};
+
+// ------------------- //
+// Import declarations //
+// ------------------- //
 struct ImportPath {
   std::vector<std::string> segments;
-  bool isStdLib;
+  bool isStdLib = false;
+
+  ImportPath() = default;
+  ImportPath(std::vector<std::string> segs, bool stdlib)
+      : segments(std::move(segs)), isStdLib(stdlib) {}
 };
 
 struct ImportDecl {
   ImportPath path;
   std::vector<std::string> symbols;
-  bool selective;
+  bool selective = false;
+
+  ImportDecl() = default;
+  ImportDecl(ImportPath p, std::vector<std::string> syms, bool sel)
+      : path(std::move(p)), symbols(std::move(syms)), selective(sel) {}
 };
 
+// ----------------------- //
+// Global variable decl    //
+// ----------------------- //
 struct GlobalVarDecl {
   TypeDesc type;
   std::string name;
   std::unique_ptr<Expression> init;
   bool isConst = false;
+  bool isPublic = false;
 
   GlobalVarDecl(TypeDesc t, std::string n, std::unique_ptr<Expression> i,
-                bool c = false)
-      : type(std::move(t)), name(std::move(n)), init(std::move(i)), isConst(c) {
+                bool c = false, bool pub = false)
+      : type(std::move(t)), name(std::move(n)), init(std::move(i)), isConst(c),
+        isPublic(pub) {}
+  void toJson(std::ostream &os, int indent = 0) const {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"GlobalVarDecl\","
+       << "\"type\":" << json_utils::escape(type.fullName()) << ","
+       << "\"name\":" << json_utils::escape(name) << ","
+       << "\"const\":" << (isConst ? "true" : "false") << ","
+       << "\"public\":" << (isPublic ? "true" : "false") << ","
+       << "\"init\":";
+    if (init)
+      init->toJson(os, indent + 2);
+    else
+      os << "null";
+    os << "}";
   }
 };
 
+// ------- //
+// Program //
+// ------- //
 struct Program {
   std::vector<std::unique_ptr<ImportDecl>> imports;
-  std::vector<std::unique_ptr<GlobalVarDecl>> globals; // <-- new
+  std::vector<std::unique_ptr<GlobalVarDecl>> globals;
   std::vector<std::unique_ptr<Function>> functions;
+  std::vector<std::unique_ptr<StructDecl>> structs;
+  std::vector<ExternBlock> externBlocks;
 
   Program() = default;
   void toJson(std::ostream &os = std::cout, int indent = 0) const {
     std::string p(indent, ' ');
-    os << p << "{\"kind\":\"Program\",\"functions\":[";
+    os << p << "{\"kind\":\"Program\",";
+
+    os << "\"structs\":[";
+    for (size_t i = 0; i < structs.size(); ++i) {
+      if (i)
+        os << ",";
+      structs[i]->toJson(os, indent + 2);
+    }
+    os << "],";
+
+    os << "\"externBlocks\":[";
+    for (size_t i = 0; i < externBlocks.size(); ++i) {
+      if (i)
+        os << ",";
+      externBlocks[i].toJson(os, indent + 2);
+    }
+    os << "],";
+
+    os << "\"globals\":[";
+    for (size_t i = 0; i < globals.size(); ++i) {
+      if (i)
+        os << ",";
+      globals[i]->toJson(os, indent + 2);
+    }
+    os << "],";
+
+    os << "\"functions\":[";
     for (size_t i = 0; i < functions.size(); ++i) {
       if (i)
         os << ",";
@@ -667,6 +859,6 @@ struct Program {
 // --------------------- //
 namespace AST_H {
 using Function = ::Function;
-}
+} // namespace AST_H
 
 #endif

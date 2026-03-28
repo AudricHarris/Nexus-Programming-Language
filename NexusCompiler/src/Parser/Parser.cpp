@@ -1,6 +1,7 @@
 #include "Parser.h"
 #include "../Token/TokenType.h"
 #include "ParserError.h"
+#include <iostream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -82,26 +83,28 @@ void Parser::synchronize() {
   }
 }
 
-// ---------------------- //
-// Type-keyword detection //
-// ---------------------- //
+bool Parser::isIdentWord(std::string_view word) const {
+  return peek().getKind() == TokenKind::IDENTIFIER && peek().getWord() == word;
+}
+
+// ----------------------------------------- //
+// Type-keyword helpers                       //
+// ----------------------------------------- //
 static bool isScalarTypeName(const std::string &w) {
   return w == "i32" || w == "i64" || w == "i16" || w == "i8" || w == "f32" ||
          w == "f64" || w == "bool" || w == "void" || w == "int" ||
          w == "integer" || w == "long" || w == "short" || w == "float" ||
-         w == "double" || w == "string" || w == "str" || w == "char";
+         w == "double" || w == "string" || w == "str" || w == "char" ||
+         w == "ptr";
 }
 
 static bool looksLikeType(const Token &tok) {
-  return tok.getKind() == TokenKind::IDENTIFIER &&
-         isScalarTypeName(tok.getWord());
+  return tok.getKind() == TokenKind::IDENTIFIER;
 }
 
-// --------------- //
-// Top-level parse //
-// --------------- //
 std::unique_ptr<Program> Parser::parse() {
   auto prog = std::make_unique<Program>();
+
   while (!isAtEnd()) {
     try {
       if (check(TokenKind::IMPORT)) {
@@ -109,37 +112,141 @@ std::unique_ptr<Program> Parser::parse() {
         continue;
       }
 
+      {
+        size_t offset = 0;
+        if (check(TokenKind::PUBLIC) || check(TokenKind::PRIVATE))
+          offset = 1;
+        if (peekAt(offset).getKind() == TokenKind::IDENTIFIER &&
+            peekAt(offset).getWord() == "extern") {
+          if (offset == 1)
+            consume();
+          prog->externBlocks.push_back(parseExternBlock());
+          continue;
+        }
+      }
+
       bool isPublic = false;
       if (check(TokenKind::PUBLIC)) {
         consume();
         isPublic = true;
+      } else if (check(TokenKind::PRIVATE)) {
+        consume();
+      }
+
+      if (isIdentWord("struct")) {
+        auto s = parseStructDecl();
+        s->isPublic = isPublic;
+        prog->structs.push_back(std::move(s));
+        continue;
       }
 
       bool nextIsConst = check(TokenKind::CONST);
       const Token &typeCheck = nextIsConst ? peekAt(1) : peek();
-
       if (looksLikeType(typeCheck)) {
-        prog->globals.push_back(parseGlobalVarDecl());
-        continue;
+        size_t typeOff = nextIsConst ? 1 : 0;
+        if (peekAt(typeOff + 1).getKind() == TokenKind::IDENTIFIER &&
+            peekAt(typeOff + 2).getKind() != TokenKind::LPAREN) {
+          auto gv = parseGlobalVarDecl();
+          gv->isPublic = isPublic;
+          prog->globals.push_back(std::move(gv));
+          continue;
+        }
       }
 
-      if (isPublic) {
-        prog->functions.push_back(parseFunctionDecl());
-        continue;
-      }
+      auto fn = parseFunctionDecl();
+      fn->isPublic = isPublic;
+      prog->functions.push_back(std::move(fn));
 
-      prog->functions.push_back(parseFunctionDecl());
-
-    } catch (const ParseError &) {
+    } catch (const ParseError &e) {
+      std::cerr << e.what() << "\n";
       synchronize();
     }
   }
+
   return prog;
 }
 
-// --------------------------- //
-// GLobal & import Declaration //
-// --------------------------- //
+ExternBlock Parser::parseExternBlock() {
+  consume();
+
+  if (peek().getKind() != TokenKind::LIT_STRING || peek().getWord() != "C") {
+    throw ParseError(peek().getLine(), peek().getColumn(),
+                     "Expected \"C\" after extern");
+  }
+  consume();
+
+  expect(TokenKind::LBRACE, "Expected '{' after extern \"C\"");
+
+  ExternBlock block;
+
+  while (!check(TokenKind::RBRACE) && !isAtEnd()) {
+    bool declPrivate = false;
+
+    if (check(TokenKind::PRIVATE)) {
+      consume();
+      declPrivate = true;
+    } else if (check(TokenKind::PUBLIC)) {
+      consume();
+    }
+
+    Token nameTok =
+        expect(TokenKind::IDENTIFIER, "Expected function name in extern block");
+    expect(TokenKind::LPAREN, "Expected '('");
+
+    std::vector<TypeDesc> paramTypes;
+    if (!check(TokenKind::RPAREN)) {
+      do {
+        Token typeTok =
+            expect(TokenKind::IDENTIFIER, "Expected parameter type");
+        if (check(TokenKind::IDENTIFIER))
+          consume();
+        paramTypes.emplace_back(Identifier{typeTok});
+      } while (match(TokenKind::COMMA));
+    }
+    expect(TokenKind::RPAREN, "Expected ')'");
+
+    Token voidTok{TokenKind::IDENTIFIER, "void", nameTok.getLine(), 0};
+    TypeDesc retType{Identifier{voidTok}};
+    if (match(TokenKind::RETURN_TYPE)) {
+      Token retTok = expect(TokenKind::IDENTIFIER, "Expected return type");
+      retType = TypeDesc{Identifier{retTok}};
+    }
+
+    expect(TokenKind::SEMI, "Expected ';'");
+    block.decls.emplace_back(nameTok.getWord(), std::move(paramTypes),
+                             std::move(retType), declPrivate);
+  }
+
+  expect(TokenKind::RBRACE, "Expected '}' to close extern block");
+  return block;
+}
+
+// ------------------- //
+// Struct declaration  //
+// ------------------- //
+std::unique_ptr<StructDecl> Parser::parseStructDecl() {
+  consume();
+  Token nameTok = expect(TokenKind::IDENTIFIER, "Expected struct name");
+  expect(TokenKind::LBRACE, "Expected '{'");
+
+  auto decl = std::make_unique<StructDecl>();
+  decl->name = nameTok.getWord();
+
+  while (!check(TokenKind::RBRACE) && !isAtEnd()) {
+    Token typeTok = expect(TokenKind::IDENTIFIER, "Expected field type");
+    Token fieldTok = expect(TokenKind::IDENTIFIER, "Expected field name");
+    expect(TokenKind::SEMI, "Expected ';' after field");
+    decl->fields.emplace_back(TypeDesc{Identifier{typeTok}},
+                              fieldTok.getWord());
+  }
+
+  expect(TokenKind::RBRACE, "Expected '}'");
+  return decl;
+}
+
+// ------------------- //
+// Import declaration  //
+// ------------------- //
 std::unique_ptr<ImportDecl> Parser::parseImportDecl() {
   expect(TokenKind::IMPORT, "Expected 'import'");
 
@@ -164,19 +271,20 @@ std::unique_ptr<ImportDecl> Parser::parseImportDecl() {
       }
       expect(TokenKind::RBRACE, "Expected '}'");
       break;
-    } else {
-      Token seg = expect(TokenKind::IDENTIFIER, "Expected module path segment");
-      decl->path.segments.push_back(seg.getWord());
     }
+    Token seg = expect(TokenKind::IDENTIFIER, "Expected module path segment");
+    decl->path.segments.push_back(seg.getWord());
   }
 
   expect(TokenKind::SEMI, "Expected ';' after import");
   return decl;
 }
-
+// ----------------------- //
+// Global variable decl    //
+// ----------------------- //
 std::unique_ptr<GlobalVarDecl> Parser::parseGlobalVarDecl() {
   bool isConst = false;
-  if (peek().getKind() == TokenKind::CONST) {
+  if (check(TokenKind::CONST)) {
     consume();
     isConst = true;
   }
@@ -196,6 +304,7 @@ std::unique_ptr<GlobalVarDecl> Parser::parseGlobalVarDecl() {
 // Function declaration //
 // -------------------- //
 std::unique_ptr<Function> Parser::parseFunctionDecl() {
+  std::cout << peek().getWord();
   Token nameToken = expect(TokenKind::IDENTIFIER, "Expected function name");
   expect(TokenKind::LPAREN, "Expected '(' after function name");
 
@@ -203,11 +312,11 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
   if (!match(TokenKind::RPAREN)) {
     do {
       bool isBorrowRef = false, isConst = false;
-      if (peek().getKind() == TokenKind::AND) {
+      if (check(TokenKind::AND)) {
         consume();
         isBorrowRef = true;
       }
-      if (peek().getKind() == TokenKind::CONST) {
+      if (check(TokenKind::CONST)) {
         consume();
         isConst = true;
       }
@@ -253,9 +362,9 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
                                     TypeDesc(Identifier{voidTok}));
 }
 
-// --------- //
-// Block     //
-// --------- //
+// ------- //
+// Block   //
+// ------- //
 std::unique_ptr<Block> Parser::parseBlock(bool allowSingleStmt) {
   auto block = std::make_unique<Block>();
   if (check(TokenKind::LBRACE)) {
@@ -265,7 +374,8 @@ std::unique_ptr<Block> Parser::parseBlock(bool allowSingleStmt) {
         auto s = parseStatement();
         if (s)
           block->statements.push_back(std::move(s));
-      } catch (const ParseError &) {
+      } catch (const ParseError &e) {
+        std::cerr << e.what() << "\n";
         synchronize();
       }
     }
@@ -275,16 +385,17 @@ std::unique_ptr<Block> Parser::parseBlock(bool allowSingleStmt) {
       auto s = parseStatement();
       if (s)
         block->statements.push_back(std::move(s));
-    } catch (const ParseError &) {
+    } catch (const ParseError &e) {
+      std::cerr << e.what() << "\n";
       synchronize();
     }
   }
   return block;
 }
 
-// ------------------ //
-// Statement dispatch //
-// ------------------ //
+// ------------------------------------------------------------------ //
+// Statement dispatch                                                   //
+// ------------------------------------------------------------------ //
 std::unique_ptr<Statement> Parser::parseStatement() {
   if (match(TokenKind::RETURN))
     return parseReturnStatement();
@@ -292,12 +403,9 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     return parseIfStatement();
   if (match(TokenKind::WHILE))
     return parseWhileLoop();
-  if (peek().getKind() == TokenKind::CONTINUE ||
-      peek().getKind() == TokenKind::BREAK)
+  if (check(TokenKind::CONTINUE) || check(TokenKind::BREAK))
     return parseLoopBreak();
-
-  // const var decl
-  if (peek().getKind() == TokenKind::CONST)
+  if (check(TokenKind::CONST))
     return parseVarDeclStatement(AssignKind::Copy);
 
   if (looksLikeType(peekAt(0))) {
@@ -306,9 +414,9 @@ std::unique_ptr<Statement> Parser::parseStatement() {
            peekAt(offset + 1).getKind() == TokenKind::RBRACKET) {
       offset += 2;
     }
+
     if (peekAt(offset).getKind() == TokenKind::IDENTIFIER) {
-      size_t opOff = offset + 1;
-      TokenKind op = peekAt(opOff).getKind();
+      TokenKind op = peekAt(offset + 1).getKind();
       if (op == TokenKind::ASSIGN)
         return parseVarDeclStatement(AssignKind::Copy);
       if (op == TokenKind::MOVE)
@@ -316,8 +424,7 @@ std::unique_ptr<Statement> Parser::parseStatement() {
       if (op == TokenKind::BORROW)
         return parseVarDeclStatement(AssignKind::Borrow);
       if (op == TokenKind::SEMI)
-        throw ParseError(peek().getLine(), peek().getColumn(),
-                         "Variables must be initialised at declaration");
+        return parseVarDeclNoInit();
     }
   }
 
@@ -326,8 +433,30 @@ std::unique_ptr<Statement> Parser::parseStatement() {
   return std::make_unique<ExprStmt>(std::move(expr));
 }
 
+// ---------------------------------------- //
+// Uninitialised var decl:  TypeName name;  //
+// ---------------------------------------- //
+std::unique_ptr<VarDecl> Parser::parseVarDeclNoInit() {
+  Token typeTok = consume();
+  int dims = 0;
+  while (peek().getKind() == TokenKind::LBRACKET &&
+         peekAt(1).getKind() == TokenKind::RBRACKET) {
+    consume();
+    consume();
+    ++dims;
+  }
+  Token nameTok = expect(TokenKind::IDENTIFIER, "Expected variable name");
+  expect(TokenKind::SEMI, "Expected ';'");
+
+  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
+                               typeTok.getLine(), typeTok.getColumn()}},
+              dims);
+  return std::make_unique<VarDecl>(std::move(td), Identifier{nameTok}, nullptr,
+                                   AssignKind::Copy, false);
+}
+
 // ------------------------ //
-// Array assignment helpers //
+// Array assignment helper  //
 // ------------------------ //
 std::unique_ptr<Statement> Parser::parseArrayAssign() {
   Token arrTok = consume();
@@ -337,7 +466,7 @@ std::unique_ptr<Statement> Parser::parseArrayAssign() {
     expect(TokenKind::LBRACKET, "Expected '['");
     indices.push_back(parseExpression());
     expect(TokenKind::RBRACKET, "Expected ']'");
-    if (peek().getKind() != TokenKind::LBRACKET)
+    if (!check(TokenKind::LBRACKET))
       break;
   }
 
@@ -394,7 +523,6 @@ std::unique_ptr<Statement> Parser::parseLoopBreak() {
     expect(TokenKind::SEMI, "Expected ';' after continue");
     return std::make_unique<Continue>();
   }
-
   expect(TokenKind::BREAK, "Expected 'break' or 'continue'");
   expect(TokenKind::SEMI, "Expected ';' after break");
   return std::make_unique<Break>();
@@ -405,16 +533,16 @@ std::unique_ptr<Statement> Parser::parseLoopBreak() {
 // -------------------- //
 std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
   bool isConst = false;
-  if (peek().getKind() == TokenKind::CONST) {
+  if (check(TokenKind::CONST)) {
     consume();
     isConst = true;
   }
 
   Token typeTok = consume();
   int dims = 0;
-  while (peek().getKind() == TokenKind::LBRACKET) {
-    expect(TokenKind::LBRACKET, "");
-    expect(TokenKind::RBRACKET, "");
+  while (check(TokenKind::LBRACKET)) {
+    consume();
+    expect(TokenKind::RBRACKET, "Expected ']'");
     ++dims;
   }
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected variable name");
@@ -448,6 +576,7 @@ std::unique_ptr<Expression> Parser::parseExpression() {
 
 std::unique_ptr<Expression> Parser::parseAssignment() {
   auto left = parseOr();
+
   if (match(TokenKind::ASSIGN)) {
     if (auto *id = dynamic_cast<IdentExpr *>(left.get())) {
       auto val = parseAssignment();
@@ -458,6 +587,11 @@ std::unique_ptr<Expression> Parser::parseAssignment() {
       auto val = parseAssignment();
       return std::make_unique<ArrayIndexAssignExpr>(
           ai->array, std::move(ai->indices), std::move(val));
+    }
+    if (auto *fa = dynamic_cast<FieldAccessExpr *>(left.get())) {
+      auto val = parseAssignment();
+      return std::make_unique<FieldAssignExpr>(fa->object, fa->field,
+                                               std::move(val));
     }
     throw ParseError(peek().getLine(), peek().getColumn(),
                      "Invalid assignment target");
@@ -509,13 +643,13 @@ std::unique_ptr<Expression> Parser::parseAnd() {
 std::unique_ptr<Expression> Parser::parseEquality() {
   auto expr = parseComparison();
   while (true) {
-    if (match(TokenKind::EQ)) {
+    if (match(TokenKind::EQ))
       expr = std::make_unique<BinaryExpr>(BinaryOp::Eq, std::move(expr),
                                           parseComparison());
-    } else if (match(TokenKind::NE)) {
+    else if (match(TokenKind::NE))
       expr = std::make_unique<BinaryExpr>(BinaryOp::Ne, std::move(expr),
                                           parseComparison());
-    } else
+    else
       break;
   }
   return expr;
@@ -577,10 +711,8 @@ std::unique_ptr<Expression> Parser::parseMultiplicative() {
 std::unique_ptr<Expression> Parser::parseUnary() {
   if (match(TokenKind::NOT))
     return std::make_unique<UnaryExpr>(UnaryOp::Not, parseUnary());
-
-  if (match(TokenKind::SUB)) {
+  if (match(TokenKind::SUB))
     return std::make_unique<UnaryExpr>(UnaryOp::Negate, parseUnary());
-  }
   return parsePostfix();
 }
 
@@ -595,26 +727,33 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
         expect(TokenKind::RBRACKET, "Expected ']'");
       } while (match(TokenKind::LBRACKET));
 
-      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+      if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
         expr = std::make_unique<ArrayIndexExpr>(id->name, std::move(indices));
-      } else {
+      else
         throw ParseError(peek().getLine(), peek().getColumn(),
                          "Indexing requires an identifier");
-      }
-      continue; // loop back — now we can see the .length
+      continue;
     }
 
     if (match(TokenKind::DOT)) {
       Token prop = expect(TokenKind::IDENTIFIER, "Expected property name");
+
       if (prop.getWord() == "length") {
         if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
           return std::make_unique<LengthPropertyExpr>(id->name);
         if (auto *arr = dynamic_cast<ArrayIndexExpr *>(expr.get()))
           return std::make_unique<IndexedLengthExpr>(arr->array,
                                                      std::move(arr->indices));
+        throw ParseError(prop.getLine(), prop.getColumn(),
+                         "'.length' requires an array identifier");
       }
-      throw ParseError(peek().getLine(), peek().getColumn(),
-                       "Unknown property: " + prop.getWord());
+
+      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+        expr = std::make_unique<FieldAccessExpr>(id->name, prop.getWord());
+        continue;
+      }
+      throw ParseError(prop.getLine(), prop.getColumn(),
+                       "Field access requires an identifier on the left");
     }
 
     if (match(TokenKind::INCREMENT)) {
@@ -629,12 +768,19 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
       throw ParseError(peek().getLine(), peek().getColumn(),
                        "'--' requires an identifier");
     }
+
     break;
   }
   return expr;
 }
 
 std::unique_ptr<Expression> Parser::parsePrimary() {
+  // null literal
+  if (isIdentWord("null")) {
+    consume();
+    return std::make_unique<NullLitExpr>();
+  }
+
   Token tok = consume();
   switch (tok.getKind()) {
   case TokenKind::LIT_INT:
@@ -676,19 +822,16 @@ std::unique_ptr<Expression> Parser::parseNewArray() {
 
   std::vector<ExprPtr> sizes;
   expect(TokenKind::LBRACKET, "Expected '['");
-
   do {
     sizes.push_back(parseExpression());
     expect(TokenKind::RBRACKET, "Expected ']'");
-    if (peek().getKind() != TokenKind::LBRACKET)
+    if (!check(TokenKind::LBRACKET))
       break;
     consume();
   } while (true);
 
-  const std::string &baseName = elemTok.getWord();
-  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, baseName,
+  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, elemTok.getWord(),
                                elemTok.getLine(), elemTok.getColumn()}},
               sizes.size());
-
   return std::make_unique<NewArrayExpr>(std::move(td), std::move(sizes));
 }
