@@ -184,8 +184,6 @@ llvm::Value *TypeResolver::coerce(llvm::IRBuilder<> &B, llvm::Value *val,
       if (tb < sb)
         return B.CreateTrunc(val, target, "trunc");
     }
-    if (src->isFloatingPointTy())
-      return B.CreateFPToSI(val, target, "fptosi");
   }
 
   return val;

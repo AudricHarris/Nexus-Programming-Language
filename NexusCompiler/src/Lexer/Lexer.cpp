@@ -5,9 +5,6 @@
 #include <string_view>
 #include <vector>
 
-// ------------------- //
-// DFA states          //
-// ------------------- //
 enum class State : uint8_t {
   S0,
   S1,
@@ -33,9 +30,6 @@ enum class State : uint8_t {
   ERR
 };
 
-// ---------------------- //
-// Input categories       //
-// ---------------------- //
 enum class InputCat : uint8_t {
   PLUS,
   MINUS,
@@ -64,66 +58,38 @@ static constexpr State E = State::END;
 static constexpr State AC = State::ACCEPT;
 static constexpr State ER = State::ERR;
 
-// -------------------------------- //
-// Transition table (T[state][cat]) //
-// -------------------------------- //
-
-// If futur me updated the github the transition table should be there
-
-// Symbol order :
-//        PLUS   MINUS  SLASH  DIGIT  DOT    LTR    EQ     LT     GT     AMP
-//        BANG   PIPE   Q_D    Q_S    BRKT   UNI    OTHER
-
 static constexpr State T[NSTATES][NCATS] = {
     /*S0*/ {State::S1, State::S2, State::S3, State::S4, E, State::S7, State::S8,
             State::S9, State::S10, State::S11, State::S12, State::S13,
             State::S14, State::S15, E, E, ER},
-
     /*S1*/ {AC, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-
     /*S2*/ {E, AC, E, E, E, E, E, E, AC, E, E, E, E, E, E, E, E},
-
     /*S3*/ {E, E, AC, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-
     /*S4*/ {E, E, E, State::S4, State::S5, E, E, E, E, E, E, E, E, E, E, E, E},
-
     /*S5*/
     {ER, ER, ER, State::S6, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER},
-
     /*S6*/ {E, E, E, State::S6, E, E, E, E, E, E, E, E, E, E, E, E, E},
-
     /*S7*/ {E, E, E, State::S7, E, State::S7, E, E, E, E, E, E, E, E, E, E, E},
-
     /*S8*/ {E, E, E, E, E, E, AC, E, E, E, E, E, E, E, E, E, E},
-
     /*S9*/ {E, AC, E, E, E, E, AC, E, E, E, E, E, E, E, E, E, E},
-
     /*S10*/ {E, E, E, E, E, E, AC, E, E, E, E, E, E, E, E, E, E},
-
     /*S11*/ {E, E, E, E, E, E, AC, E, E, AC, E, E, E, E, E, E, E},
-
     /*S12*/ {E, E, E, E, E, E, AC, E, E, E, E, E, E, E, E, E, E},
-
     /*S13*/
     {ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, AC, ER, ER, ER, ER, ER},
-
     /*S14*/
     {State::S14, State::S14, State::S14, State::S14, State::S14, State::S14,
      State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, E,
      State::S14, State::S14, State::S14, State::S14},
-
     /*S15*/
     {State::S16, State::S16, State::S16, State::S16, State::S16, State::S16,
      State::S16, State::S16, State::S16, State::S16, State::S16, State::S16,
      State::S16, ER, State::S16, State::S16, State::S16},
-
     /*S16*/ {ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, E, ER, ER, ER},
-
     /*S17*/
     {State::S18, State::S18, State::S18, State::S18, State::S18, State::S18,
      State::S18, State::S18, State::S18, State::S18, State::S18, State::S18,
      State::S18, State::S18, State::S18, State::S18, State::S18},
-
     /*S18*/ {ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, E, ER, ER, ER},
 };
 
@@ -144,11 +110,6 @@ static constexpr TokenKind T2[14][2] = {
     {TokenKind::OR, TokenKind::UNKNOWN},
 };
 
-// ------------------- //
-// Helper functions    //
-// ------------------- //
-
-// Lookup table: maps ASCII (0-127) to InputCat
 static constexpr InputCat catTable[128] = {
     InputCat::OTHER,        InputCat::OTHER,        InputCat::OTHER,
     InputCat::OTHER,        InputCat::OTHER,        InputCat::OTHER,
@@ -234,7 +195,6 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
     if (w == "public")
       return TokenKind::PUBLIC;
     break;
-
   case 7:
     if (w == "private")
       return TokenKind::PRIVATE;
@@ -279,10 +239,6 @@ static inline TokenKind singleCharKind(char c) {
     return TokenKind::UNKNOWN;
   }
 }
-
-// ------------------- //
-// Lexer methods       //
-// ------------------- //
 
 void Lexer::skipWhitespace() {
   const char *p = this->src + this->pos;
@@ -346,9 +302,6 @@ Token Lexer::makeToken(TokenKind k, std::string_view spelling) {
   return Token(k, spelling, line, col);
 }
 
-// ------------------- //
-// Main tokenization   //
-// ------------------- //
 std::vector<Token> Lexer::Tokenize() {
   this->src = this->codeFile.data();
   this->srcLen = this->codeFile.size();
@@ -395,16 +348,23 @@ std::vector<Token> Lexer::Tokenize() {
 
     size_t spellingStart = this->pos;
     bool isLiteral = (first == State::S14 || first == State::S15);
+    bool isNumber = (first == State::S4);
 
     ++this->pos;
     ++this->col;
 
     State state = first;
+    State lastSignificantState = first;
 
     while (this->pos < this->srcLen) {
       c = this->src[this->pos];
       icat = static_cast<int>(classify(c));
       State ns = T[static_cast<int>(state)][icat];
+
+      if (state != State::ACCEPT && state != State::END &&
+          state != State::ERR) {
+        lastSignificantState = state;
+      }
 
       if (ns == State::END || ns == State::ACCEPT) {
         if ((state == State::S14 &&
@@ -413,6 +373,9 @@ std::vector<Token> Lexer::Tokenize() {
              static_cast<InputCat>(icat) == InputCat::QUOTE_S)) {
           ++this->pos;
           ++this->col;
+          if (state != State::ACCEPT && state != State::END) {
+            lastSignificantState = state;
+          }
         } else if (ns == State::ACCEPT) {
           ++this->pos;
           ++this->col;
@@ -421,6 +384,7 @@ std::vector<Token> Lexer::Tokenize() {
         state = ns;
         break;
       }
+
       if (ns == State::ERR) {
         state = ns;
         break;
@@ -453,6 +417,16 @@ std::vector<Token> Lexer::Tokenize() {
 
     int fi = static_cast<int>(first);
 
+    if (isNumber) {
+      if (lastSignificantState == State::S5 ||
+          lastSignificantState == State::S6) {
+        lstTokens.push_back(makeToken(TokenKind::LIT_FLOAT, spelling));
+      } else {
+        lstTokens.push_back(makeToken(TokenKind::LIT_INT, spelling));
+      }
+      continue;
+    }
+
     if (fi >= 1 && fi <= 13) {
       TokenKind kind;
       if (first == State::S2 && spelling == "->") {
@@ -464,19 +438,14 @@ std::vector<Token> Lexer::Tokenize() {
       } else if (first == State::S7) {
         kind = keywordOrIdent(spelling);
       } else {
-        kind = T2[fi][state == State::ACCEPT ? 0 : 1];
+        bool isAccept = (state == State::ACCEPT);
+        kind = T2[fi][isAccept ? 0 : 1];
       }
       lstTokens.push_back(makeToken(kind, spelling));
       continue;
     }
 
-    switch (first) {
-    case State::S4:
-      lstTokens.push_back(makeToken(TokenKind::LIT_INT, spelling));
-      break;
-    case State::S6:
-      lstTokens.push_back(makeToken(TokenKind::LIT_FLOAT, spelling));
-      break;
+    switch (lastSignificantState) {
     case State::S14:
       lstTokens.push_back(makeToken(TokenKind::LIT_STRING, spelling));
       break;

@@ -240,6 +240,7 @@ int main(int argc, char *argv[]) {
     auto start = std::chrono::high_resolution_clock::now();
     Lexer lexer(code);
     std::vector<Token> tokens = lexer.Tokenize();
+
     auto end = std::chrono::high_resolution_clock::now();
 
     double elapsedMs =
