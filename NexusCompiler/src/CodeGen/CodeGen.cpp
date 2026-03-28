@@ -206,13 +206,11 @@ Value *CodeGenerator::logError(const char *msg) {
 // ------------------- //
 
 Value *CodeGenerator::visitIntLit(const IntLitExpr &e) {
-  llvm::errs() << "IntLit token word: '" << e.lit.getWord() << "'\n";
   return ConstantInt::get(Type::getInt32Ty(context),
                           std::stoll(e.lit.getWord()));
 }
 
 Value *CodeGenerator::visitFloatLit(const FloatLitExpr &e) {
-  llvm::errs() << "FloatLit token word: '" << e.lit.getWord() << "'\n";
   return ConstantFP::get(Type::getFloatTy(context), std::stod(e.lit.getWord()));
 }
 
