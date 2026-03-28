@@ -2,15 +2,15 @@
 /![NO_WARNINGS]!/
 Main()
 {
-	let[] t = new char[5];
+	char[] t = new char[5];
 	
-	let cpt = 0;
+	i32 cpt = 0;
 	while (cpt < 5)
 	{
 		cpt++;
 	}
 	cpt = 0;
-	let tmp = 'a';
+	char tmp = 'a';
 	while (cpt < 5)
 	{
 		Printf("{tmp}\n");

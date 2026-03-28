@@ -21,14 +21,14 @@ const KEYWORDS = [
   'if', 'else', 'for', 'while', 'return', 'match', 'new',
   'export', 'import', 'static', 'self', 'Sequential',
   'true', 'false', 'public', 'private', 'protected',
-  'const', 'sum', 'class', 'implement', 'Constructor', 'Factory',
+  'const', 'sum', 'class', 'implement', 'Constructor', 'Factory', 'struct', 'extern'
 ];
 
 const TYPES = [
-  'i8', 'i16', 'i32', 'i64',
+  'i8', 'i16', 'i32', 'i64', 'int'
   'u8', 'u16', 'u32', 'u64',
-  'f32', 'f64',
-  'bool', 'char', 'str', 'string', 'void',
+  'f32', 'f64', 'float'
+  'bool', 'char', 'str', 'string', 'void', 'ptr',
   'let',
 ];
 
