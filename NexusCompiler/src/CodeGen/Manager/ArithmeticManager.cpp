@@ -75,10 +75,13 @@ Value *ArithmeticManager::emitBinaryOp(IRBuilder<> &B, LLVMContext &ctx,
   if (l->getType()->isIntegerTy() && r->getType()->isIntegerTy()) {
     unsigned lb = l->getType()->getIntegerBitWidth();
     unsigned rb = r->getType()->getIntegerBitWidth();
-    if (lb < rb)
-      l = B.CreateSExt(l, r->getType());
-    else if (rb < lb)
-      r = B.CreateSExt(r, l->getType());
+    if (lb < rb) {
+      l = (lb == 1) ? B.CreateZExt(l, r->getType())
+                    : B.CreateSExt(l, r->getType());
+    } else if (rb < lb) {
+      r = (rb == 1) ? B.CreateZExt(r, l->getType())
+                    : B.CreateSExt(r, l->getType());
+    }
   }
 
   bool lf = l->getType()->isFloatingPointTy();
@@ -122,18 +125,30 @@ Value *ArithmeticManager::emitBinaryOp(IRBuilder<> &B, LLVMContext &ctx,
   case BinaryOp::Mod:
     return B.CreateSRem(promoteToInt(B, ctx, l), promoteToInt(B, ctx, r),
                         "srem");
+
   case BinaryOp::BitAnd:
     return B.CreateAnd(l, r, "bitand");
 
-  case BinaryOp::And:
-    l = B.CreateICmpNE(l, ConstantInt::get(l->getType(), 0), "l.bool");
-    r = B.CreateICmpNE(r, ConstantInt::get(r->getType(), 0), "r.bool");
-    return B.CreateAnd(l, r, "land");
+  case BinaryOp::And: {
+    Value *lb =
+        lf ? B.CreateFCmpONE(l, ConstantFP::get(l->getType(), 0.0), "l.bool")
+           : B.CreateICmpNE(l, ConstantInt::get(l->getType(), 0), "l.bool");
+    Value *rb =
+        rf ? B.CreateFCmpONE(r, ConstantFP::get(r->getType(), 0.0), "r.bool")
+           : B.CreateICmpNE(r, ConstantInt::get(r->getType(), 0), "r.bool");
+    return B.CreateAnd(lb, rb, "land");
+  }
 
-  case BinaryOp::Or:
-    l = B.CreateICmpNE(l, ConstantInt::get(l->getType(), 0), "l.bool");
-    r = B.CreateICmpNE(r, ConstantInt::get(r->getType(), 0), "r.bool");
-    return B.CreateOr(l, r, "lor");
+  case BinaryOp::Or: {
+    Value *lb =
+        lf ? B.CreateFCmpONE(l, ConstantFP::get(l->getType(), 0.0), "l.bool")
+           : B.CreateICmpNE(l, ConstantInt::get(l->getType(), 0), "l.bool");
+    Value *rb =
+        rf ? B.CreateFCmpONE(r, ConstantFP::get(r->getType(), 0.0), "r.bool")
+           : B.CreateICmpNE(r, ConstantInt::get(r->getType(), 0), "r.bool");
+    return B.CreateOr(lb, rb, "lor");
+  }
+
   default:
     return nullptr;
   }

@@ -1,4 +1,5 @@
 #include "ModuleManager.h"
+#include "../../FileReader/FileReader.h"
 #include "../../Lexer/Lexer.h"
 #include "../../Parser/Parser.h"
 #include <algorithm>
@@ -27,11 +28,14 @@ std::unique_ptr<Program> ModuleManager::parseFile(const fs::path &file) {
   if (!f)
     throw std::runtime_error("Cannot open module: " + file.string());
 
-  std::ostringstream ss;
-  ss << f.rdbuf();
-  std::string src = ss.str();
+  std::optional<std::string> codeOpt = readFile(file.c_str());
+  if (!codeOpt.has_value()) {
+    std::cerr << "Failed to read file: " << file << "\n";
+  }
 
-  Lexer lexer(src);
+  std::string code = codeOpt.value();
+
+  Lexer lexer(code);
   auto tokens = lexer.Tokenize();
   Parser parser(std::move(tokens));
   return parser.parse();

@@ -351,9 +351,9 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
 
       Value *cat = StringOps::concat(builder, context, module.get(), lhs, rhs);
       return cat;
-    } else {
-      return builder.CreateAdd(lhs, rhs, "addtmp");
     }
+    // Fall through to emitBinaryOp — it handles integer widening (e.g. i8
+    // char literal + i32) that the old direct CreateAdd call did not.
   }
 
   bool lIsStr = TypeResolver::isString(lTy);
@@ -798,11 +798,9 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   if (!elemType)
     return logError(("Unknown element type: " + typeName).c_str());
 
-  // Do NOT pre-wrap elemType here. ArrayEmitter::makeND / buildLevel
-  // computes the correct intermediate array-struct types itself based on
-  // the dims array. Pre-wrapping caused one extra level of nesting per
-  // dimension (e.g. array.array.array.Cell instead of array.array.Cell
-  // for a 2-D new).
+  // Do NOT pre-wrap elemType. buildLevel inside makeND wraps types correctly
+  // per level from the dims array. Pre-wrapping here added one extra nesting
+  // level per dimension (e.g. array.array.array.Cell for a 2-D new Cell[]).
 
   std::vector<Value *> dimValues;
   for (auto &sizeExpr : e.sizes) {
@@ -1193,9 +1191,10 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   if (!ty)
     return logError(("Unknown type: " + typeName).c_str());
 
+  AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
+  VarInfo vi(alloca, ty, false, false, false, d.isConst);
+
   if (!d.initializer) {
-    AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
-    VarInfo vi(alloca, ty, false, false, false, d.isConst);
     namedValues[name] = vi;
     scopeMgr.declare(name);
     return alloca;
@@ -1208,20 +1207,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   Value *init = codegen(*d.initializer);
   if (!init)
     return nullptr;
-
-  // When the initializer is `new T[...]`, makeND returns an AllocaInst whose
-  // allocated type is the correct outermost array-struct (e.g. array.array.Cell
-  // for Cell[10][20]). Using the declared type `ty` here (which resolves to the
-  // element type Cell) produces a 4-byte alloca that is immediately overwritten
-  // with 16 bytes of array descriptor, corrupting the stack and causing a SEGV
-  // in the first function that tries to read it back as an array.
-  if (dynamic_cast<const NewArrayExpr *>(d.initializer.get())) {
-    if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(init))
-      ty = srcAI->getAllocatedType();
-  }
-
-  AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
-  VarInfo vi(alloca, ty, false, false, false, d.isConst);
 
   switch (d.kind) {
   case AssignKind::Copy: {
@@ -1255,13 +1240,34 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
       }
       vi.ownsHeap = true;
 
-    } else if (TypeResolver::isArray(ty)) {
+    } else if (TypeResolver::isArray(ty) ||
+               dynamic_cast<const NewArrayExpr *>(d.initializer.get())) {
+      // When the initializer is `new T[d0][d1]...`, makeND returns an
+      // AllocaInst typed as the outermost array struct (e.g. array.array.Cell
+      // for Cell[10][20]). The declared `ty` was resolved from the source type
+      // annotation and may be the raw element type (Cell), which is only 4
+      // bytes. Using it for the alloca produces a too-small slot; the 16-byte
+      // array descriptor then overwrites adjacent stack, corrupting the pointer
+      // field that Generate reads — hence the SEGV.
+      // Fix: read the real type back off the AllocaInst returned by makeND.
+      bool isNew =
+          dynamic_cast<const NewArrayExpr *>(d.initializer.get()) != nullptr;
+      if (isNew) {
+        if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(init)) {
+          Type *realTy = srcAI->getAllocatedType();
+          if (realTy != ty) {
+            // Recreate the alloca with the correct type and update VarInfo.
+            alloca = builder.CreateAlloca(realTy, nullptr, name);
+            ty = realTy;
+            vi = VarInfo(alloca, ty, false, false, false, d.isConst);
+          }
+        }
+      }
       Value *arrVal = init->getType()->isPointerTy()
                           ? builder.CreateLoad(ty, init, name + ".arr.load")
                           : init;
       builder.CreateStore(arrVal, alloca);
-      vi.ownsHeap =
-          dynamic_cast<const NewArrayExpr *>(d.initializer.get()) != nullptr;
+      vi.ownsHeap = isNew;
 
     } else if (ty->isStructTy()) {
       Value *structVal = init;
