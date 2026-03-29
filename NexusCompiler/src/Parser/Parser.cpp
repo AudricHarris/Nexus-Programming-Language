@@ -822,6 +822,11 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
   case TokenKind::NEW:
     --currentIndex;
     return parseNewArray();
+  case TokenKind::LPAREN: {
+    auto expr = parseExpression();
+    expect(TokenKind::RPAREN, "Expected ')' after grouped expression");
+    return expr;
+  }
   case TokenKind::IDENTIFIER: {
     Identifier id{tok};
     if (match(TokenKind::LPAREN)) {
