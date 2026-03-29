@@ -25,9 +25,9 @@ const KEYWORDS = [
 ];
 
 const TYPES = [
-  'i8', 'i16', 'i32', 'i64', 'int'
+  'i8', 'i16', 'i32', 'i64', 'int',
   'u8', 'u16', 'u32', 'u64',
-  'f32', 'f64', 'float'
+  'f32', 'f64', 'float',
   'bool', 'char', 'str', 'string', 'void', 'ptr',
   'let',
 ];

@@ -977,13 +977,20 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
     auto it = namedValues.find(name);
     if (it == namedValues.end())
       return {nullptr, nullptr};
-    auto *st = llvm::dyn_cast<llvm::StructType>(it->second.type);
-    if (!st)
-      return {nullptr, nullptr};
+
     Value *ptr = it->second.allocaInst;
-    if (it->second.isReference)
+    Type *ty = it->second.type;
+
+    if (it->second.isReference) {
       ptr =
           builder.CreateLoad(PointerType::get(context, 0), ptr, name + ".ref");
+      ty = it->second.pointeeType ? it->second.pointeeType : ty;
+    }
+
+    auto *st = llvm::dyn_cast<llvm::StructType>(ty);
+    if (!st)
+      return {nullptr, nullptr};
+
     return {ptr, st};
   }
 
@@ -996,8 +1003,6 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
     Value *ptr = it->second.allocaInst;
     Type *ty = it->second.type;
 
-    // ensureArrayDepth: if ty is the leaf element type (pointeeType bug),
-    // wrap it up to the correct array depth using getOrCreateArrayStruct.
     auto ensureArrayDepth = [&](Type *t, size_t depth) -> Type * {
       auto *maybeSt = llvm::dyn_cast<llvm::StructType>(t);
       if (maybeSt && TypeResolver::isArray(maybeSt))
@@ -1058,7 +1063,6 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
     return {nullptr, nullptr};
   }
 
-  // Handle a FieldAccessExpr as the base object (e.g. a.b.c).
   if (auto *fa = dynamic_cast<const FieldAccessExpr *>(&expr)) {
     auto [basePtr, baseSt] = resolveStructPtr(*fa->object);
     if (!basePtr || !baseSt)

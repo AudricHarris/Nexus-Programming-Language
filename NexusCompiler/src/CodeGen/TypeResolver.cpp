@@ -185,6 +185,16 @@ llvm::Value *TypeResolver::coerce(llvm::IRBuilder<> &B, llvm::Value *val,
         return B.CreateTrunc(val, target, "trunc");
     }
   }
+  if (target->isIntegerTy() && src->isFloatingPointTy()) {
+    if (target->isIntegerTy(1)) {
+      return B.CreateFCmpUNE(val, llvm::ConstantFP::get(src, 0.0), "tobool");
+    }
+    return B.CreateFPToSI(val, target, "fptosi");
+  }
 
+  if (target->isFloatingPointTy() && src->isIntegerTy()) {
+    return B.CreateSIToFP(val, target,
+                          target->isDoubleTy() ? "sitofp.d" : "sitofp.f");
+  }
   return val;
 }
