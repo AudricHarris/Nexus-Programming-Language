@@ -81,6 +81,7 @@ private:
   llvm::Value *codegen(const Expression &expr);
 
   // Statement visitors
+  llvm::AllocaInst *createEntryAlloca(llvm::Type *ty, const std::string &name);
   llvm::Value *visitVarDecl(const VarDecl &d);
   llvm::Value *visitIfStmt(const IfStmt &s);
   llvm::Value *visitWhileStmt(const WhileStmt &s);

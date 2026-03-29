@@ -1220,6 +1220,14 @@ Value *CodeGenerator::codegen(const Expression &expr) {
 // ------------------ //
 // Statement visitors //
 // ------------------ //
+llvm::AllocaInst *CodeGenerator::createEntryAlloca(llvm::Type *ty,
+                                                   const std::string &name) {
+  llvm::Function *fn = builder.GetInsertBlock()->getParent();
+  llvm::BasicBlock &entryBB = fn->getEntryBlock();
+
+  llvm::IRBuilder<> tmpB(&entryBB, entryBB.begin());
+  return tmpB.CreateAlloca(ty, nullptr, name);
+}
 
 Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   const std::string name = d.name.token.getWord();
@@ -1231,7 +1239,7 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   if (!ty)
     return logError(("Unknown type: " + typeName).c_str());
 
-  AllocaInst *alloca = builder.CreateAlloca(ty, nullptr, name);
+  AllocaInst *alloca = createEntryAlloca(ty, name);
   VarInfo vi(alloca, ty, false, false, false, d.isConst);
 
   if (!d.initializer) {
