@@ -1675,8 +1675,7 @@ bool CodeGenerator::generate(const Program &program,
       std::vector<llvm::Type *> pts;
       for (const auto &p : decl.paramTypes) {
         const std::string tname = p.base.token.getWord();
-        // extern "C" str params must be raw ptr, not %string struct
-        if (tname == "str" || tname == "string")
+        if (tname == "str" || tname == "string" || p.dimensions > 0)
           pts.push_back(llvm::PointerType::get(context, 0));
         else
           pts.push_back(TypeResolver::fromName(context, tname));

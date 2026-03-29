@@ -198,9 +198,16 @@ ExternBlock Parser::parseExternBlock() {
       do {
         Token typeTok =
             expect(TokenKind::IDENTIFIER, "Expected parameter type");
+        int dims = 0;
+        while (peek().getKind() == TokenKind::LBRACKET &&
+               peekAt(1).getKind() == TokenKind::RBRACKET) {
+          consume();
+          consume();
+          ++dims;
+        }
         if (check(TokenKind::IDENTIFIER))
           consume();
-        paramTypes.emplace_back(Identifier{typeTok});
+        paramTypes.emplace_back(Identifier{typeTok}, dims);
       } while (match(TokenKind::COMMA));
     }
     expect(TokenKind::RPAREN, "Expected ')'");
