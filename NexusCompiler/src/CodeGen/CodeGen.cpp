@@ -711,9 +711,8 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
         builder.CreateStore(val, elemPtr);
         return val;
       }
-      // Scalar or struct element
-      if (auto *st = llvm::dyn_cast<llvm::StructType>(elemTy)) {
-        // Struct assignment: load the struct value if we got a pointer
+
+      if (llvm::dyn_cast<llvm::StructType>(elemTy)) {
         Value *structVal = val;
         if (val->getType()->isPointerTy())
           structVal = builder.CreateLoad(elemTy, val, "struct.val");
@@ -812,7 +811,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
   if ((calleeName == "printf" || rawName == "Printf") &&
       e.arguments.size() == 1)
     return PrintEmitter::handlePrintf(e, builder, context, module.get(),
-                                      namedValues, structDefs);
+                                      namedValues);
   if (rawName == "Print" && e.arguments.size() == 1)
     return PrintEmitter::handlePrint(e, builder, context, module.get());
 
@@ -1211,7 +1210,7 @@ Value *CodeGenerator::codegen(const Expression &expr) {
     return visitLengthProperty(*p);
   if (auto *p = dynamic_cast<const IndexedLengthExpr *>(&expr))
     return visitIndexedLength(*p);
-  if (auto *p = dynamic_cast<const NullLitExpr *>(&expr))
+  if (dynamic_cast<const NullLitExpr *>(&expr))
     return llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
 
   return logError("Unknown expression node");
@@ -1290,21 +1289,12 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
 
     } else if (TypeResolver::isArray(ty) ||
                dynamic_cast<const NewArrayExpr *>(d.initializer.get())) {
-      // When the initializer is `new T[d0][d1]...`, makeND returns an
-      // AllocaInst typed as the outermost array struct (e.g. array.array.Cell
-      // for Cell[10][20]). The declared `ty` was resolved from the source type
-      // annotation and may be the raw element type (Cell), which is only 4
-      // bytes. Using it for the alloca produces a too-small slot; the 16-byte
-      // array descriptor then overwrites adjacent stack, corrupting the pointer
-      // field that Generate reads — hence the SEGV.
-      // Fix: read the real type back off the AllocaInst returned by makeND.
       bool isNew =
           dynamic_cast<const NewArrayExpr *>(d.initializer.get()) != nullptr;
       if (isNew) {
         if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(init)) {
           Type *realTy = srcAI->getAllocatedType();
           if (realTy != ty) {
-            // Recreate the alloca with the correct type and update VarInfo.
             alloca = builder.CreateAlloca(realTy, nullptr, name);
             ty = realTy;
             vi = VarInfo(alloca, ty, false, false, false, d.isConst);

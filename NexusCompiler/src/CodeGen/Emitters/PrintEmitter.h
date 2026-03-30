@@ -17,8 +17,7 @@ class PrintEmitter {
 public:
   static llvm::Value *handlePrintf(const CallExpr &e, llvm::IRBuilder<> &B,
                                    llvm::LLVMContext &ctx, llvm::Module *M,
-                                   const std::map<std::string, VarInfo> &vars,
-                                   const std::vector<StructDecl *> &structDefs);
+                                   const std::map<std::string, VarInfo> &vars);
 
   static llvm::Value *handlePrint(const CallExpr &e, llvm::IRBuilder<> &B,
                                   llvm::LLVMContext &ctx, llvm::Module *M);

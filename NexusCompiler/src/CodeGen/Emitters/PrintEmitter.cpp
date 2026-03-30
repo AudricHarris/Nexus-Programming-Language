@@ -257,8 +257,7 @@ std::string PrintEmitter::replaceHexColors(const std::string &input) {
 
 Value *PrintEmitter::handlePrintf(const CallExpr &e, IRBuilder<> &B,
                                   LLVMContext &ctx, Module *M,
-                                  const std::map<std::string, VarInfo> &vars,
-                                  const std::vector<StructDecl *> &structDefs) {
+                                  const std::map<std::string, VarInfo> &vars) {
   auto *strArg = dynamic_cast<const StrLitExpr *>(e.arguments[0].get());
   if (!strArg)
     return nullptr;

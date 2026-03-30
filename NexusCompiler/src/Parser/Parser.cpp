@@ -90,13 +90,13 @@ bool Parser::isIdentWord(std::string_view word) const {
 // ----------------------------------------- //
 // Type-keyword helpers                       //
 // ----------------------------------------- //
-static bool isScalarTypeName(const std::string &w) {
+/*static bool isScalarTypeName(const std::string &w) {
   return w == "i32" || w == "i64" || w == "i16" || w == "i8" || w == "f32" ||
          w == "f64" || w == "bool" || w == "void" || w == "int" ||
          w == "integer" || w == "long" || w == "short" || w == "float" ||
          w == "double" || w == "string" || w == "str" || w == "char" ||
          w == "ptr";
-}
+}*/
 
 static bool looksLikeType(const Token &tok) {
   return tok.getKind() == TokenKind::IDENTIFIER;

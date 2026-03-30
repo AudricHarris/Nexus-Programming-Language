@@ -1,3 +1,3 @@
 #!/bin/bash
 
-cd build && cmake --build . && cd ..
+cd build && cmake --build . --clean-first && cd ..
