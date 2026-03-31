@@ -170,6 +170,8 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
   case 3:
     if (w == "new")
       return TokenKind::NEW;
+    if (w == "for")
+      return TokenKind::FOR;
     break;
   case 4:
     if (w == "else")
@@ -317,6 +319,7 @@ std::vector<Token> Lexer::Tokenize() {
       this->col += 2;
       continue;
     }
+
     skipWhitespace();
     if (this->pos >= this->srcLen)
       break;
@@ -328,6 +331,11 @@ std::vector<Token> Lexer::Tokenize() {
       continue;
     }
 
+    if (this->src[this->pos] == ':') {
+      lstTokens.push_back(makeToken(TokenKind::COLON, ":"));
+      this->pos++;
+      continue;
+    }
     int icat = static_cast<int>(classify(c));
     State first = T[0][icat];
 

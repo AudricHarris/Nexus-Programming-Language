@@ -548,6 +548,11 @@ struct VarDecl : Statement {
           AssignKind k = AssignKind::Copy, bool c = false)
       : type(std::move(t)), name(std::move(n)), initializer(std::move(init)),
         kind(k), isConst(c) {}
+
+  VarDecl(TypeDesc t, Identifier n)
+      : type(std::move(t)), name(std::move(n)), initializer(nullptr),
+        kind(AssignKind::Copy), isConst(false) {}
+
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"VarDecl\","
@@ -617,6 +622,26 @@ struct WhileStmt : Statement {
     os << p << "{\"kind\":\"WhileStmt\",\"cond\":";
     condition->toJson(os, indent + 2);
     os << "}";
+  }
+};
+
+struct ForRangeStmt : Statement {
+  TypeDesc varType;
+  Identifier varName;
+  ExprPtr start;
+  ExprPtr end;
+  ExprPtr step;
+  std::unique_ptr<Block> body;
+
+  ForRangeStmt(TypeDesc t, Identifier n, ExprPtr s, ExprPtr e, ExprPtr st,
+               std::unique_ptr<Block> b)
+      : varType(std::move(t)), varName(std::move(n)), start(std::move(s)),
+        end(std::move(e)), step(std::move(st)), body(std::move(b)) {}
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"ForRangeStmt\","
+       << "\"var\":" << json_utils::escape(varName.token.getWord()) << "}";
   }
 };
 

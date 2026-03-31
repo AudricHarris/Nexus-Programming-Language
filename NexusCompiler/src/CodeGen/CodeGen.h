@@ -85,6 +85,7 @@ private:
   llvm::Value *visitVarDecl(const VarDecl &d);
   llvm::Value *visitIfStmt(const IfStmt &s);
   llvm::Value *visitWhileStmt(const WhileStmt &s);
+  llvm::Value *visitForRange(const ForRangeStmt &s);
   llvm::Value *visitBreak(const Break &);
   llvm::Value *visitContinue(const Continue &);
   llvm::Value *visitReturn(const Return &s);

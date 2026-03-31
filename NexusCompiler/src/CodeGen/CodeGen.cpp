@@ -1401,6 +1401,8 @@ Value *CodeGenerator::codegen(const Statement &stmt) {
     return visitIfStmt(*p);
   if (auto *p = dynamic_cast<const WhileStmt *>(&stmt))
     return visitWhileStmt(*p);
+  if (auto *p = dynamic_cast<const ForRangeStmt *>(&stmt))
+    return visitForRange(*p);
   if (auto *p = dynamic_cast<const Break *>(&stmt))
     return visitBreak(*p);
   if (auto *p = dynamic_cast<const Continue *>(&stmt))
@@ -1487,6 +1489,89 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 
   fn->insert(fn->end(), exitBB);
   builder.SetInsertPoint(exitBB);
+  return nullptr;
+}
+
+Value *CodeGenerator::visitForRange(const ForRangeStmt &s) {
+  Type *varTy = TypeResolver::fromTypeDesc(context, s.varType);
+  if (!varTy)
+    varTy = llvm::StructType::getTypeByName(context,
+                                            s.varType.base.token.getWord());
+  if (!varTy)
+    return logError("Unknown type in for-range loop variable");
+
+  Value *startVal = codegen(*s.start);
+  Value *endVal = codegen(*s.end);
+  Value *stepVal = codegen(*s.step);
+  if (!startVal || !endVal || !stepVal)
+    return nullptr;
+
+  startVal = TypeResolver::coerce(builder, startVal, varTy);
+  endVal = TypeResolver::coerce(builder, endVal, varTy);
+  stepVal = TypeResolver::coerce(builder, stepVal, varTy);
+
+  const std::string &vname = s.varName.token.getWord();
+  AllocaInst *varAlloca = createEntryAlloca(varTy, vname);
+  builder.CreateStore(startVal, varAlloca);
+
+  VarInfo vi(varAlloca, varTy, false, false, false, s.varType.isConst);
+  namedValues[vname] = vi;
+
+  llvm::Function *fn = builder.GetInsertBlock()->getParent();
+  BasicBlock *condBB = BasicBlock::Create(context, "for.cond", fn);
+  BasicBlock *bodyBB = BasicBlock::Create(context, "for.body");
+  BasicBlock *stepBB = BasicBlock::Create(context, "for.step");
+  BasicBlock *exitBB = BasicBlock::Create(context, "for.exit");
+
+  builder.CreateBr(condBB);
+
+  builder.SetInsertPoint(condBB);
+  Value *cur = builder.CreateLoad(varTy, varAlloca, vname + ".cur");
+
+  Value *cond;
+  bool isFloat = varTy->isFloatingPointTy();
+  if (isFloat) {
+    cond = builder.CreateFCmpOLT(cur, endVal, "for.cond.f");
+  } else {
+    if (auto *cs = llvm::dyn_cast<llvm::ConstantInt>(stepVal)) {
+      if (cs->getSExtValue() >= 0)
+        cond = builder.CreateICmpSLT(cur, endVal, "for.cond.lt");
+      else
+        cond = builder.CreateICmpSGT(cur, endVal, "for.cond.gt");
+    } else {
+      Value *zero = ConstantInt::get(varTy, 0);
+      Value *stepPos = builder.CreateICmpSGT(stepVal, zero, "step.pos");
+      Value *ltEnd = builder.CreateICmpSLT(cur, endVal, "cur.lt.end");
+      Value *gtEnd = builder.CreateICmpSGT(cur, endVal, "cur.gt.end");
+      cond = builder.CreateSelect(stepPos, ltEnd, gtEnd, "for.cond.dyn");
+    }
+  }
+  builder.CreateCondBr(cond, bodyBB, exitBB);
+
+  fn->insert(fn->end(), bodyBB);
+  builder.SetInsertPoint(bodyBB);
+
+  loopStack.push_back({stepBB, exitBB});
+  codegen(*s.body);
+  loopStack.pop_back();
+
+  scopeMgr.popScope();
+  if (!builder.GetInsertBlock()->getTerminator())
+    builder.CreateBr(stepBB);
+
+  fn->insert(fn->end(), stepBB);
+  builder.SetInsertPoint(stepBB);
+  Value *oldVal = builder.CreateLoad(varTy, varAlloca, vname + ".old");
+  Value *newVal = isFloat ? builder.CreateFAdd(oldVal, stepVal, "for.step.f")
+                          : builder.CreateAdd(oldVal, stepVal, "for.step.i");
+  builder.CreateStore(newVal, varAlloca);
+  builder.CreateBr(condBB);
+
+  fn->insert(fn->end(), exitBB);
+  builder.SetInsertPoint(exitBB);
+
+  namedValues.erase(vname);
+
   return nullptr;
 }
 

@@ -240,6 +240,9 @@ int main(int argc, char *argv[]) {
     auto start = std::chrono::high_resolution_clock::now();
     Lexer lexer(code);
     std::vector<Token> tokens = lexer.Tokenize();
+    for (auto t : tokens) {
+      std::cout << t.toString();
+    }
 
     auto end = std::chrono::high_resolution_clock::now();
 

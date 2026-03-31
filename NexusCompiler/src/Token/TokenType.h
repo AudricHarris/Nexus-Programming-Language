@@ -44,6 +44,7 @@ enum class TokenKind {
   IF,
   ElSE,
   WHILE,
+  FOR,
   RETURN,
   CONST,
   IMPORT,
@@ -93,6 +94,7 @@ enum class TokenKind {
   COMMA,
   SEMI,
   DOT,
+  COLON,
   COLON_COLON,
 
   // SPECIAL

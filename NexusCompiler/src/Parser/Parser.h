@@ -88,6 +88,7 @@ public:
   std::unique_ptr<VarDecl> parseVarDeclStatement(AssignKind kind);
   std::unique_ptr<IfStmt> parseIfStatement();
   std::unique_ptr<WhileStmt> parseWhileLoop();
+  std::unique_ptr<ForRangeStmt> parseForLoop();
   std::unique_ptr<Return> parseReturnStatement();
   std::unique_ptr<Statement> parseLoopBreak();
   std::unique_ptr<Expression> parsePrimary();

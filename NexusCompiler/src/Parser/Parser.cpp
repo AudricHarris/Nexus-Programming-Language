@@ -418,6 +418,8 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     return parseIfStatement();
   if (match(TokenKind::WHILE))
     return parseWhileLoop();
+  if (match(TokenKind::FOR))
+    return parseForLoop();
   if (check(TokenKind::CONTINUE) || check(TokenKind::BREAK))
     return parseLoopBreak();
   if (check(TokenKind::CONST))
@@ -522,6 +524,76 @@ std::unique_ptr<WhileStmt> Parser::parseWhileLoop() {
   expect(TokenKind::RPAREN, "Expected ')'");
   auto body = parseBlock();
   return std::make_unique<WhileStmt>(std::move(cond), std::move(body));
+}
+
+std::unique_ptr<ForRangeStmt> Parser::parseForLoop() {
+  expect(TokenKind::LPAREN, "Expected '(' after 'for'");
+
+  bool isConst = false;
+  if (check(TokenKind::CONST)) {
+    consume();
+    isConst = true;
+  }
+
+  Token typeTok = expect(TokenKind::IDENTIFIER, "Expected loop variable type");
+  int dims = 0;
+  while (check(TokenKind::LBRACKET) &&
+         peekAt(1).getKind() == TokenKind::RBRACKET) {
+    consume();
+    consume();
+    ++dims;
+  }
+  Token nameTok = expect(TokenKind::IDENTIFIER, "Expected loop variable name");
+
+  if (peek().getKind() == TokenKind::COLON) {
+    consume();
+  }
+  if (!isIdentWord("range"))
+    throw ParseError(peek().getLine(), peek().getColumn(),
+                     "Expected 'range' in for-range");
+  consume();
+  expect(TokenKind::LPAREN, "Expected '(' after 'range'");
+
+  std::vector<ExprPtr> rangeArgs;
+  if (!check(TokenKind::RPAREN)) {
+    do {
+      rangeArgs.push_back(parseExpression());
+    } while (match(TokenKind::COMMA));
+  }
+  expect(TokenKind::RPAREN, "Expected ')' after range arguments");
+  expect(TokenKind::RPAREN, "Expected ')' to close for(...)");
+
+  ExprPtr startExpr, endExpr, stepExpr;
+  auto intLit = [](long long v, int line = 0, int col = 0) -> ExprPtr {
+    Token t{TokenKind::LIT_INT, std::to_string(v), line, col};
+    return std::make_unique<IntLitExpr>(t);
+  };
+
+  if (rangeArgs.size() == 1) {
+    startExpr = intLit(0);
+    endExpr = std::move(rangeArgs[0]);
+    stepExpr = intLit(1);
+  } else if (rangeArgs.size() == 2) {
+    startExpr = std::move(rangeArgs[0]);
+    endExpr = std::move(rangeArgs[1]);
+    stepExpr = intLit(1);
+  } else if (rangeArgs.size() == 3) {
+    startExpr = std::move(rangeArgs[0]);
+    endExpr = std::move(rangeArgs[1]);
+    stepExpr = std::move(rangeArgs[2]);
+  } else {
+    throw ParseError(peek().getLine(), peek().getColumn(),
+                     "range() takes 1, 2 or 3 arguments");
+  }
+
+  auto body = parseBlock();
+
+  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
+                               typeTok.getLine(), typeTok.getColumn()}},
+              dims, isConst);
+  return std::make_unique<ForRangeStmt>(
+      std::move(td), Identifier{nameTok}, std::move(startExpr),
+      std::move(endExpr), std::move(stepExpr), std::move(body));
 }
 
 std::unique_ptr<Return> Parser::parseReturnStatement() {

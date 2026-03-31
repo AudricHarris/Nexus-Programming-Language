@@ -32,6 +32,7 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"IF", "if"},
     {"ELSE", "else"},
     {"WHILE", "while"},
+    {"FOR", "for"},
     {"RETURN", "return"},
     {"CONST", "const"},
     {"IMPORT", "import"},
@@ -75,6 +76,8 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"COMMA", ","},
     {"SEMI", ";"},
     {"DOT", "."},
+    {"COLON", ":"},
+    {"COLON_COLON", "::"},
     {"RETURN_TYPE", "->"},
     {"NEW", "new"},
     {"END_OF_FILE", "<EOF>"},
@@ -91,6 +94,8 @@ std::string Token::toString() {
     return "ELSE  ";
   case TokenKind::WHILE:
     return "WHILE  ";
+  case TokenKind::FOR:
+    return "FOR  ";
   case TokenKind::RETURN:
     return "RETURN  ";
   case TokenKind::CONST:
@@ -177,6 +182,10 @@ std::string Token::toString() {
     return "SEMI\n";
   case TokenKind::DOT:
     return "DOT  ";
+  case TokenKind::COLON:
+    return "COLON  ";
+  case TokenKind::COLON_COLON:
+    return "COLON_COLON  ";
   case TokenKind::RETURN_TYPE:
     return "RETURN_TYPE  ";
   case TokenKind::NEW:
