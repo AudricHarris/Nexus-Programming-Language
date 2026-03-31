@@ -13,12 +13,12 @@ const {
 const { TextDocument } = require('vscode-languageserver-textdocument');
 
 const connection = createConnection(ProposedFeatures.all);
-const documents  = new TextDocuments(TextDocument);
+const documents = new TextDocuments(TextDocument);
 
 // ─────────────────────────────────────────────
 
 const KEYWORDS = [
-  'if', 'else', 'for', 'while', 'return', 'match', 'new',
+  'if', 'else', 'for', 'while', 'range', 'return', 'match', 'new',
   'export', 'import', 'static', 'self', 'Sequential',
   'true', 'false', 'public', 'private', 'protected',
   'const', 'sum', 'class', 'implement', 'Constructor', 'Factory', 'struct', 'extern'
@@ -34,12 +34,12 @@ const TYPES = [
 
 // Rich built-in function table: name -> { sig, doc }
 const BUILTIN_FUNCTIONS = {
-  'Print':         { sig: 'Print(value: any)',                      doc: 'Print a value to stdout without a newline.' },
-  'Printf':        { sig: 'Printf(fmt: str, ...args)',               doc: 'Formatted print. Use {var} for interpolation and \\n for newlines. Supports #RRGGBB colour prefix.' },
-  'Warn':          { sig: 'Warn(value: any)',                        doc: 'Print a warning to stderr.' },
-  'Warnf':         { sig: 'Warnf(fmt: str, ...args)',                doc: 'Formatted warning to stderr.' },
-  'Read':          { sig: 'Read() -> str',                          doc: 'Read a line of input from stdin. Returns trimmed string.' },
-  'Random':        { sig: 'Random() -> f64',                         doc: 'Return a random f64 in [0, 1).' },
+  'Print': { sig: 'Print(value: any)', doc: 'Print a value to stdout without a newline.' },
+  'Printf': { sig: 'Printf(fmt: str, ...args)', doc: 'Formatted print. Use {var} for interpolation and \\n for newlines. Supports #RRGGBB colour prefix.' },
+  'Warn': { sig: 'Warn(value: any)', doc: 'Print a warning to stderr.' },
+  'Warnf': { sig: 'Warnf(fmt: str, ...args)', doc: 'Formatted warning to stderr.' },
+  'Read': { sig: 'Read() -> str', doc: 'Read a line of input from stdin. Returns trimmed string.' },
+  'Random': { sig: 'Random() -> f64', doc: 'Return a random f64 in [0, 1).' },
 };
 
 // Snippets: label -> { insert, doc }
@@ -78,7 +78,7 @@ const SNIPPETS = {
   },
 };
 
-const workspaceSymbols  = new Map();
+const workspaceSymbols = new Map();
 const documentToWorkspace = new Map();
 
 function getSymbolStore(wsKey) {
@@ -91,7 +91,7 @@ function resolveWorkspace(docUri) {
   return documentToWorkspace.get(docUri) || '__global__';
 }
 
-let hasConfigurationCapability   = false;
+let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 
 const SEMANTIC_TOKEN_TYPES = [
@@ -109,7 +109,7 @@ const SEMANTIC_TOKEN_TYPES = [
 connection.onInitialize((params) => {
   const caps = params.capabilities;
 
-  hasConfigurationCapability   = !!(caps.workspace && caps.workspace.configuration);
+  hasConfigurationCapability = !!(caps.workspace && caps.workspace.configuration);
   hasWorkspaceFolderCapability = !!(caps.workspace && caps.workspace.workspaceFolders);
 
   if (params.workspaceFolders) {
@@ -133,7 +133,7 @@ connection.onInitialize((params) => {
       // Auto-close /! comment — fires when user types '!'
       documentOnTypeFormattingProvider: {
         firstTriggerCharacter: '!',
-        moreTriggerCharacter:  [],
+        moreTriggerCharacter: [],
       },
 
       hoverProvider: true,
@@ -163,7 +163,7 @@ connection.onInitialized(() => {
 
 function extractSymbols(text, docUri) {
   const wsKey = resolveWorkspace(docUri);
-  const store  = getSymbolStore(wsKey);
+  const store = getSymbolStore(wsKey);
 
   // Clear stale entries from this file
   for (const [name, info] of store.entries()) {
@@ -175,14 +175,14 @@ function extractSymbols(text, docUri) {
   // Top-level function:  Name(params) -> RetType {
   const fnRx = /^([A-Z][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([a-zA-Z0-9_\[\]]+))?\s*\{/gm;
   while ((m = fnRx.exec(text)) !== null) {
-    const name   = m[1];
+    const name = m[1];
     const params = m[2].trim();
-    const ret    = m[3] ? m[3].trim() : 'void';
+    const ret = m[3] ? m[3].trim() : 'void';
     store.set(name, {
-      kind:   CompletionItemKind.Function,
+      kind: CompletionItemKind.Function,
       detail: `${name}(${params}) -> ${ret}`,
-      doc:    'User-defined function',
-      uri:    docUri,
+      doc: 'User-defined function',
+      uri: docUri,
     });
   }
 
@@ -219,7 +219,7 @@ async function mapDocumentToWorkspace(docUri) {
       if (docUri.startsWith(f.uri) && (!best || f.uri.length > best.uri.length)) best = f;
     }
     if (best) documentToWorkspace.set(docUri, best.uri);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 documents.onDidChangeContent(async change => {
@@ -244,7 +244,7 @@ connection.onDocumentOnTypeFormatting((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return null;
 
-  const text   = doc.getText();
+  const text = doc.getText();
   const offset = doc.offsetAt(params.position);
 
   // Need at least 2 chars before cursor
@@ -254,12 +254,12 @@ connection.onDocumentOnTypeFormatting((params) => {
   if (before2 !== '/!') return null;
 
   const textBefore = text.slice(0, offset - 2);
-  const opens  = (textBefore.match(/\/!/g) || []).length;
+  const opens = (textBefore.match(/\/!/g) || []).length;
   const closes = (textBefore.match(/!\//g) || []).length;
   if (opens > closes) return null;
 
   return [{
-    range:   { start: params.position, end: params.position },
+    range: { start: params.position, end: params.position },
     newText: '  !/',
   }];
 });
@@ -268,12 +268,12 @@ connection.onHover((params) => {
   const doc = documents.get(params.textDocument.uri);
   if (!doc) return null;
 
-  const text   = doc.getText();
+  const text = doc.getText();
   const offset = doc.offsetAt(params.position);
 
   // Expand selection to full word (allow dots for Math.Sqrt etc.)
   let start = offset;
-  let end   = offset;
+  let end = offset;
   while (start > 0 && /[a-zA-Z0-9_.]/.test(text[start - 1])) start--;
   while (end < text.length && /[a-zA-Z0-9_.]/.test(text[end])) end++;
   const word = text.slice(start, end);
@@ -293,7 +293,7 @@ connection.onHover((params) => {
 });
 
 connection.onWorkspaceSymbol((params) => {
-  const query   = params.query.toLowerCase();
+  const query = params.query.toLowerCase();
   const results = [];
 
   for (const [, store] of workspaceSymbols) {
@@ -301,9 +301,9 @@ connection.onWorkspaceSymbol((params) => {
       if (!query || name.toLowerCase().includes(query)) {
         results.push({
           name,
-          kind:     info.kind,
+          kind: info.kind,
           location: {
-            uri:   info.uri,
+            uri: info.uri,
             range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
           },
         });
@@ -321,33 +321,33 @@ connection.onCompletion((params) => {
   // Keywords
   KEYWORDS.forEach(kw => completions.push({
     label: kw,
-    kind:  CompletionItemKind.Keyword,
-    data:  { type: 'keyword', name: kw },
+    kind: CompletionItemKind.Keyword,
+    data: { type: 'keyword', name: kw },
   }));
 
   // Types
   TYPES.forEach(t => completions.push({
     label: t,
-    kind:  CompletionItemKind.TypeParameter,
-    data:  { type: 'builtin_type', name: t },
+    kind: CompletionItemKind.TypeParameter,
+    data: { type: 'builtin_type', name: t },
   }));
 
   // Built-in functions
   Object.keys(BUILTIN_FUNCTIONS).forEach(fn => completions.push({
-    label:  fn,
-    kind:   CompletionItemKind.Function,
+    label: fn,
+    kind: CompletionItemKind.Function,
     detail: BUILTIN_FUNCTIONS[fn].sig,
-    data:   { type: 'builtin_fn', name: fn },
+    data: { type: 'builtin_fn', name: fn },
   }));
 
   // Snippets
   Object.entries(SNIPPETS).forEach(([label, snip]) => completions.push({
     label,
-    kind:             CompletionItemKind.Snippet,
-    insertText:       snip.insert,
+    kind: CompletionItemKind.Snippet,
+    insertText: snip.insert,
     insertTextFormat: InsertTextFormat.Snippet,
-    detail:           snip.doc,
-    data:             { type: 'snippet', name: label },
+    detail: snip.doc,
+    data: { type: 'snippet', name: label },
   }));
 
   // User-defined symbols from workspace memory
@@ -356,10 +356,10 @@ connection.onCompletion((params) => {
     for (const [name, info] of store) {
       if (BUILTIN_FUNCTIONS[name] || KEYWORDS.includes(name) || TYPES.includes(name)) continue;
       completions.push({
-        label:  name,
-        kind:   info.kind,
+        label: name,
+        kind: info.kind,
         detail: info.detail,
-        data:   { type: 'user_symbol', name },
+        data: { type: 'user_symbol', name },
       });
     }
   }
@@ -394,35 +394,35 @@ connection.onCompletionResolve((item) => {
 });
 
 function validateTextDocument(textDocument) {
-  const text        = textDocument.getText();
+  const text = textDocument.getText();
   const diagnostics = [];
 
   // Compiler directives  /![NAME]!/
-  const directives  = new Set([...text.matchAll(/\/!\[([A-Z_]+)\]!\//g)].map(m => m[1]));
-  const STRICT      = directives.has('STRICT');
+  const directives = new Set([...text.matchAll(/\/!\[([A-Z_]+)\]!\//g)].map(m => m[1]));
+  const STRICT = directives.has('STRICT');
   const WARN_UNUSED = directives.has('WARN_UNUSED');
-  const NO_GLOBALS  = directives.has('NO_GLOBALS');
+  const NO_GLOBALS = directives.has('NO_GLOBALS');
   const NO_WARNINGS = directives.has('NO_WARNINGS');
 
-  const openBraces  = (text.match(/\{/g) || []).length;
+  const openBraces = (text.match(/\{/g) || []).length;
   const closeBraces = (text.match(/\}/g) || []).length;
   if (openBraces !== closeBraces) {
     diagnostics.push({
       severity: 1,
-      range:    { start: textDocument.positionAt(0), end: textDocument.positionAt(text.length) },
-      message:  `Unmatched braces: ${openBraces} opening vs ${closeBraces} closing`,
-      source:   'nexus-lsp',
+      range: { start: textDocument.positionAt(0), end: textDocument.positionAt(text.length) },
+      message: `Unmatched braces: ${openBraces} opening vs ${closeBraces} closing`,
+      source: 'nexus-lsp',
     });
   }
 
-  const openComments  = (text.match(/\/!/g) || []).length;
+  const openComments = (text.match(/\/!/g) || []).length;
   const closeComments = (text.match(/!\//g) || []).length;
   if (openComments !== closeComments) {
     diagnostics.push({
       severity: 2,
-      range:    { start: textDocument.positionAt(0), end: textDocument.positionAt(text.length) },
-      message:  `Unclosed block comment: ${openComments} /!  but ${closeComments} !/`,
-      source:   'nexus-lsp',
+      range: { start: textDocument.positionAt(0), end: textDocument.positionAt(text.length) },
+      message: `Unclosed block comment: ${openComments} /!  but ${closeComments} !/`,
+      source: 'nexus-lsp',
     });
   }
 
@@ -432,9 +432,9 @@ function validateTextDocument(textDocument) {
     while ((m = rx.exec(text)) !== null) {
       diagnostics.push({
         severity: 1,
-        range:    { start: textDocument.positionAt(m.index), end: textDocument.positionAt(m.index + 3) },
-        message:  '"let" is forbidden in STRICT mode. Use an explicit type.',
-        source:   'nexus-lsp',
+        range: { start: textDocument.positionAt(m.index), end: textDocument.positionAt(m.index + 3) },
+        message: '"let" is forbidden in STRICT mode. Use an explicit type.',
+        source: 'nexus-lsp',
       });
     }
   }
@@ -445,14 +445,14 @@ function validateTextDocument(textDocument) {
     let m;
     while ((m = rx.exec(text)) !== null) {
       const before = text.slice(0, m.index);
-      const open   = (before.match(/\{/g) || []).length;
-      const close  = (before.match(/\}/g) || []).length;
+      const open = (before.match(/\{/g) || []).length;
+      const close = (before.match(/\}/g) || []).length;
       if (open === close) {
         diagnostics.push({
           severity: 1,
-          range:    { start: textDocument.positionAt(m.index), end: textDocument.positionAt(m.index + m[0].length) },
-          message:  'Global variables are not allowed (NO_GLOBALS)',
-          source:   'nexus-lsp',
+          range: { start: textDocument.positionAt(m.index), end: textDocument.positionAt(m.index + m[0].length) },
+          message: 'Global variables are not allowed (NO_GLOBALS)',
+          source: 'nexus-lsp',
         });
       }
     }
@@ -463,14 +463,14 @@ function validateTextDocument(textDocument) {
     const rx = new RegExp(`\\b(?:${typePattern})(?:\\[\\])*\\s+([a-zA-Z_][a-zA-Z0-9_]*)`, 'g');
     let m;
     while ((m = rx.exec(text)) !== null) {
-      const name  = m[1];
+      const name = m[1];
       const count = [...text.matchAll(new RegExp(`\\b${name}\\b`, 'g'))].length;
       if (count <= 1) {
         diagnostics.push({
           severity: 2,
-          range:    { start: textDocument.positionAt(m.index), end: textDocument.positionAt(m.index + m[0].length) },
-          message:  `Variable '${name}' is declared but never used`,
-          source:   'nexus-lsp',
+          range: { start: textDocument.positionAt(m.index), end: textDocument.positionAt(m.index + m[0].length) },
+          message: `Variable '${name}' is declared but never used`,
+          source: 'nexus-lsp',
         });
       }
     }
@@ -487,16 +487,16 @@ function validateTextDocument(textDocument) {
         else if (text[i] === '}') { depth--; if (depth === 0) break; }
         i++;
       }
-      const body  = text.slice(bodyStart, i);
+      const body = text.slice(bodyStart, i);
       const retRx = /\breturn\s+(?!;)(\S)/g;
       let rm;
       while ((rm = retRx.exec(body)) !== null) {
         const absIdx = bodyStart + rm.index;
         diagnostics.push({
           severity: 2,
-          range:    { start: textDocument.positionAt(absIdx), end: textDocument.positionAt(absIdx + rm[0].length) },
-          message:  `Function '${fm[1]}' is declared -> void but returns a value`,
-          source:   'nexus-lsp',
+          range: { start: textDocument.positionAt(absIdx), end: textDocument.positionAt(absIdx + rm[0].length) },
+          message: `Function '${fm[1]}' is declared -> void but returns a value`,
+          source: 'nexus-lsp',
         });
       }
     }
@@ -519,10 +519,10 @@ connection.languages.semanticTokens.on((params) => {
 
   const pushToken = (tLine, tCol, length, tType) => {
     const lineDelta = tLine - lastLine;
-    const colDelta  = lineDelta === 0 ? tCol - lastCol : tCol;
+    const colDelta = lineDelta === 0 ? tCol - lastCol : tCol;
     data.push(lineDelta, colDelta, length, tType, 0);
     lastLine = tLine;
-    lastCol  = tCol;
+    lastCol = tCol;
   };
 
   const syncPos = (from, to) => {
@@ -553,7 +553,7 @@ connection.languages.semanticTokens.on((params) => {
       const sl = line, sc = col;
       let end = text.indexOf('!/', pos + 2);
       if (end === -1) end = text.length; else end += 2;
-      const seg   = text.slice(pos, end).split('\n');
+      const seg = text.slice(pos, end).split('\n');
       if (seg.length === 1) {
         pushToken(sl, sc, seg[0].length, 6);
         col += seg[0].length;
@@ -562,7 +562,7 @@ connection.languages.semanticTokens.on((params) => {
           if (seg[i].length > 0) pushToken(sl + i, i === 0 ? sc : 0, seg[i].length, 6);
         }
         line = sl + seg.length - 1;
-        col  = seg[seg.length - 1].length;
+        col = seg[seg.length - 1].length;
       }
       pos = end;
       continue;
@@ -608,11 +608,11 @@ connection.languages.semanticTokens.on((params) => {
       const word = text.slice(start, pos);
 
       let tt;
-      if (KEYWORDS.includes(word))       tt = 0; // keyword
-      else if (TYPES.includes(word))     tt = 1; // type
-      else if (/^[A-Z]/.test(word))      tt = 1; // PascalCase = type/class
-      else if (BUILTIN_FUNCTIONS[word])  tt = 2; // built-in fn
-      else                               tt = 3; // variable
+      if (KEYWORDS.includes(word)) tt = 0; // keyword
+      else if (TYPES.includes(word)) tt = 1; // type
+      else if (/^[A-Z]/.test(word)) tt = 1; // PascalCase = type/class
+      else if (BUILTIN_FUNCTIONS[word]) tt = 2; // built-in fn
+      else tt = 3; // variable
 
       pushToken(sl, sc, word.length, tt);
       col += word.length;
