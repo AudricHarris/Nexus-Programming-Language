@@ -2,6 +2,7 @@
 #define CodeGen_H
 
 #include "../AST/AST.h"
+#include "../AST/ExprVisitor.h"
 #include "Emitters/ArrayEmitter.h"
 #include "Emitters/PrintEmitter.h"
 #include "Emitters/StringEmitter.h"
@@ -23,7 +24,7 @@ struct LoopContext {
   llvm::BasicBlock *exitBB;
 };
 
-class CodeGenerator {
+class CodeGenerator : public ExprVisitor, public StmtVisitor {
 public:
   CodeGenerator();
   ~CodeGenerator() = default;
@@ -31,6 +32,37 @@ public:
   bool generate(const Program &program, const std::string &outputFilename);
 
   static bool isCStringPointer(llvm::Type *ty);
+
+  llvm::Value *visitIntLit(const IntLitExpr &e) override;
+  llvm::Value *visitFloatLit(const FloatLitExpr &e) override;
+  llvm::Value *visitStrLit(const StrLitExpr &e) override;
+  llvm::Value *visitBoolLit(const BoolLitExpr &e) override;
+  llvm::Value *visitCharLit(const CharLitExpr &e) override;
+  llvm::Value *visitNullLit(const NullLitExpr &) override;
+  llvm::Value *visitIdentifier(const IdentExpr &e) override;
+  llvm::Value *visitBinary(const BinaryExpr &e) override;
+  llvm::Value *visitUnary(const UnaryExpr &e) override;
+  llvm::Value *visitCall(const CallExpr &e) override;
+  llvm::Value *visitAssign(const AssignExpr &e) override;
+  llvm::Value *visitIncrement(const Increment &e) override;
+  llvm::Value *visitDecrement(const Decrement &e) override;
+  llvm::Value *visitNewArray(const NewArrayExpr &e) override;
+  llvm::Value *visitArrayIndex(const ArrayIndexExpr &e) override;
+  llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &e) override;
+  llvm::Value *visitLengthProperty(const LengthPropertyExpr &e) override;
+  llvm::Value *visitIndexedLength(const IndexedLengthExpr &e) override;
+  llvm::Value *visitFieldAccess(const FieldAccessExpr &e) override;
+  llvm::Value *visitFieldAssign(const FieldAssignExpr &e) override;
+  llvm::Value *visitStructLit(const StructLitExpr &e) override;
+
+  llvm::Value *visitVarDecl(const VarDecl &d) override;
+  llvm::Value *visitExprStmt(const ExprStmt &s) override;
+  llvm::Value *visitIfStmt(const IfStmt &s) override;
+  llvm::Value *visitWhileStmt(const WhileStmt &s) override;
+  llvm::Value *visitForRange(const ForRangeStmt &s) override;
+  llvm::Value *visitReturn(const Return &s) override;
+  llvm::Value *visitBreak(const Break &) override;
+  llvm::Value *visitContinue(const Continue &) override;
 
 private:
   // LLVM state
@@ -53,52 +85,19 @@ private:
   // Error
   llvm::Value *logError(const char *msg);
 
-  // Expression visitors
-  llvm::Value *visitIdentifier(const IdentExpr &e);
-  llvm::Value *visitIntLit(const IntLitExpr &e);
-  llvm::Value *visitFloatLit(const FloatLitExpr &e);
-  llvm::Value *visitStrLit(const StrLitExpr &e);
-  llvm::Value *visitBoolLit(const BoolLitExpr &e);
-  llvm::Value *visitCharLit(const CharLitExpr &e);
-  llvm::Value *visitBinary(const BinaryExpr &e);
-  llvm::Value *visitUnary(const UnaryExpr &e);
-  llvm::Value *visitAssign(const AssignExpr &e);
-  llvm::Value *visitFieldAccess(const FieldAccessExpr &e);
-  llvm::Value *visitFieldAssign(const FieldAssignExpr &e);
-  llvm::Value *visitStructLit(const StructLitExpr &e);
-  std::pair<llvm::Value *, llvm::StructType *>
-  resolveStructPtr(const Expression &expr);
-  llvm::Value *visitIncrement(const Increment &e);
-  llvm::Value *visitDecrement(const Decrement &e);
-  llvm::Value *visitCall(const CallExpr &e);
-  llvm::Value *visitNewArray(const NewArrayExpr &e);
-  llvm::Value *visitArrayIndex(const ArrayIndexExpr &e);
-  llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &e);
-  llvm::Value *visitLengthProperty(const LengthPropertyExpr &e);
-  llvm::Value *visitIndexedLength(const IndexedLengthExpr &e);
-
-  // Expression dispatch
+  // Thin wrappers
   llvm::Value *codegen(const Expression &expr);
-
-  // Statement visitors
-  llvm::AllocaInst *createEntryAlloca(llvm::Type *ty, const std::string &name);
-  llvm::Value *visitVarDecl(const VarDecl &d);
-  llvm::Value *visitIfStmt(const IfStmt &s);
-  llvm::Value *visitWhileStmt(const WhileStmt &s);
-  llvm::Value *visitForRange(const ForRangeStmt &s);
-  llvm::Value *visitBreak(const Break &);
-  llvm::Value *visitContinue(const Continue &);
-  llvm::Value *visitReturn(const Return &s);
-
   llvm::Value *codegen(const Statement &stmt);
   void codegen(const Block &block);
   llvm::Function *codegen(const AST_H::Function &func);
 
-  // Increment / decrement helper
+  // Helpers
+  llvm::AllocaInst *createEntryAlloca(llvm::Type *ty, const std::string &name);
   llvm::Value *generateIncrDecr(const std::string &varName, bool isInc);
-
-  // free() lazy-declare
   llvm::Function *getFree();
+
+  std::pair<llvm::Value *, llvm::StructType *>
+  resolveStructPtr(const Expression &expr);
 };
 
 #endif // CodeGen_H

@@ -1,4 +1,5 @@
 #include "CodeGen.h"
+#include "CodeGenUtils.h"
 #include "Emitters/BuiltinEmitter.h"
 #include "Emitters/PrintEmitter.h"
 #include "Emitters/StringEmitter.h"
@@ -25,91 +26,10 @@ static std::string normalizeFunctionName(const std::string &name) {
   return it != kMap.end() ? it->second : name;
 }
 
-static std::string unescapeString(const std::string &s) {
-  std::string out;
-  for (size_t i = 0; i < s.size(); ++i) {
-    if (s[i] == '\\' && i + 1 < s.size()) {
-      switch (s[i + 1]) {
-      case 'n':
-        out += '\n';
-        ++i;
-        break;
-      case 't':
-        out += '\t';
-        ++i;
-        break;
-      case 'r':
-        out += '\r';
-        ++i;
-        break;
-      case '\\':
-        out += '\\';
-        ++i;
-        break;
-      case '"':
-        out += '"';
-        ++i;
-        break;
-      case '0':
-        out += '\0';
-        ++i;
-        break;
-      case '{':
-        out += '{';
-        ++i;
-        break;
-      default:
-        out += s[i];
-        break;
-      }
-    } else {
-      out += s[i];
-    }
-  }
-  return out;
-}
-
+// Build an interpolated string value from a raw (already-unescaped) string.
 static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
                          IRBuilder<> &B,
                          const std::map<std::string, VarInfo> &vars, Module *M);
-
-static Value *evalInterp(const std::string &inner, LLVMContext &ctx,
-                         IRBuilder<> &B,
-                         const std::map<std::string, VarInfo> &vars) {
-  bool isIdent = !inner.empty();
-  for (char c : inner)
-    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
-      isIdent = false;
-      break;
-    }
-
-  if (isIdent) {
-    auto it = vars.find(inner);
-    if (it != vars.end() && !it->second.isMoved) {
-      if (TypeResolver::isString(it->second.type) ||
-          TypeResolver::isArray(it->second.type))
-        return it->second.allocaInst;
-      return B.CreateLoad(it->second.type, it->second.allocaInst,
-                          inner + ".load");
-    }
-    return nullptr;
-  }
-  try {
-    size_t pos;
-    long long v = std::stoll(inner, &pos);
-    if (pos == inner.size())
-      return ConstantInt::get(Type::getInt32Ty(ctx), v);
-  } catch (...) {
-  }
-  try {
-    size_t pos;
-    double v = std::stod(inner, &pos);
-    if (pos == inner.size())
-      return ConstantFP::get(Type::getDoubleTy(ctx), v);
-  } catch (...) {
-  }
-  return nullptr;
-}
 
 static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
                          IRBuilder<> &B,
@@ -160,7 +80,7 @@ static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
     }
 
     std::string inner = raw.substr(start, j - start);
-    Value *val = evalInterp(inner, ctx, B, vars);
+    Value *val = codegen_utils::evalInterp(inner, ctx, B, vars);
     if (val) {
       flushChunk();
       Value *sv = StringOps::fromValue(B, ctx, M, val);
@@ -201,9 +121,21 @@ Value *CodeGenerator::logError(const char *msg) {
   return nullptr;
 }
 
-// ------------------- //
-// Expression visitors //
-// ------------------- //
+// ------------------------------------------ //
+// Dispatch single call site, no dynamic_cast //
+// ------------------------------------------ //
+
+Value *CodeGenerator::codegen(const Expression &expr) {
+  return expr.accept(*this);
+}
+
+Value *CodeGenerator::codegen(const Statement &stmt) {
+  return stmt.accept(*this);
+}
+
+// --------------------------- //
+// ExprVisitor implementations //
+// --------------------------- //
 
 Value *CodeGenerator::visitIntLit(const IntLitExpr &e) {
   return ConstantInt::get(Type::getInt32Ty(context),
@@ -253,8 +185,12 @@ Value *CodeGenerator::visitCharLit(const CharLitExpr &e) {
                                 static_cast<uint8_t>(c));
 }
 
+Value *CodeGenerator::visitNullLit(const NullLitExpr &) {
+  return llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+}
+
 Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
-  std::string raw = unescapeString(e.lit.getWord());
+  std::string raw = codegen_utils::unescapeString(e.lit.getWord());
 
   // Check for interpolation
   bool hasInterp = false;
@@ -341,15 +277,12 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
   if (expr.op == BinaryOp::Add) {
     bool lIsStr = TypeResolver::isString(lTy);
     bool rIsStr = TypeResolver::isString(rTy);
-
     if (lIsStr || rIsStr) {
       if (!lIsStr)
         lhs = StringOps::fromValue(builder, context, module.get(), lhs);
       if (!rIsStr)
         rhs = StringOps::fromValue(builder, context, module.get(), rhs);
-
-      Value *cat = StringOps::concat(builder, context, module.get(), lhs, rhs);
-      return cat;
+      return StringOps::concat(builder, context, module.get(), lhs, rhs);
     }
   }
 
@@ -358,25 +291,17 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
   if (lIsStr && rIsStr) {
     switch (expr.op) {
     case BinaryOp::Add: {
-      if (!lIsStr)
-        lhs = StringOps::fromValue(builder, context, module.get(), lhs);
-      if (!rIsStr)
-        rhs = StringOps::fromValue(builder, context, module.get(), rhs);
-
       Value *cat = StringOps::concat(builder, context, module.get(), lhs, rhs);
       if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(cat))
         scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));
       return cat;
     }
-
     case BinaryOp::Eq:
       return StringOps::equals(builder, context, module.get(), lhs, rhs);
-
     case BinaryOp::Ne: {
       Value *eq = StringOps::equals(builder, context, module.get(), lhs, rhs);
       return builder.CreateNot(eq);
     }
-
     default:
       return logError("Unsupported string operator");
     }
@@ -457,7 +382,6 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
           llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
           dataField);
     }
-
     return it->second.allocaInst;
   }
 
@@ -549,10 +473,8 @@ Value *CodeGenerator::generateIncrDecr(const std::string &name, bool isInc) {
   return res;
 }
 
-// Helper: get the element type of an array struct, falling back to name parsing
-// if TypeResolver::elemType returns null. Array structs are named
-// "array.<elem>" per TypeDesc::fullName(), so "array.array.Cell" ->
-// "array.Cell" -> "Cell".
+// Helper: get the element type of an array struct, falling back to name
+// parsing.
 static Type *resolveElemType(llvm::LLVMContext &context,
                              llvm::StructType *arrSt) {
   Type *elemTy = TypeResolver::elemType(context, arrSt);
@@ -604,8 +526,6 @@ Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
       ty = it->second.pointeeType;
   }
 
-  // If ty is the leaf element type instead of the array type (pointeeType bug),
-  // wrap it up to the correct depth.
   {
     auto *maybeSt = llvm::dyn_cast<llvm::StructType>(ty);
     if (!maybeSt || !TypeResolver::isArray(maybeSt)) {
@@ -667,8 +587,6 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
       ty = it->second.pointeeType;
   }
 
-  // If ty is the leaf element type instead of the array type (pointeeType bug),
-  // wrap it up to the correct depth.
   {
     auto *maybeSt = llvm::dyn_cast<llvm::StructType>(ty);
     if (!maybeSt || !TypeResolver::isArray(maybeSt)) {
@@ -700,18 +618,15 @@ Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
     Value *elemPtr = builder.CreateGEP(elemTy, dataPtr, idx, "elem.ptr");
 
     if (d == e.indices.size() - 1) {
-      // Allow struct assignment; only reject array/string on the rhs
       Value *val = codegen(*e.value);
       if (!val)
         return nullptr;
       if (TypeResolver::isArray(elemTy) || TypeResolver::isString(elemTy)) {
-        // Assigning an array/string value into a slot — load and store
         if (val->getType()->isPointerTy())
           val = builder.CreateLoad(elemTy, val, "slot.val");
         builder.CreateStore(val, elemPtr);
         return val;
       }
-
       if (llvm::dyn_cast<llvm::StructType>(elemTy)) {
         Value *structVal = val;
         if (val->getType()->isPointerTy())
@@ -777,7 +692,6 @@ Value *CodeGenerator::visitIndexedLength(const IndexedLengthExpr &e) {
     ty = elemTy;
   }
 
-  // ty is now the sub-array struct type
   auto *subSt = dyn_cast<StructType>(ty);
   if (!subSt || !TypeResolver::isArray(subSt))
     return logError(".length: element is not an array");
@@ -989,7 +903,6 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
     auto *st = llvm::dyn_cast<llvm::StructType>(ty);
     if (!st)
       return {nullptr, nullptr};
-
     return {ptr, st};
   }
 
@@ -1055,7 +968,6 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
             return {elemPtr, st};
         return {nullptr, nullptr};
       }
-
       ptr = elemPtr;
       ty = elemTy;
     }
@@ -1169,63 +1081,20 @@ Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
   return val;
 }
 
-Value *CodeGenerator::codegen(const Expression &expr) {
-  if (auto *p = dynamic_cast<const IdentExpr *>(&expr))
-    return visitIdentifier(*p);
-  if (auto *p = dynamic_cast<const IntLitExpr *>(&expr))
-    return visitIntLit(*p);
-  if (auto *p = dynamic_cast<const FloatLitExpr *>(&expr))
-    return visitFloatLit(*p);
-  if (auto *p = dynamic_cast<const StrLitExpr *>(&expr))
-    return visitStrLit(*p);
-  if (auto *p = dynamic_cast<const BoolLitExpr *>(&expr))
-    return visitBoolLit(*p);
-  if (auto *p = dynamic_cast<const CharLitExpr *>(&expr))
-    return visitCharLit(*p);
-  if (auto *p = dynamic_cast<const BinaryExpr *>(&expr))
-    return visitBinary(*p);
-  if (auto *p = dynamic_cast<const UnaryExpr *>(&expr))
-    return visitUnary(*p);
-  if (auto *p = dynamic_cast<const AssignExpr *>(&expr))
-    return visitAssign(*p);
-  if (auto *p = dynamic_cast<const FieldAccessExpr *>(&expr))
-    return visitFieldAccess(*p);
-  if (auto *p = dynamic_cast<const FieldAssignExpr *>(&expr))
-    return visitFieldAssign(*p);
-  if (auto *p = dynamic_cast<const StructLitExpr *>(&expr))
-    return visitStructLit(*p);
-  if (auto *p = dynamic_cast<const Increment *>(&expr))
-    return visitIncrement(*p);
-  if (auto *p = dynamic_cast<const Decrement *>(&expr))
-    return visitDecrement(*p);
-  if (auto *p = dynamic_cast<const CallExpr *>(&expr))
-    return visitCall(*p);
-  if (auto *p = dynamic_cast<const NewArrayExpr *>(&expr))
-    return visitNewArray(*p);
-  if (auto *p = dynamic_cast<const ArrayIndexExpr *>(&expr))
-    return visitArrayIndex(*p);
-  if (auto *p = dynamic_cast<const ArrayIndexAssignExpr *>(&expr))
-    return visitArrayIndexAssign(*p);
-  if (auto *p = dynamic_cast<const LengthPropertyExpr *>(&expr))
-    return visitLengthProperty(*p);
-  if (auto *p = dynamic_cast<const IndexedLengthExpr *>(&expr))
-    return visitIndexedLength(*p);
-  if (dynamic_cast<const NullLitExpr *>(&expr))
-    return llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
+// --------------------------- //
+// StmtVisitor implementations //
+// --------------------------- //
 
-  return logError("Unknown expression node");
-}
-
-// ------------------ //
-// Statement visitors //
-// ------------------ //
 llvm::AllocaInst *CodeGenerator::createEntryAlloca(llvm::Type *ty,
                                                    const std::string &name) {
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
   llvm::BasicBlock &entryBB = fn->getEntryBlock();
-
   llvm::IRBuilder<> tmpB(&entryBB, entryBB.begin());
   return tmpB.CreateAlloca(ty, nullptr, name);
+}
+
+Value *CodeGenerator::visitExprStmt(const ExprStmt &s) {
+  return s.expr ? codegen(*s.expr) : nullptr;
 }
 
 Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
@@ -1390,28 +1259,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   return alloca;
 }
 
-Value *CodeGenerator::codegen(const Statement &stmt) {
-  if (auto *p = dynamic_cast<const VarDecl *>(&stmt))
-    return visitVarDecl(*p);
-  if (auto *p = dynamic_cast<const ExprStmt *>(&stmt)) {
-    Value *v = codegen(*p->expr);
-    return v;
-  }
-  if (auto *p = dynamic_cast<const IfStmt *>(&stmt))
-    return visitIfStmt(*p);
-  if (auto *p = dynamic_cast<const WhileStmt *>(&stmt))
-    return visitWhileStmt(*p);
-  if (auto *p = dynamic_cast<const ForRangeStmt *>(&stmt))
-    return visitForRange(*p);
-  if (auto *p = dynamic_cast<const Break *>(&stmt))
-    return visitBreak(*p);
-  if (auto *p = dynamic_cast<const Continue *>(&stmt))
-    return visitContinue(*p);
-  if (auto *p = dynamic_cast<const Return *>(&stmt))
-    return visitReturn(*p);
-  return logError("Unknown statement node");
-}
-
 void CodeGenerator::codegen(const Block &block) {
   scopeMgr.pushScope();
   for (const auto &s : block.statements) {
@@ -1420,8 +1267,6 @@ void CodeGenerator::codegen(const Block &block) {
     codegen(*s);
   }
 }
-
-// Control flow
 
 Value *CodeGenerator::visitIfStmt(const IfStmt &s) {
   Value *cond = codegen(*s.condition);
@@ -1438,14 +1283,12 @@ Value *CodeGenerator::visitIfStmt(const IfStmt &s) {
 
   builder.CreateCondBr(cond, thenBB, elseBB);
 
-  // then
   builder.SetInsertPoint(thenBB);
   codegen(*s.thenBranch);
   scopeMgr.popScope();
   if (!builder.GetInsertBlock()->getTerminator())
     builder.CreateBr(mergeBB);
 
-  // else
   fn->insert(fn->end(), elseBB);
   builder.SetInsertPoint(elseBB);
   if (s.elseBranch) {
@@ -1571,7 +1414,6 @@ Value *CodeGenerator::visitForRange(const ForRangeStmt &s) {
   builder.SetInsertPoint(exitBB);
 
   namedValues.erase(vname);
-
   return nullptr;
 }
 
@@ -1591,10 +1433,8 @@ Value *CodeGenerator::visitContinue(const Continue &) {
 
 Value *CodeGenerator::visitReturn(const Return &s) {
   Value *retVal = nullptr;
-
-  if (s.value) {
+  if (s.value)
     retVal = codegen(**s.value);
-  }
 
   scopeMgr.emitAllDestructors();
 
@@ -1645,9 +1485,8 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   BasicBlock *entry = BasicBlock::Create(context, "entry", f);
   builder.SetInsertPoint(entry);
 
-  if (fname == "main") {
+  if (fname == "main")
     BuiltinEmitter::emitRuntimeInit(builder, context, module.get());
-  }
 
   namedValues.clear();
   namedValues = globalValues;
@@ -1680,9 +1519,8 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 
       AllocaInst *a = builder.CreateAlloca(declaredTy, nullptr, pname);
       builder.CreateStore(&arg, a);
-      bool ownsHeap = false;
       namedValues[pname] =
-          VarInfo(a, declaredTy, ownsHeap, false, false, param.isConst);
+          VarInfo(a, declaredTy, false, false, false, param.isConst);
     }
     scopeMgr.declare(pname);
   }
@@ -1746,9 +1584,8 @@ bool CodeGenerator::generate(const Program &program,
       if (ft)
         fieldTypes.push_back(ft);
     }
-    if (!llvm::StructType::getTypeByName(context, s->name)) {
+    if (!llvm::StructType::getTypeByName(context, s->name))
       llvm::StructType::create(context, fieldTypes, s->name);
-    }
   }
 
   for (const auto &block : program.externBlocks) {

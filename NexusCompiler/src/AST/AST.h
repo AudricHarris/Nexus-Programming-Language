@@ -2,6 +2,7 @@
 #define AST_H
 
 #include "../Token/TokenType.h"
+#include "ExprVisitor.h"
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -80,7 +81,7 @@ struct TypeDesc {
   Identifier base;
   int dimensions = 0;
   bool isConst = false;
-  bool isPtr = false; // true when base name is "ptr"
+  bool isPtr = false;
 
   explicit TypeDesc(const Identifier &b, int dims = 0, bool c = false,
                     bool ptr = false)
@@ -195,6 +196,8 @@ inline std::string toString(UnaryOp op) {
 struct Expression {
   virtual ~Expression() = default;
   virtual void toJson(std::ostream &os, int indent = 0) const = 0;
+  // Dispatch to a visitor — every concrete node overrides this.
+  virtual llvm::Value *accept(ExprVisitor &v) const = 0;
 };
 
 // ------------------- //
@@ -202,8 +205,10 @@ struct Expression {
 // ------------------- //
 struct IntLitExpr : Expression {
   Token lit;
-
   explicit IntLitExpr(const Token &t) : lit(t) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitIntLit(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"IntLitExpr\",\"value\":"
@@ -213,8 +218,10 @@ struct IntLitExpr : Expression {
 
 struct FloatLitExpr : Expression {
   Token lit;
-
   explicit FloatLitExpr(const Token &t) : lit(t) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitFloatLit(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"FloatLitExpr\",\"value\":"
@@ -224,8 +231,10 @@ struct FloatLitExpr : Expression {
 
 struct StrLitExpr : Expression {
   Token lit;
-
   explicit StrLitExpr(const Token &t) : lit(t) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitStrLit(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"StrLitExpr\",\"value\":"
@@ -235,8 +244,10 @@ struct StrLitExpr : Expression {
 
 struct BoolLitExpr : Expression {
   Token lit;
-
   explicit BoolLitExpr(const Token &t) : lit(t) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitBoolLit(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"BoolLitExpr\",\"value\":"
@@ -246,8 +257,10 @@ struct BoolLitExpr : Expression {
 
 struct CharLitExpr : Expression {
   Token lit;
-
   explicit CharLitExpr(const Token &t) : lit(t) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitCharLit(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"CharLitExpr\",\"value\":"
@@ -255,23 +268,22 @@ struct CharLitExpr : Expression {
   }
 };
 
-// -------------------- //
-// Null pointer literal //
-// -------------------- //
 struct NullLitExpr : Expression {
   NullLitExpr() = default;
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitNullLit(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     os << std::string(indent, ' ') << "{\"kind\":\"NullLitExpr\"}";
   }
 };
 
-// --------------------- //
-// Identifier expression //
-// --------------------- //
 struct IdentExpr : Expression {
   Identifier name;
-
   explicit IdentExpr(const Identifier &n) : name(n) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitIdentifier(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"IdentExpr\",\"name\":"
@@ -279,15 +291,14 @@ struct IdentExpr : Expression {
   }
 };
 
-// ----------------------- //
-// Arithmetic / comparison //
-// ----------------------- //
 struct BinaryExpr : Expression {
   BinaryOp op;
   ExprPtr left, right;
-
   BinaryExpr(BinaryOp o, ExprPtr l, ExprPtr r)
       : op(o), left(std::move(l)), right(std::move(r)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitBinary(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\n"
@@ -304,8 +315,10 @@ struct BinaryExpr : Expression {
 struct UnaryExpr : Expression {
   UnaryOp op;
   ExprPtr operand;
-
   UnaryExpr(UnaryOp o, ExprPtr e) : op(o), operand(std::move(e)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitUnary(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p
@@ -316,15 +329,14 @@ struct UnaryExpr : Expression {
   }
 };
 
-// --------------- //
-// Call expression //
-// --------------- //
 struct CallExpr : Expression {
   Identifier callee;
   std::vector<ExprPtr> arguments;
-
   CallExpr(const Identifier &c, std::vector<ExprPtr> args)
       : callee(c), arguments(std::move(args)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitCall(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"CallExpr\",\"callee\":"
@@ -338,16 +350,15 @@ struct CallExpr : Expression {
   }
 };
 
-// ------------------- //
-// Assignment (scalar) //
-// ------------------- //
 struct AssignExpr : Expression {
   Identifier target;
   ExprPtr value;
   AssignKind kind;
-
   AssignExpr(Identifier tgt, ExprPtr val, AssignKind k = AssignKind::Copy)
       : target(std::move(tgt)), value(std::move(val)), kind(k) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitAssign(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"AssignExpr\",\"target\":"
@@ -357,13 +368,12 @@ struct AssignExpr : Expression {
   }
 };
 
-// --------------------- //
-// Increment / Decrement //
-// --------------------- //
 struct Increment : Expression {
   Identifier target;
-
   explicit Increment(const Identifier &t) : target(t) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitIncrement(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     os << std::string(indent, ' ') << "{\"kind\":\"Increment\",\"target\":"
        << json_utils::escape(target.token.getWord()) << "}";
@@ -372,23 +382,24 @@ struct Increment : Expression {
 
 struct Decrement : Expression {
   Identifier target;
-
   explicit Decrement(const Identifier &t) : target(t) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitDecrement(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     os << std::string(indent, ' ') << "{\"kind\":\"Decrement\",\"target\":"
        << json_utils::escape(target.token.getWord()) << "}";
   }
 };
 
-// ---------------- //
-// Array allocation //
-// ---------------- //
 struct NewArrayExpr : Expression {
   TypeDesc arrayType;
   std::vector<ExprPtr> sizes;
-
   NewArrayExpr(TypeDesc t, std::vector<ExprPtr> sz)
       : arrayType(std::move(t)), sizes(std::move(sz)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitNewArray(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"NewArrayExpr\",\"type\":"
@@ -397,15 +408,14 @@ struct NewArrayExpr : Expression {
   }
 };
 
-// -------------- //
-// Array indexing //
-// -------------- //
 struct ArrayIndexExpr : Expression {
   Identifier array;
   std::vector<ExprPtr> indices;
-
   ArrayIndexExpr(Identifier arr, std::vector<ExprPtr> idxs)
       : array(std::move(arr)), indices(std::move(idxs)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitArrayIndex(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"ArrayIndexExpr\",\"array\":"
@@ -419,16 +429,15 @@ struct ArrayIndexExpr : Expression {
   }
 };
 
-// ------------------------ //
-// Array element assignment //
-// ------------------------ //
 struct ArrayIndexAssignExpr : Expression {
   Identifier array;
   std::vector<ExprPtr> indices;
   ExprPtr value;
-
   ArrayIndexAssignExpr(Identifier arr, std::vector<ExprPtr> idxs, ExprPtr val)
       : array(std::move(arr)), indices(std::move(idxs)), value(std::move(val)) {
+  }
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitArrayIndexAssign(*this);
   }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
@@ -443,13 +452,12 @@ struct ArrayIndexAssignExpr : Expression {
   }
 };
 
-// ---------------- //
-// Property access: //
-// ---------------- //
 struct LengthPropertyExpr : Expression {
   Identifier name;
-
   explicit LengthPropertyExpr(const Identifier &n) : name(n) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitLengthProperty(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     os << std::string(indent, ' ')
        << "{\"kind\":\"LengthPropertyExpr\",\"name\":"
@@ -460,9 +468,11 @@ struct LengthPropertyExpr : Expression {
 struct IndexedLengthExpr : Expression {
   Identifier arrayName;
   std::vector<ExprPtr> indices;
-
   IndexedLengthExpr(Identifier name, std::vector<ExprPtr> idxs)
       : arrayName(std::move(name)), indices(std::move(idxs)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitIndexedLength(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"IndexedLengthExpr\",\"name\":"
@@ -471,15 +481,14 @@ struct IndexedLengthExpr : Expression {
   }
 };
 
-// ----------------------------- //
-// Struct field access / assign  //
-// ----------------------------- //
 struct FieldAccessExpr : Expression {
   ExprPtr object;
   std::string field;
-
   FieldAccessExpr(ExprPtr obj, std::string f)
       : object(std::move(obj)), field(std::move(f)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitFieldAccess(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"FieldAccessExpr\","
@@ -493,9 +502,11 @@ struct FieldAssignExpr : Expression {
   ExprPtr object;
   std::string field;
   ExprPtr value;
-
   FieldAssignExpr(ExprPtr obj, std::string f, ExprPtr val)
       : object(std::move(obj)), field(std::move(f)), value(std::move(val)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitFieldAssign(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"FieldAssignExpr\","
@@ -504,15 +515,15 @@ struct FieldAssignExpr : Expression {
     os << "}";
   }
 };
-// --------------------------------- //
-// Struct literal: MyType{v0, v1, …} //
-// --------------------------------- //
+
 struct StructLitExpr : Expression {
   std::string typeName;
   std::vector<ExprPtr> values;
-
   StructLitExpr(std::string tn, std::vector<ExprPtr> vals)
       : typeName(std::move(tn)), values(std::move(vals)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitStructLit(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"StructLitExpr\",\"type\":"
@@ -532,6 +543,7 @@ struct StructLitExpr : Expression {
 struct Statement {
   virtual ~Statement() = default;
   virtual void toJson(std::ostream &os, int indent = 0) const = 0;
+  virtual llvm::Value *accept(StmtVisitor &v) const = 0;
 };
 
 // -------------------- //
@@ -552,6 +564,10 @@ struct VarDecl : Statement {
   VarDecl(TypeDesc t, Identifier n)
       : type(std::move(t)), name(std::move(n)), initializer(nullptr),
         kind(AssignKind::Copy), isConst(false) {}
+
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitVarDecl(*this);
+  }
 
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
@@ -603,6 +619,9 @@ struct IfStmt : Statement {
          std::unique_ptr<Block> elseB = nullptr)
       : condition(std::move(cond)), thenBranch(std::move(thenB)),
         elseBranch(std::move(elseB)) {}
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitIfStmt(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"IfStmt\",\"cond\":";
@@ -614,9 +633,11 @@ struct IfStmt : Statement {
 struct WhileStmt : Statement {
   ExprPtr condition;
   std::unique_ptr<Block> doBranch;
-
   WhileStmt(ExprPtr cond, std::unique_ptr<Block> body)
       : condition(std::move(cond)), doBranch(std::move(body)) {}
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitWhileStmt(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"WhileStmt\",\"cond\":";
@@ -637,7 +658,9 @@ struct ForRangeStmt : Statement {
                std::unique_ptr<Block> b)
       : varType(std::move(t)), varName(std::move(n)), start(std::move(s)),
         end(std::move(e)), step(std::move(st)), body(std::move(b)) {}
-
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitForRange(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"ForRangeStmt\","
@@ -647,9 +670,11 @@ struct ForRangeStmt : Statement {
 
 struct Return : Statement {
   std::optional<ExprPtr> value;
-
   Return() = default;
   explicit Return(ExprPtr v) : value(std::move(v)) {}
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitReturn(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"Return\",\"value\":";
@@ -663,25 +688,31 @@ struct Return : Statement {
 
 struct Break : Statement {
   Break() = default;
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitBreak(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
-    std::string p(indent, ' ');
-    os << p << "{\"kind\":\"Break\"}";
+    os << std::string(indent, ' ') << "{\"kind\":\"Break\"}";
   }
 };
 
 struct Continue : Statement {
   Continue() = default;
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitContinue(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
-    std::string p(indent, ' ');
-    os << p << "{\"kind\":\"Continue\"}";
+    os << std::string(indent, ' ') << "{\"kind\":\"Continue\"}";
   }
 };
 
 struct ExprStmt : Statement {
   ExprPtr expr;
-
   ExprStmt() = default;
   explicit ExprStmt(ExprPtr e) : expr(std::move(e)) {}
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitExprStmt(*this);
+  }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"ExprStmt\",\"expr\":";
@@ -719,14 +750,11 @@ struct Function {
 // --------------------------------- //
 // Extern "C" function declarations  //
 // --------------------------------- //
-
-// A single declaration inside an extern "C" { } block.
-// Parameters are type-only (names are optional in C FFI declarations).
 struct ExternFuncDecl {
   std::string name;
   std::vector<TypeDesc> paramTypes;
   TypeDesc returnType;
-  bool isPrivate = false; // declared private in source (limits export)
+  bool isPrivate = false;
 
   ExternFuncDecl(std::string n, std::vector<TypeDesc> pts, TypeDesc ret,
                  bool priv = false)
@@ -741,10 +769,8 @@ struct ExternFuncDecl {
   }
 };
 
-// One extern "C" { } block; a file may have several.
 struct ExternBlock {
   std::vector<ExternFuncDecl> decls;
-
   ExternBlock() = default;
   explicit ExternBlock(std::vector<ExternFuncDecl> d) : decls(std::move(d)) {}
   void toJson(std::ostream &os, int indent = 0) const {
@@ -765,7 +791,6 @@ struct ExternBlock {
 struct StructField {
   TypeDesc type;
   std::string name;
-
   StructField(TypeDesc t, std::string n)
       : type(std::move(t)), name(std::move(n)) {}
   void toJson(std::ostream &os, int indent = 0) const {
@@ -805,7 +830,6 @@ struct StructDecl {
 struct ImportPath {
   std::vector<std::string> segments;
   bool isStdLib = false;
-
   ImportPath() = default;
   ImportPath(std::vector<std::string> segs, bool stdlib)
       : segments(std::move(segs)), isStdLib(stdlib) {}
@@ -815,7 +839,6 @@ struct ImportDecl {
   ImportPath path;
   std::vector<std::string> symbols;
   bool selective = false;
-
   ImportDecl() = default;
   ImportDecl(ImportPath p, std::vector<std::string> syms, bool sel)
       : path(std::move(p)), symbols(std::move(syms)), selective(sel) {}
@@ -907,4 +930,4 @@ namespace AST_H {
 using Function = ::Function;
 } // namespace AST_H
 
-#endif
+#endif // AST_H

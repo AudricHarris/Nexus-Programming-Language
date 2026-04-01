@@ -1,6 +1,6 @@
 #include "PrintEmitter.h"
+#include "../CodeGenUtils.h"
 #include "../TypeResolver.h"
-#include "llvm/IR/Constants.h"
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Value.h>
 #include <regex>
@@ -8,137 +8,13 @@
 using namespace llvm;
 
 // ------------------------------------- //
-// Internal types & helpers (file-local) //
+// Internal types (file-local)           //
 // ------------------------------------- //
 
 struct FmtArg {
   std::string spec;
   Value *value;
 };
-
-static std::string unescapeString(const std::string &s) {
-  std::string out;
-  for (size_t i = 0; i < s.size(); ++i) {
-    if (s[i] == '\\' && i + 1 < s.size()) {
-      switch (s[i + 1]) {
-      case 'n':
-        out += '\n';
-        ++i;
-        break;
-      case 't':
-        out += '\t';
-        ++i;
-        break;
-      case 'r':
-        out += '\r';
-        ++i;
-        break;
-      case '\\':
-        out += '\\';
-        ++i;
-        break;
-      case '"':
-        out += '"';
-        ++i;
-        break;
-      case '0':
-        out += '\0';
-        ++i;
-        break;
-      case '{':
-        out += '{';
-        ++i;
-        break;
-      default:
-        out += s[i];
-        break;
-      }
-    } else {
-      out += s[i];
-    }
-  }
-  return out;
-}
-
-static Value *evalInterp(const std::string &inner, LLVMContext &ctx,
-                         IRBuilder<> &B,
-                         const std::map<std::string, VarInfo> &vars) {
-  bool isIdent = !inner.empty();
-  for (char c : inner)
-    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
-      isIdent = false;
-      break;
-    }
-
-  if (isIdent) {
-    auto it = vars.find(inner);
-    if (it != vars.end() && !it->second.isMoved) {
-      if (TypeResolver::isString(it->second.type) ||
-          TypeResolver::isArray(it->second.type))
-        return it->second.allocaInst;
-      return B.CreateLoad(it->second.type, it->second.allocaInst,
-                          inner + ".load");
-    }
-    return nullptr;
-  }
-
-  auto dot = inner.find('.');
-  if (dot != std::string::npos && dot > 0 && dot + 1 < inner.size()) {
-    std::string objName = inner.substr(0, dot);
-    std::string fieldName = inner.substr(dot + 1);
-
-    auto isIdentStr = [](const std::string &s) {
-      if (s.empty())
-        return false;
-      for (char c : s)
-        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_')
-          return false;
-      return true;
-    };
-
-    if (isIdentStr(objName) && isIdentStr(fieldName)) {
-      auto it = vars.find(objName);
-      if (it != vars.end() && !it->second.isMoved) {
-        llvm::StructType *st =
-            llvm::dyn_cast<llvm::StructType>(it->second.type);
-        if (st) {
-          unsigned numElems = st->getNumElements();
-          {
-            std::string composed = objName + "." + fieldName;
-            auto fit = vars.find(composed);
-            if (fit != vars.end() && !fit->second.isMoved) {
-              if (TypeResolver::isString(fit->second.type) ||
-                  TypeResolver::isArray(fit->second.type))
-                return fit->second.allocaInst;
-              return B.CreateLoad(fit->second.type, fit->second.allocaInst,
-                                  composed + ".load");
-            }
-          }
-
-          (void)numElems;
-        }
-      }
-    }
-  }
-
-  try {
-    size_t pos;
-    long long v = std::stoll(inner, &pos);
-    if (pos == inner.size())
-      return ConstantInt::get(Type::getInt32Ty(ctx), v);
-  } catch (...) {
-  }
-
-  try {
-    size_t pos;
-    double v = std::stod(inner, &pos);
-    if (pos == inner.size())
-      return ConstantFP::get(Type::getDoubleTy(ctx), v);
-  } catch (...) {
-  }
-
-  return nullptr;
-}
 
 static std::string buildPrintfFmt(const std::string &raw, LLVMContext &ctx,
                                   IRBuilder<> &B,
@@ -164,7 +40,6 @@ static std::string buildPrintfFmt(const std::string &raw, LLVMContext &ctx,
       continue;
     }
 
-    // Scan to matching '}'
     size_t start = i + 1, depth = 1, j = start;
     while (j < raw.size() && depth > 0) {
       if (raw[j] == '{')
@@ -182,7 +57,7 @@ static std::string buildPrintfFmt(const std::string &raw, LLVMContext &ctx,
     }
 
     std::string inner = raw.substr(start, j - start);
-    Value *val = evalInterp(inner, ctx, B, vars);
+    Value *val = codegen_utils::evalInterp(inner, ctx, B, vars);
     if (val) {
       Type *ty = val->getType();
       if (ty->isIntegerTy(1)) {
@@ -262,7 +137,7 @@ Value *PrintEmitter::handlePrintf(const CallExpr &e, IRBuilder<> &B,
   if (!strArg)
     return nullptr;
 
-  std::string raw = unescapeString(strArg->lit.getWord());
+  std::string raw = codegen_utils::unescapeString(strArg->lit.getWord());
   raw = replaceHexColors(raw) + "\033[0m";
 
   std::vector<FmtArg> fmtArgs;
@@ -273,10 +148,7 @@ Value *PrintEmitter::handlePrintf(const CallExpr &e, IRBuilder<> &B,
     return nullptr;
 
   Value *fmtPtr = B.CreateGlobalString(fmt, ".fmt");
-
   std::vector<Value *> args = {fmtPtr};
-
-  std::vector<Value *> tempsToFree;
 
   for (auto &fa : fmtArgs) {
     Value *toPass = fa.value;
@@ -296,22 +168,20 @@ Value *PrintEmitter::handlePrintf(const CallExpr &e, IRBuilder<> &B,
 
           FunctionCallee colorFn = M->getOrInsertFunction(
               "rt_colorize_string",
-              FunctionType::get(PointerType::get(ctx, 0),   // returns char*
-                                {PointerType::get(ctx, 0)}, // takes const char*
-                                false));
+              FunctionType::get(PointerType::get(ctx, 0),
+                                {PointerType::get(ctx, 0)}, false));
 
           Value *colored = B.CreateCall(colorFn, {dataPtr}, "colored.str");
           toPass = colored;
-          tempsToFree.push_back(colored);
         }
       }
     }
     args.push_back(toPass);
   }
-  Value *printfRet = B.CreateCall(printfF, args, "printf.ret");
 
-  return printfRet;
+  return B.CreateCall(printfF, args, "printf.ret");
 }
+
 Value *PrintEmitter::handlePrint(const CallExpr &e, IRBuilder<> &B,
                                  LLVMContext &ctx, Module *M) {
   (void)ctx;
