@@ -73,11 +73,12 @@ ResolvedModule &ModuleManager::resolveImport(const ImportDecl &decl) {
   fs::path filePath = importPathToFile(decl.path, decl.path.isStdLib);
   std::string canonical = fs::weakly_canonical(filePath).string();
   std::cerr << "DEBUG resolving: " << filePath << "\n";
-  if (resolved.count(canonical))
-    return resolved[canonical];
 
   if (inProgress.count(canonical))
     throw std::runtime_error("Circular import detected: " + canonical);
+
+  if (resolved.count(canonical))
+    return resolved[canonical];
 
   inProgress.insert(canonical);
 
@@ -97,6 +98,9 @@ ResolvedModule &ModuleManager::resolveImport(const ImportDecl &decl) {
 void ModuleManager::resolveAll(Program &prog) {
   for (const auto &imp : prog.imports) {
     auto &mod = resolveImport(*imp);
+
+    if (!mod.ast)
+      continue;
 
     for (auto it = mod.ast->structs.rbegin(); it != mod.ast->structs.rend();
          ++it)

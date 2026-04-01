@@ -57,12 +57,16 @@ llvm::Type *TypeResolver::fromName(llvm::LLVMContext &ctx,
     return getOrCreateArrayStruct(ctx, innerTy);
   }
 
+  if (llvm::StructType *st = llvm::StructType::getTypeByName(ctx, t))
+    return st;
+
   return nullptr;
 }
 
 llvm::Type *TypeResolver::fromTypeDesc(llvm::LLVMContext &ctx,
                                        const TypeDesc &td) {
-  llvm::Type *base = fromName(ctx, td.base.token.getWord());
+  const std::string &name = td.base.token.getWord();
+  llvm::Type *base = fromName(ctx, name);
   if (!base)
     return nullptr;
 

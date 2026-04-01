@@ -308,7 +308,22 @@ std::unique_ptr<GlobalVarDecl> Parser::parseGlobalVarDecl() {
   Token typeTok = expect(TokenKind::IDENTIFIER, "Expected type");
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected variable name");
   expect(TokenKind::ASSIGN, "Global variables must be initialized");
-  auto init = parseExpression();
+
+  std::unique_ptr<Expression> init;
+  if (check(TokenKind::LBRACE)) {
+    consume();
+    std::vector<ExprPtr> vals;
+    if (!check(TokenKind::RBRACE)) {
+      do {
+        vals.push_back(parseExpression());
+      } while (match(TokenKind::COMMA));
+    }
+    expect(TokenKind::RBRACE, "Expected '}' to close struct literal");
+    init = std::make_unique<StructLitExpr>(typeTok.getWord(), std::move(vals));
+  } else {
+    init = parseExpression();
+  }
+
   expect(TokenKind::SEMI, "Expected ';'");
 
   TypeDesc td(Identifier{typeTok}, 0, isConst);

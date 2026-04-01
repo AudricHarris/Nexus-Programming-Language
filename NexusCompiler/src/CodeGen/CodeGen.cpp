@@ -1438,10 +1438,21 @@ Value *CodeGenerator::visitReturn(const Return &s) {
 
   scopeMgr.emitAllDestructors();
 
-  if (retVal)
+  if (retVal) {
+    llvm::Function *fn = builder.GetInsertBlock()->getParent();
+    Type *retTy = fn->getReturnType();
+
+    if (retVal->getType()->isPointerTy() &&
+        (TypeResolver::isString(retTy) || TypeResolver::isArray(retTy) ||
+         retTy->isStructTy())) {
+      retVal = builder.CreateLoad(retTy, retVal, "ret.load");
+    } else {
+      retVal = TypeResolver::coerce(builder, retVal, retTy);
+    }
     builder.CreateRet(retVal);
-  else
+  } else {
     builder.CreateRetVoid();
+  }
 
   return nullptr;
 }
@@ -1613,17 +1624,11 @@ bool CodeGenerator::generate(const Program &program,
     if (!module->getFunction(fname)) {
       Type *retTy = TypeResolver::fromTypeDesc(context, fn->returnType);
       if (!retTy)
-        retTy = llvm::StructType::getTypeByName(
-            context, fn->returnType.base.token.getWord());
-      if (!retTy)
         retTy = llvm::Type::getVoidTy(context);
 
       std::vector<Type *> paramTypes;
       for (const auto &p : fn->params) {
         Type *pt = TypeResolver::fromTypeDesc(context, p.type);
-        if (!pt)
-          pt = llvm::StructType::getTypeByName(context,
-                                               p.type.base.token.getWord());
         if (!pt)
           continue;
         paramTypes.push_back(p.isBorrowRef ? PointerType::get(context, 0) : pt);
@@ -1636,10 +1641,66 @@ bool CodeGenerator::generate(const Program &program,
 
   for (const auto &gv : program.globals) {
     llvm::Type *ty = TypeResolver::fromTypeDesc(context, gv->type);
-    if (!ty)
+    if (!ty) {
+      logError(("Global variable '" + gv->name + "': unknown type '" +
+                gv->type.base.token.getWord() + "'")
+                   .c_str());
       return false;
+    }
+
+    auto evalConstField = [&](const Expression *expr,
+                              llvm::Type *fieldTy) -> llvm::Constant * {
+      bool negate = false;
+      if (auto *unary = dynamic_cast<const UnaryExpr *>(expr)) {
+        if (unary->op != UnaryOp::Negate) {
+          logError(("Global '" + gv->name + "': unsupported unary op in field")
+                       .c_str());
+          return nullptr;
+        }
+        negate = true;
+        expr = unary->operand.get();
+      }
+
+      llvm::Constant *fc = nullptr;
+      if (auto *fi = dynamic_cast<const IntLitExpr *>(expr)) {
+        if (fieldTy->isFloatingPointTy()) {
+          double v = std::stod(fi->lit.getWord());
+          if (negate)
+            v = -v;
+          fc = llvm::ConstantFP::get(fieldTy, v);
+        } else {
+          long long v = std::stoll(fi->lit.getWord());
+          if (negate)
+            v = -v;
+          fc = llvm::ConstantInt::get(fieldTy, v);
+        }
+      } else if (auto *ff = dynamic_cast<const FloatLitExpr *>(expr)) {
+        double v = std::stod(ff->lit.getWord());
+        if (negate)
+          v = -v;
+        fc = llvm::ConstantFP::get(fieldTy, v);
+      } else if (auto *fb = dynamic_cast<const BoolLitExpr *>(expr)) {
+        long long v = fb->lit.getWord() == "true" ? 1 : 0;
+        if (negate)
+          v = -v;
+        fc = llvm::ConstantInt::get(fieldTy, v);
+      } else {
+        logError(
+            ("Global '" + gv->name + "': field is not a constant expression")
+                .c_str());
+        return nullptr;
+      }
+
+      if (fc && fieldTy->isFloatTy() && fc->getType()->isDoubleTy())
+        fc = llvm::ConstantFP::get(
+            fieldTy,
+            llvm::cast<llvm::ConstantFP>(fc)->getValueAPF().convertToDouble());
+
+      return fc;
+    };
 
     llvm::Constant *init = nullptr;
+
     if (auto *intExpr = dynamic_cast<IntLitExpr *>(gv->init.get())) {
       if (ty->isFloatingPointTy()) {
         double val = std::stod(intExpr->lit.getWord());
@@ -1655,6 +1716,27 @@ bool CodeGenerator::generate(const Program &program,
       init = ty->isFloatTy()
                  ? llvm::ConstantFP::get(llvm::Type::getFloatTy(context), val)
                  : llvm::ConstantFP::get(llvm::Type::getDoubleTy(context), val);
+    } else if (auto *slExpr = dynamic_cast<StructLitExpr *>(gv->init.get())) {
+      auto *st = llvm::dyn_cast<llvm::StructType>(ty);
+      if (!st) {
+        logError(("Global '" + gv->name + "': type is not a struct").c_str());
+        return false;
+      }
+      if (slExpr->values.size() != st->getNumElements()) {
+        logError(("Global '" + gv->name +
+                  "': wrong number of fields in struct literal")
+                     .c_str());
+        return false;
+      }
+      std::vector<llvm::Constant *> fieldConsts;
+      for (unsigned i = 0; i < slExpr->values.size(); ++i) {
+        llvm::Type *fieldTy = st->getElementType(i);
+        llvm::Constant *fc = evalConstField(slExpr->values[i].get(), fieldTy);
+        if (!fc)
+          return false;
+        fieldConsts.push_back(fc);
+      }
+      init = llvm::ConstantStruct::get(st, fieldConsts);
     }
 
     if (!init) {
