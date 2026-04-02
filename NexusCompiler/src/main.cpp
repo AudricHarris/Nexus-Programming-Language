@@ -4,6 +4,7 @@
 #include "Lexer/Lexer.h"
 #include "Parser/Parser.h"
 #include "Token/TokenType.h"
+#include "TypeChecker/TypeChecker.h"
 
 #include <chrono>
 #include <cstdlib>
@@ -145,9 +146,9 @@ std::string setupStdlibPath() {
   }
 }
 
-// -------------------- //
-// Utility functions    //
-// -------------------- //
+// ------------------ //
+// Utility functions  //
+// ------------------ //
 
 bool endsWith(const std::string &str, const std::string &suffix) {
   if (str.length() < suffix.length())
@@ -171,9 +172,9 @@ std::string getOutputName(const std::string &file) {
 #endif
 }
 
-// -------------------- //
-// Main                 //
-// -------------------- //
+// ----- //
+// Main  //
+// ----- //
 
 int main(int argc, char *argv[]) {
   if (argc < 2) {
@@ -220,85 +221,115 @@ int main(int argc, char *argv[]) {
 
   std::cout << "Compiling " << inputs.size() << " Nexus file(s)...\n";
 
+  int compiled = 0;
+  int failed = 0;
+
   for (const auto &file : inputs) {
     if (!hasValidExt(file)) {
       std::cerr << "Skipping invalid file: " << file << "\n";
+      ++failed;
       continue;
     }
 
     std::optional<std::string> codeOpt = readFile(file.c_str());
     if (!codeOpt.has_value()) {
       std::cerr << "Failed to read file: " << file << "\n";
+      ++failed;
       continue;
     }
 
     std::string code = codeOpt.value();
 
-    std::cout << "\nCompiling: " << file << "\n";
+    std::cout << "\n── " << file << " ──\n";
 
     // Lexer
-    auto start = std::chrono::high_resolution_clock::now();
+    auto lexStart = std::chrono::high_resolution_clock::now();
+
     Lexer lexer(code);
     std::vector<Token> tokens = lexer.Tokenize();
-    for (auto t : tokens) {
+
+    auto lexEnd = std::chrono::high_resolution_clock::now();
+    double lexMs =
+        std::chrono::duration<double, std::milli>(lexEnd - lexStart).count();
+    double lexS = lexMs / 1000.0;
+    double tokPerSec = tokens.size() / (lexS > 0.0 ? lexS : 1.0);
+
+    for (auto &t : tokens)
       std::cout << t.toString();
-    }
 
-    auto end = std::chrono::high_resolution_clock::now();
-
-    double elapsedMs =
-        std::chrono::duration<double, std::milli>(end - start).count();
-    double elapsedS = elapsedMs / 1000.0;
-    double tokPerS = tokens.size() / (elapsedS > 0 ? elapsedS : 1.0);
-
-    std::cout << "Tokens: " << tokens.size() << "\n";
-    std::cout << "Time (s): " << elapsedS << "\n";
-    std::cout << "Tokens / second: " << tokPerS << "\n";
+    std::cout << "Tokens     : " << tokens.size() << "\n";
+    std::cout << "Lex time   : " << lexS << " s  ("
+              << static_cast<long long>(tokPerSec) << " tok/s)\n";
 
     // Parser
     Parser parser(tokens);
     auto parsed = parser.parse();
 
     if (!parsed) {
-      std::cerr << "Parsing failed for " << file << "\n";
+      std::cerr << "error: parsing failed for '" << file << "'\n";
+      ++failed;
       continue;
     }
 
+    // Type-checker
+    TypeChecker tc;
+    if (!tc.check(*parsed)) {
+      std::cerr << "Type errors in '" << file << "':\n";
+      for (const auto &err : tc.errors())
+        std::cerr << "  error: " << err << "\n";
+      std::cerr << tc.errors().size() << " error(s) — compilation aborted.\n";
+      ++failed;
+      continue;
+    }
+    std::cout << "Type-check : OK\n";
+
+    // Module resolution
     fs::path projectRoot = fs::path(file).parent_path();
 
     ModuleManager mm(projectRoot, fs::path(stdlibRoot));
     mm.resolveAll(*parsed);
 
+    // Code generation
     CodeGenerator cg;
     if (!cg.generate(*parsed, "out")) {
-      std::cerr << "Code generation failed for " << file << "\n";
+      std::cerr << "error: code generation failed for '" << file << "'\n";
+      ++failed;
       continue;
     }
 
+    // Linking
     std::string output = getOutputName(file);
 
     std::string cmd = "clang -Wno-override-module -fsanitize=address "
                       "-fsanitize=leak -g out.ll -lglfw -lGL -o \"" +
                       output + "\"";
 
-    std::cout << "Linking with Clang...\n";
+    std::cout << "Linking    : " << output << "\n";
     int res = std::system(cmd.c_str());
-    // system("rm -rf out.ll");
+    system("rm -rf out.ll");
 
     if (res != 0) {
-      std::cerr << "Clang compilation failed for " << file << "\n";
+      std::cerr << "error: clang link failed for '" << file << "'\n";
+      ++failed;
       continue;
     }
 
-    std::cout << "Successfully compiled: " << output << "\n";
-    std::cout << "Run with: "
+    std::cout << "OK         : " << output << "\n";
+    std::cout << "Run with   : "
 #ifdef _WIN32
-              << output << "\n\n";
+              << output << "\n";
 #else
-              << "./" << output << "\n\n";
+              << "./" << output << "\n";
 #endif
+    ++compiled;
   }
 
-  std::cout << "Done.\n";
-  return EXIT_SUCCESS;
+  // ------------------------------------------------------------------ //
+  // Summary                                                             //
+  // ------------------------------------------------------------------ //
+  std::cout << "\n── Summary ──\n";
+  std::cout << "Compiled : " << compiled << "\n";
+  std::cout << "Failed   : " << failed << "\n";
+
+  return (failed == 0) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
