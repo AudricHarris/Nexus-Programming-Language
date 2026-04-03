@@ -62,6 +62,57 @@ public class BankAccount
 	}
 }
 
+public class BankAccount
+{
+	private static i32 g_nbAccounts = 0;
+	private static i32 g_totalConnection = 0;
+
+	private i4 accountNumber;
+	private i32 balance;
+
+	private BankAccount(i32 balance)
+	{
+		self.accountNumber = BankAccount::g_nbAccounts++;
+		self.balance = balance;
+		if balance < 0
+		{
+			Printf("#FF0000 Balance is not valid.")
+			return Options.None;
+		}
+
+		return Options.Some(self);
+	}
+
+
+	public Deposit(i32 amount) -> bool
+	{
+		if (amount <= 0) return false;
+		self.balance += amount;
+		return true;
+	}
+
+	public Withdraw(i32 amount) -> TransactionResult
+	{
+		if (amount < 0) return TransactionResult.NegativeAmount();
+		if (self.balance == 0) return TransactionResult.AccountClosed();
+		if (amount > self.balance)
+			return TransactionResult.InsufficientFunds(self.balance, amount);
+		self.balance -= amount;
+		return TransactionResult.Success(self.balance);
+	}
+
+	public GetBalance() -> i32
+	{
+		return self.balance;
+	}
+
+	public Clone() -> BankAccount
+	{
+		return new BankAccount(self.balance);
+	}
+}
+
+
 InitAccounts(Options<BankAccount>[] tab)
 {
 	for (i32 i = 0; i < tab.Length; i++)

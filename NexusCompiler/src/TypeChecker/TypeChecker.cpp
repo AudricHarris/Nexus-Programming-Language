@@ -52,7 +52,7 @@ bool TypeChecker::isAssignable(const NexusType &from,
 }
 
 // --------------------------------- //
-//  First pass — register declarations //
+//  First pass register declarations //
 // --------------------------------- //
 
 void TypeChecker::registerStructs(const Program &prog) {
