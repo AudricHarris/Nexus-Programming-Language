@@ -22,7 +22,7 @@ public:
   static llvm::Type *elemType(llvm::LLVMContext &ctx, llvm::StructType *arrTy);
   static llvm::Type *largerType(llvm::Type *a, llvm::Type *b);
   static llvm::Value *coerce(llvm::IRBuilder<> &B, llvm::Value *val,
-                             llvm::Type *target);
+                             llvm::Type *target, bool srcUnsigned = false);
 
 private:
   static std::string typeName(llvm::Type *ty);
