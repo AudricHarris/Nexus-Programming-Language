@@ -271,8 +271,6 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
-    // Module resolution — must run before type-checking so that
-    // stdlib extern declarations are visible to the type checker
     fs::path projectRoot = fs::path(file).parent_path();
 
     ModuleManager mm(projectRoot, fs::path(stdlibRoot));
@@ -325,10 +323,10 @@ int main(int argc, char *argv[]) {
     ++compiled;
   }
 
-  // ------------------------------------------------------------------ //
-  // Summary                                                             //
-  // ------------------------------------------------------------------ //
-  std::cout << "\n── Summary ──\n";
+  // -------- //
+  // Summary  //
+  // -------- //
+  std::cout << "\n--- Summary ---\n";
   std::cout << "Compiled : " << compiled << "\n";
   std::cout << "Failed   : " << failed << "\n";
 

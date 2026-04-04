@@ -30,8 +30,8 @@ std::optional<NexusType> TypeChecker::lookupVar(const std::string &name) const {
 
 bool TypeChecker::typeExists(const std::string &name) const {
   static const std::vector<std::string> primitives = {
-      "int",   "long",   "short", "i8",   "bool",
-      "float", "double", "str",   "void", "ptr"};
+      "int", "long", "short", "i8",  "bool", "float", "double", "f16",
+      "u8",  "u16",  "u32",   "u64", "str",  "void",  "ptr"};
   for (auto &p : primitives)
     if (p == name)
       return true;
@@ -43,6 +43,9 @@ bool TypeChecker::isAssignable(const NexusType &from,
   if (from == to)
     return true;
   if (from.base == "null" && to.isPtr)
+    return true;
+  // Integers and arrays can be passed as ptr (C-style address-of)
+  if (to.isPtr && (from.isIntegral() || from.isArray()))
     return true;
   // All numeric types are freely interassignable
   if (from.isNumeric() && to.isNumeric() && from.dims == 0 && to.dims == 0)

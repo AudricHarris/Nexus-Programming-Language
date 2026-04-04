@@ -40,6 +40,9 @@ struct NexusType {
       return "float";
     if (b == "f64")
       return "double";
+    if (b == "unsigned")
+      return "u32";
+    // unsigned and float widths are already canonical
     return b;
   }
 
@@ -52,14 +55,23 @@ struct NexusType {
     if (dims != 0)
       return false;
     return base == "int" || base == "long" || base == "short" || base == "i8" ||
-           base == "bool" || base == "float" || base == "double";
+           base == "bool" || base == "float" || base == "double" ||
+           base == "f16" || base == "u8" || base == "u16" || base == "u32" ||
+           base == "u64";
   }
 
   bool isIntegral() const {
     if (dims != 0)
       return false;
     return base == "int" || base == "long" || base == "short" || base == "i8" ||
-           base == "bool";
+           base == "bool" || base == "u8" || base == "u16" || base == "u32" ||
+           base == "u64";
+  }
+
+  bool isUnsigned() const {
+    if (dims != 0)
+      return false;
+    return base == "u8" || base == "u16" || base == "u32" || base == "u64";
   }
 
   bool isArray() const { return dims > 0; }

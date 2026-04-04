@@ -21,6 +21,8 @@ std::string TypeResolver::typeName(llvm::Type *ty) {
     return "f32";
   if (ty->isDoubleTy())
     return "f64";
+  if (ty->isHalfTy())
+    return "f16";
   if (auto *st = llvm::dyn_cast<llvm::StructType>(ty))
     return st->getName().str();
   return "unknown";
@@ -40,8 +42,19 @@ llvm::Type *TypeResolver::fromName(llvm::LLVMContext &ctx,
     return llvm::Type::getFloatTy(ctx);
   if (t == "f64" || t == "double")
     return llvm::Type::getDoubleTy(ctx);
+  if (t == "f16")
+    return llvm::Type::getHalfTy(ctx);
   if (t == "bool")
     return llvm::Type::getInt1Ty(ctx);
+  // Unsigned types map to the same LLVM integer types (signedness is in ops)
+  if (t == "u8")
+    return llvm::Type::getInt8Ty(ctx);
+  if (t == "u16")
+    return llvm::Type::getInt16Ty(ctx);
+  if (t == "u32" || t == "unsigned")
+    return llvm::Type::getInt32Ty(ctx);
+  if (t == "u64")
+    return llvm::Type::getInt64Ty(ctx);
   if (t == "void")
     return llvm::Type::getVoidTy(ctx);
   if (t == "str" || t == "string")
@@ -158,7 +171,7 @@ llvm::Type *TypeResolver::largerType(llvm::Type *a, llvm::Type *b) {
 }
 
 llvm::Value *TypeResolver::coerce(llvm::IRBuilder<> &B, llvm::Value *val,
-                                  llvm::Type *target) {
+                                  llvm::Type *target, bool srcUnsigned) {
   if (!val || !target || val->getType() == target)
     return val;
 
@@ -174,9 +187,13 @@ llvm::Value *TypeResolver::coerce(llvm::IRBuilder<> &B, llvm::Value *val,
       if (target->isFloatTy() && src->isDoubleTy())
         return B.CreateFPTrunc(val, target, "fptrunc");
     }
-    if (src->isIntegerTy())
+    if (src->isIntegerTy()) {
+      if (srcUnsigned)
+        return B.CreateUIToFP(val, target,
+                              target->isDoubleTy() ? "uitofp.d" : "uitofp.f");
       return B.CreateSIToFP(val, target,
                             target->isDoubleTy() ? "sitofp.d" : "sitofp.f");
+    }
   }
 
   if (target->isIntegerTy()) {
@@ -184,19 +201,23 @@ llvm::Value *TypeResolver::coerce(llvm::IRBuilder<> &B, llvm::Value *val,
       unsigned tb = target->getIntegerBitWidth();
       unsigned sb = src->getIntegerBitWidth();
       if (tb > sb)
-        return B.CreateSExt(val, target, "sext");
+        return srcUnsigned ? B.CreateZExt(val, target, "zext")
+                           : B.CreateSExt(val, target, "sext");
       if (tb < sb)
         return B.CreateTrunc(val, target, "trunc");
     }
-  }
-  if (target->isIntegerTy() && src->isFloatingPointTy()) {
-    if (target->isIntegerTy(1)) {
-      return B.CreateFCmpUNE(val, llvm::ConstantFP::get(src, 0.0), "tobool");
+    if (src->isFloatingPointTy()) {
+      if (target->isIntegerTy(1))
+        return B.CreateFCmpUNE(val, llvm::ConstantFP::get(src, 0.0), "tobool");
+      return srcUnsigned ? B.CreateFPToUI(val, target, "fptoui")
+                         : B.CreateFPToSI(val, target, "fptosi");
     }
-    return B.CreateFPToSI(val, target, "fptosi");
   }
 
   if (target->isFloatingPointTy() && src->isIntegerTy()) {
+    if (srcUnsigned)
+      return B.CreateUIToFP(val, target,
+                            target->isDoubleTy() ? "uitofp.d" : "uitofp.f");
     return B.CreateSIToFP(val, target,
                           target->isDoubleTy() ? "sitofp.d" : "sitofp.f");
   }
