@@ -271,6 +271,13 @@ int main(int argc, char *argv[]) {
       continue;
     }
 
+    // Module resolution — must run before type-checking so that
+    // stdlib extern declarations are visible to the type checker
+    fs::path projectRoot = fs::path(file).parent_path();
+
+    ModuleManager mm(projectRoot, fs::path(stdlibRoot));
+    mm.resolveAll(*parsed);
+
     // Type-checker
     TypeChecker tc;
     if (!tc.check(*parsed)) {
@@ -282,12 +289,6 @@ int main(int argc, char *argv[]) {
       continue;
     }
     std::cout << "Type-check : OK\n";
-
-    // Module resolution
-    fs::path projectRoot = fs::path(file).parent_path();
-
-    ModuleManager mm(projectRoot, fs::path(stdlibRoot));
-    mm.resolveAll(*parsed);
 
     // Code generation
     CodeGenerator cg;
