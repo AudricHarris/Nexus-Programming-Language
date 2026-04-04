@@ -254,9 +254,6 @@ int main(int argc, char *argv[]) {
     double lexS = lexMs / 1000.0;
     double tokPerSec = tokens.size() / (lexS > 0.0 ? lexS : 1.0);
 
-    for (auto &t : tokens)
-      std::cout << t.toString();
-
     std::cout << "Tokens     : " << tokens.size() << "\n";
     std::cout << "Lex time   : " << lexS << " s  ("
               << static_cast<long long>(tokPerSec) << " tok/s)\n";
@@ -273,6 +270,7 @@ int main(int argc, char *argv[]) {
 
     fs::path projectRoot = fs::path(file).parent_path();
 
+    // Linking modules I need
     ModuleManager mm(projectRoot, fs::path(stdlibRoot));
     mm.resolveAll(*parsed);
 
