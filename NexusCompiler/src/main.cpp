@@ -240,7 +240,7 @@ int main(int argc, char *argv[]) {
 
     std::string code = codeOpt.value();
 
-    std::cout << "\n── " << file << " ──\n";
+    std::cout << "\n--- " << file << " ---\n";
 
     // Lexer
     auto lexStart = std::chrono::high_resolution_clock::now();
