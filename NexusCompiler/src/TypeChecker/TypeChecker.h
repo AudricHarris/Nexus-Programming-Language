@@ -25,26 +25,41 @@ struct NexusType {
     t.isPtr = ptr;
     return t;
   }
+  static std::string normalizeBase(const std::string &b) {
+    if (b == "i32" || b == "integer")
+      return "int";
+    if (b == "i64")
+      return "long";
+    if (b == "i16")
+      return "short";
+    if (b == "i8" || b == "char")
+      return "i8";
+    if (b == "i1" || b == "bool")
+      return "bool";
+    if (b == "f32")
+      return "float";
+    if (b == "f64")
+      return "double";
+    return b;
+  }
+
   static NexusType fromTypeDesc(const TypeDesc &td) {
-    return make(td.isPtr ? "ptr" : td.base.token.getWord(), td.dimensions,
-                td.isPtr);
+    std::string raw = td.isPtr ? "ptr" : td.base.token.getWord();
+    return make(normalizeBase(raw), td.dimensions, td.isPtr);
   }
 
   bool isNumeric() const {
     if (dims != 0)
       return false;
-    return base == "int" || base == "integer" || base == "long" ||
-           base == "short" || base == "i8" || base == "i16" || base == "i32" ||
-           base == "i64" || base == "float" || base == "double" ||
-           base == "f32" || base == "f64";
+    return base == "int" || base == "long" || base == "short" || base == "i8" ||
+           base == "bool" || base == "float" || base == "double";
   }
 
   bool isIntegral() const {
     if (dims != 0)
       return false;
-    return base == "int" || base == "integer" || base == "long" ||
-           base == "short" || base == "i8" || base == "i16" || base == "i32" ||
-           base == "i64";
+    return base == "int" || base == "long" || base == "short" || base == "i8" ||
+           base == "bool";
   }
 
   bool isArray() const { return dims > 0; }
@@ -114,6 +129,7 @@ private:
 
   void registerStructs(const Program &prog);
   void registerFunctions(const Program &prog);
+  void registerBuiltins();
   void registerExterns(const Program &prog);
   void registerGlobals(const Program &prog);
 

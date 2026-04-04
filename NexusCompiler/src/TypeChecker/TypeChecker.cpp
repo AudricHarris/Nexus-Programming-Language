@@ -30,9 +30,8 @@ std::optional<NexusType> TypeChecker::lookupVar(const std::string &name) const {
 
 bool TypeChecker::typeExists(const std::string &name) const {
   static const std::vector<std::string> primitives = {
-      "int",  "integer", "long",   "short",  "i8",   "i16",
-      "i32",  "i64",     "float",  "double", "f32",  "f64",
-      "bool", "str",     "string", "char",   "void", "ptr"};
+      "int",   "long",   "short", "i8",   "bool",
+      "float", "double", "str",   "void", "ptr"};
   for (auto &p : primitives)
     if (p == name)
       return true;
@@ -45,8 +44,8 @@ bool TypeChecker::isAssignable(const NexusType &from,
     return true;
   if (from.base == "null" && to.isPtr)
     return true;
-  if (from.base == "int" && to.base == "float" && from.dims == 0 &&
-      to.dims == 0)
+  // All numeric types are freely interassignable
+  if (from.isNumeric() && to.isNumeric() && from.dims == 0 && to.dims == 0)
     return true;
   return false;
 }
@@ -102,6 +101,27 @@ void TypeChecker::registerExterns(const Program &prog) {
   }
 }
 
+void TypeChecker::registerBuiltins() {
+  auto reg = [&](const std::string &name, NexusType ret,
+                 std::vector<NexusType> params = {}) {
+    if (!funcs_.count(name)) {
+      FuncSig sig;
+      sig.ret = std::move(ret);
+      sig.params = std::move(params);
+      funcs_[name] = std::move(sig);
+    }
+  };
+
+  // Random() -> float
+  reg("Random", NexusType::make("float"));
+  // Print(str) -> void
+  reg("Print", NexusType::make("void"), {NexusType::make("str")});
+  // Printf(str, ...) -> void  — empty params skips arg checking in inferCall
+  reg("Printf", NexusType::make("void"));
+  // Read() -> str
+  reg("Read", NexusType::make("str"));
+}
+
 void TypeChecker::registerGlobals(const Program &prog) {
   pushScope(); // global scope lives at the bottom of the stack
   for (auto &gv : prog.globals) {
@@ -128,6 +148,7 @@ bool TypeChecker::check(const Program &prog) {
 
   registerStructs(prog);
   registerFunctions(prog);
+  registerBuiltins();
   registerExterns(prog);
   registerGlobals(prog);
 
@@ -338,7 +359,7 @@ NexusType TypeChecker::inferBoolLit(const BoolLitExpr &) {
   return NexusType::make("bool");
 }
 NexusType TypeChecker::inferCharLit(const CharLitExpr &) {
-  return NexusType::make("char");
+  return NexusType::make("i8");
 }
 NexusType TypeChecker::inferNullLit(const NullLitExpr &) {
   return NexusType::make("null", 0, true);
