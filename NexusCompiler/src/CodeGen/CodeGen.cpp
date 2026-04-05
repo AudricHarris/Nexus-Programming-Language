@@ -26,11 +26,6 @@ static std::string normalizeFunctionName(const std::string &name) {
   return it != kMap.end() ? it->second : name;
 }
 
-// Build an interpolated string value from a raw (already-unescaped) string.
-static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
-                         IRBuilder<> &B,
-                         const std::map<std::string, VarInfo> &vars, Module *M);
-
 static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
                          IRBuilder<> &B,
                          const std::map<std::string, VarInfo> &vars,
