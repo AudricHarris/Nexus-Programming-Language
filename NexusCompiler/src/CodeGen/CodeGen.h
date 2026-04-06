@@ -46,6 +46,7 @@ public:
   llvm::Value *visitAssign(const AssignExpr &e) override;
   llvm::Value *visitIncrement(const Increment &e) override;
   llvm::Value *visitDecrement(const Decrement &e) override;
+  llvm::Value *visitCompoundAssign(const CompoundAssignExpr &e) override;
   llvm::Value *visitNewArray(const NewArrayExpr &e) override;
   llvm::Value *visitArrayIndex(const ArrayIndexExpr &e) override;
   llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &e) override;

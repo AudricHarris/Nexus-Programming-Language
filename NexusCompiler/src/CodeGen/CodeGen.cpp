@@ -3,6 +3,7 @@
 #include "Emitters/BuiltinEmitter.h"
 #include "Emitters/PrintEmitter.h"
 #include "Emitters/StringEmitter.h"
+#include "Manager/ArithmeticManager.h"
 #include "TypeResolver.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
@@ -466,6 +467,33 @@ Value *CodeGenerator::generateIncrDecr(const std::string &name, bool isInc) {
                    : builder.CreateSub(cur, ConstantInt::get(ty, 1), "dec"));
   builder.CreateStore(res, it->second.allocaInst);
   return res;
+}
+
+Value *CodeGenerator::visitCompoundAssign(const CompoundAssignExpr &e) {
+  const std::string &name = e.target.token.getWord();
+  auto it = namedValues.find(name);
+  if (it == namedValues.end())
+    return logError(("Unknown variable: " + name).c_str());
+  if (it->second.isConst)
+    return logError(
+        ("Cannot compound-assign to const variable: " + name).c_str());
+
+  Value *cur = builder.CreateLoad(it->second.type, it->second.allocaInst,
+                                  name + ".load");
+
+  Value *rhs = codegen(*e.value);
+  if (!rhs)
+    return nullptr;
+
+  // Apply the op
+  Value *result =
+      ArithmeticManager::emitBinaryOp(builder, context, e.op, cur, rhs);
+  if (!result)
+    return nullptr;
+
+  // Store back
+  builder.CreateStore(result, it->second.allocaInst);
+  return result;
 }
 
 static Type *resolveElemType(llvm::LLVMContext &context,

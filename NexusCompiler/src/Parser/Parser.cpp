@@ -731,6 +731,33 @@ std::unique_ptr<Expression> Parser::parseAssignment() {
     throw ParseError(peek().getLine(), peek().getColumn(),
                      "'&=' requires an identifier");
   }
+
+  auto tryCompound = [&](TokenKind tk,
+                         BinaryOp op) -> std::unique_ptr<Expression> {
+    if (match(tk)) {
+      if (auto *id = dynamic_cast<IdentExpr *>(left.get())) {
+        auto rhs = parseAssignment();
+        return std::make_unique<CompoundAssignExpr>(id->name, op,
+                                                    std::move(rhs));
+      }
+      throw ParseError(
+          peek().getLine(), peek().getColumn(),
+          "Compound assignment requires an identifier on the left");
+    }
+    return nullptr;
+  };
+
+  if (auto r = tryCompound(TokenKind::ADD_ASSIGN, BinaryOp::Add))
+    return r;
+  if (auto r = tryCompound(TokenKind::SUB_ASSIGN, BinaryOp::Sub))
+    return r;
+  if (auto r = tryCompound(TokenKind::MUL_ASSIGN, BinaryOp::Mul))
+    return r;
+  if (auto r = tryCompound(TokenKind::DIV_ASSIGN, BinaryOp::Div))
+    return r;
+  if (auto r = tryCompound(TokenKind::DIVF_ASSIGN, BinaryOp::DivFloor))
+    return r;
+
   return left;
 }
 
