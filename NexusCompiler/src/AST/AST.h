@@ -392,6 +392,28 @@ struct Decrement : Expression {
   }
 };
 
+struct CompoundAssignExpr : Expression {
+  Identifier target;
+  BinaryOp op;
+  ExprPtr value;
+
+  CompoundAssignExpr(Identifier t, BinaryOp o, ExprPtr v)
+      : target(std::move(t)), op(o), value(std::move(v)) {}
+
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitCompoundAssign(*this);
+  }
+  void toJson(std::ostream &os, int indent) const override {
+    os << std::string(indent, ' ') << "{\"kind\":\"CompoundAssignExpr\","
+       << "\"target\":" << json_utils::escape(target.token.getWord()) << ","
+       << "\"op\":\"" << toString(op) << "\","
+       << "\"value\":";
+    value->toJson(os, indent + 2);
+    os << "}";
+  }
+};
+
+// ARRAYS AST Structures
 struct NewArrayExpr : Expression {
   TypeDesc arrayType;
   std::vector<ExprPtr> sizes;
