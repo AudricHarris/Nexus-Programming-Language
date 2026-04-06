@@ -336,6 +336,36 @@ std::vector<Token> Lexer::Tokenize() {
       this->pos++;
       continue;
     }
+
+    if (this->pos + 1 < this->srcLen && this->src[this->pos + 1] == '=') {
+      char op = this->src[this->pos];
+      TokenKind kind = TokenKind::UNKNOWN;
+      if (op == '+')
+        kind = TokenKind::ADD_ASSIGN;
+      else if (op == '-')
+        kind = TokenKind::SUB_ASSIGN;
+      else if (op == '*')
+        kind = TokenKind::MUL_ASSIGN;
+      else if (op == '/')
+        kind = TokenKind::DIV_ASSIGN;
+      if (kind != TokenKind::UNKNOWN) {
+        lstTokens.push_back(
+            makeToken(kind, std::string_view(this->src + this->pos, 2)));
+        this->pos += 2;
+        this->col += 2;
+        continue;
+      }
+    }
+
+    if (this->pos + 2 < this->srcLen && this->src[this->pos] == '/' &&
+        this->src[this->pos + 1] == '/' && this->src[this->pos + 2] == '=') {
+      lstTokens.push_back(makeToken(
+          TokenKind::DIVF_ASSIGN, std::string_view(this->src + this->pos, 3)));
+      this->pos += 3;
+      this->col += 3;
+      continue;
+    }
+
     int icat = static_cast<int>(classify(c));
     State first = T[0][icat];
 
