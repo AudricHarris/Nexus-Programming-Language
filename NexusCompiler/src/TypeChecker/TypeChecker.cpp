@@ -340,6 +340,8 @@ NexusType TypeChecker::inferExpr(const Expression &expr) {
     return inferFieldAssign(*e);
   if (auto *e = dynamic_cast<const StructLitExpr *>(&expr))
     return inferStructLit(*e);
+  if (auto *e = dynamic_cast<const CompoundAssignExpr *>(&expr))
+    return inferCompoundAssign(*e);
 
   error("Unknown expression kind encountered");
   return NexusType::make("error");
@@ -687,4 +689,26 @@ NexusType TypeChecker::inferStructLit(const StructLitExpr &e) {
             "'");
   }
   return NexusType::make(e.typeName);
+}
+
+// ------------------ //
+//  Compound Assign   //
+// ------------------ //
+
+NexusType TypeChecker::inferCompoundAssign(const CompoundAssignExpr &e) {
+  const std::string &nm = e.target.token.getWord();
+  auto opt = lookupVar(nm);
+  if (!opt) {
+    error("Compound assignment to undeclared variable '" + nm + "'");
+    return NexusType::make("error");
+  }
+  if (!opt->isNumeric()) {
+    error("Compound assignment requires numeric variable '" + nm + "', got '" +
+          opt->str() + "'");
+    return NexusType::make("error");
+  }
+  NexusType rhs = inferExpr(*e.value);
+  if (!rhs.isNumeric())
+    error("Compound assignment RHS must be numeric, got '" + rhs.str() + "'");
+  return *opt;
 }

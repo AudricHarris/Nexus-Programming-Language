@@ -178,6 +178,7 @@ private:
   NexusType inferFieldAccess(const FieldAccessExpr &e);
   NexusType inferFieldAssign(const FieldAssignExpr &e);
   NexusType inferStructLit(const StructLitExpr &e);
+  NexusType inferCompoundAssign(const CompoundAssignExpr &e);
 
   struct ExprInferVisitor;
 };
