@@ -83,6 +83,11 @@ enum class TokenKind {
   DOUBLE_AND,
   OR,
   NOT,
+  ADD_ASSIGN,
+  SUB_ASSIGN,
+  MUL_ASSIGN,
+  DIV_ASSIGN,
+  DIVF_ASSIGN,
 
   // Punctuation / Delimiters
   LPAREN,

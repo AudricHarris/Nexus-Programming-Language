@@ -67,6 +67,11 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"DOUBLE_AND", "&&"},
     {"OR", "||"},
     {"NOT", "!"},
+    {"ADD_ASSIGN", "+="},
+    {"SUB_ASSIGN", "-="},
+    {"MUL_ASSIGN", "*="},
+    {"DIV_ASSIGN", "/="},
+    {"DIVF_ASSIGN", "//="},
     {"LPAREN", "("},
     {"RPAREN", ")"},
     {"LBRACKET", "["},
@@ -84,6 +89,7 @@ TokenInfo TokenTable::table[static_cast<int>(TokenKind::NUM_TOKENS)] = {
     {"UNKNOWN", "<UNKNOWN>"},
 };
 
+// This only serves for debugging //
 std::string Token::toString() {
   switch (this->kind) {
   case TokenKind::IDENTIFIER:
@@ -164,6 +170,16 @@ std::string Token::toString() {
     return "OR  ";
   case TokenKind::NOT:
     return "NOT  ";
+  case TokenKind::ADD_ASSIGN:
+    return "ADD_ASSIGN  ";
+  case TokenKind::SUB_ASSIGN:
+    return "SUB_ASSIGN  ";
+  case TokenKind::MUL_ASSIGN:
+    return "MUL_ASSIGN  ";
+  case TokenKind::DIV_ASSIGN:
+    return "DIV_ASSIGN  ";
+  case TokenKind::DIVF_ASSIGN:
+    return "DIVF_ASSIGN  ";
   case TokenKind::LPAREN:
     return "LPAREN  ";
   case TokenKind::RPAREN:

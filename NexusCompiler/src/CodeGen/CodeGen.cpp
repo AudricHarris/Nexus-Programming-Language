@@ -468,8 +468,6 @@ Value *CodeGenerator::generateIncrDecr(const std::string &name, bool isInc) {
   return res;
 }
 
-// Helper: get the element type of an array struct, falling back to name
-// parsing.
 static Type *resolveElemType(llvm::LLVMContext &context,
                              llvm::StructType *arrSt) {
   Type *elemTy = TypeResolver::elemType(context, arrSt);
