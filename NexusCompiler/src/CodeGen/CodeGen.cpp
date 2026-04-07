@@ -303,6 +303,28 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
     }
   }
 
+  // Promote mismatched numeric types so LLVM never sees a float+i32
+  // instruction. Rule: if either side is floating-point, widen the integer side
+  // to match.
+  Type *lValTy = lhs->getType();
+  Type *rValTy = rhs->getType();
+  if (lValTy->isFloatingPointTy() && rValTy->isIntegerTy())
+    rhs = builder.CreateSIToFP(rhs, lValTy, "itof");
+  else if (rValTy->isFloatingPointTy() && lValTy->isIntegerTy())
+    lhs = builder.CreateSIToFP(lhs, rValTy, "itof");
+  // If both are floats but different widths (float vs double), widen to double.
+  else if (lValTy->isFloatingPointTy() && rValTy->isFloatingPointTy() &&
+           lValTy != rValTy) {
+    Type *wide =
+        lValTy->getPrimitiveSizeInBits() >= rValTy->getPrimitiveSizeInBits()
+            ? lValTy
+            : rValTy;
+    if (lValTy != wide)
+      lhs = builder.CreateFPExt(lhs, wide, "fpext");
+    if (rValTy != wide)
+      rhs = builder.CreateFPExt(rhs, wide, "fpext");
+  }
+
   Value *result =
       ArithmeticManager::emitBinaryOp(builder, context, expr.op, lhs, rhs);
   if (!result)
@@ -478,20 +500,112 @@ Value *CodeGenerator::visitCompoundAssign(const CompoundAssignExpr &e) {
     return logError(
         ("Cannot compound-assign to const variable: " + name).c_str());
 
-  Value *cur = builder.CreateLoad(it->second.type, it->second.allocaInst,
-                                  name + ".load");
+  Type *targetTy = it->second.type;
+
+  // ── String += ────────────────────────────────────────────────────────────
+  // Only += is allowed on strings; all other compound ops are an error.
+  if (TypeResolver::isString(targetTy)) {
+    if (e.op != BinaryOp::Add)
+      return logError(
+          ("Compound operator is not supported on string variable: " + name)
+              .c_str());
+
+    Value *rhs = codegen(*e.value);
+    if (!rhs)
+      return nullptr;
+
+    // Determine rhs type so we can stringify non-string values automatically.
+    Type *rhsTy = nullptr;
+    if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(rhs))
+      rhsTy = ai->getAllocatedType();
+    else
+      rhsTy = rhs->getType();
+
+    // Coerce rhs to a string alloca if it isn't one already.
+    Value *rhsStr =
+        TypeResolver::isString(rhsTy)
+            ? rhs
+            : StringOps::fromValue(builder, context, module.get(), rhs);
+
+    // Concatenate: new = old + rhs
+    Value *concat = StringOps::concat(builder, context, module.get(),
+                                      it->second.allocaInst, rhsStr);
+
+    // Free the old string buffer before overwriting.
+    llvm::StructType *strSt = TypeResolver::getStringType(context);
+    Value *oldVal =
+        builder.CreateLoad(strSt, it->second.allocaInst, name + ".old");
+    Value *oldData = builder.CreateExtractValue(oldVal, {0}, "old.data");
+    builder.CreateCall(getFree(), {oldData});
+
+    // Store the concatenated result back.
+    Value *newVal = builder.CreateLoad(strSt, concat, "concat.val");
+    builder.CreateStore(newVal, it->second.allocaInst);
+
+    // Null out the temporary concat buffer's data pointer so it won't
+    // be double-freed if the scope manager cleans it up.
+    if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(concat)) {
+      Value *dataField = builder.CreateStructGEP(strSt, ai, 0, "tmp.data.ptr");
+      builder.CreateStore(
+          llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
+          dataField);
+    }
+
+    return it->second.allocaInst;
+  }
+
+  // ── Numeric compound assignment (+=, -=, *=, /=, %=, …) ─────────────────
+  Value *cur =
+      builder.CreateLoad(targetTy, it->second.allocaInst, name + ".load");
 
   Value *rhs = codegen(*e.value);
   if (!rhs)
     return nullptr;
 
-  // Apply the op
+  // Promote operands so both sides always have the same type before we hand
+  // them to emitBinaryOp. The variable's declared type wins: we widen rhs
+  // to match cur, never the other way around.
+  Type *curTy = cur->getType();
+  Type *rhsTy = rhs->getType();
+  if (curTy->isFloatingPointTy() && rhsTy->isIntegerTy()) {
+    // int rhs into float/double var  (e.g. floatVar += 1)
+    rhs = builder.CreateSIToFP(rhs, curTy, "itof");
+  } else if (curTy->isIntegerTy() && rhsTy->isFloatingPointTy()) {
+    // float rhs into int var -- truncate (lossy but intentional)
+    rhs = builder.CreateFPToSI(rhs, curTy, "ftoi");
+  } else if (curTy->isFloatingPointTy() && rhsTy->isFloatingPointTy() &&
+             curTy != rhsTy) {
+    // float vs double -- widen or truncate rhs to match the variable's type
+    rhs = curTy->getPrimitiveSizeInBits() > rhsTy->getPrimitiveSizeInBits()
+              ? builder.CreateFPExt(rhs, curTy, "fpext")
+              : builder.CreateFPTrunc(rhs, curTy, "fptrunc");
+  }
+
   Value *result =
       ArithmeticManager::emitBinaryOp(builder, context, e.op, cur, rhs);
   if (!result)
-    return nullptr;
+    return logError(
+        ("Unsupported compound operator on variable: " + name).c_str());
 
-  // Store back
+  // The arithmetic may have widened the result (e.g. float+double -> double).
+  // Always truncate/convert back to the variable's declared type before
+  // storing, otherwise we write more bytes than the alloca holds and corrupt
+  // the stack -- which is the root cause of the SEGV seen in out.ll where a
+  // double result was stored into a 4-byte float alloca.
+  Type *resultTy = result->getType();
+  if (resultTy != targetTy) {
+    if (targetTy->isFloatingPointTy() && resultTy->isFloatingPointTy()) {
+      result = targetTy->getPrimitiveSizeInBits() <
+                       resultTy->getPrimitiveSizeInBits()
+                   ? builder.CreateFPTrunc(result, targetTy, "fptrunc.back")
+                   : builder.CreateFPExt(result, targetTy, "fpext.back");
+    } else if (targetTy->isIntegerTy() && resultTy->isFloatingPointTy()) {
+      result = builder.CreateFPToSI(result, targetTy, "ftoi.back");
+    } else if (targetTy->isFloatingPointTy() && resultTy->isIntegerTy()) {
+      result = builder.CreateSIToFP(result, targetTy, "itof.back");
+    }
+  }
+
   builder.CreateStore(result, it->second.allocaInst);
   return result;
 }

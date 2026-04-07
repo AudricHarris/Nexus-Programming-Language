@@ -702,9 +702,18 @@ NexusType TypeChecker::inferCompoundAssign(const CompoundAssignExpr &e) {
     error("Compound assignment to undeclared variable '" + nm + "'");
     return NexusType::make("error");
   }
+
+  // str += <anything> is valid -- CodeGen will stringify the RHS automatically.
+  if (opt->base == "str" && opt->dims == 0) {
+    if (e.op != BinaryOp::Add)
+      error("Only '+=' is supported for string variable '" + nm + "'");
+    inferExpr(*e.value); // still type-check the RHS expression
+    return *opt;
+  }
+
   if (!opt->isNumeric()) {
-    error("Compound assignment requires numeric variable '" + nm + "', got '" +
-          opt->str() + "'");
+    error("Compound assignment requires a numeric or string variable, got '" +
+          opt->str() + "' for '" + nm + "'");
     return NexusType::make("error");
   }
   NexusType rhs = inferExpr(*e.value);
