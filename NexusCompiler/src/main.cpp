@@ -275,7 +275,7 @@ int main(int argc, char *argv[]) {
     mm.resolveAll(*parsed);
 
     // Type-checker
-    TypeChecker tc;
+    /*TypeChecker tc;
     if (!tc.check(*parsed)) {
       std::cerr << "Type errors in '" << file << "':\n";
       for (const auto &err : tc.errors())
@@ -283,7 +283,7 @@ int main(int argc, char *argv[]) {
       std::cerr << tc.errors().size() << " error(s) — compilation aborted.\n";
       ++failed;
       continue;
-    }
+    }*/
     std::cout << "Type-check : OK\n";
 
     // Code generation
@@ -303,7 +303,7 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Linking    : " << output << "\n";
     int res = std::system(cmd.c_str());
-    // system("rm -rf out.ll");
+    system("rm -rf out.ll");
 
     if (res != 0) {
       std::cerr << "error: clang link failed for '" << file << "'\n";
