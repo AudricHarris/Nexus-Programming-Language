@@ -1720,18 +1720,37 @@ bool CodeGenerator::generate(const Program &program,
                            *module);
   }
 
+  // Pass 1: forward-declare every struct so that mutually-referencing types
+  // and out-of-order field references can always find the opaque pointer.
   for (const auto &s : program.structs) {
+    if (!llvm::StructType::getTypeByName(context, s->name))
+      llvm::StructType::create(context, s->name); // opaque forward declaration
+  }
+
+  // Pass 2: fill in field bodies now that all struct names exist.
+  for (const auto &s : program.structs) {
+    llvm::StructType *st = llvm::StructType::getTypeByName(context, s->name);
+    if (!st || !st->isOpaque())
+      continue; // already fully defined (duplicate import)
+
     std::vector<llvm::Type *> fieldTypes;
+    bool allResolved = true;
     for (const auto &f : s->fields) {
       llvm::Type *ft = TypeResolver::fromTypeDesc(context, f.type);
       if (!ft)
         ft = llvm::StructType::getTypeByName(context,
                                              f.type.base.token.getWord());
-      if (ft)
-        fieldTypes.push_back(ft);
+      if (!ft) {
+        errs() << "CodeGen error: cannot resolve type '"
+               << f.type.base.token.getWord() << "' for field '" << f.name
+               << "' in struct '" << s->name << "'\n";
+        allResolved = false;
+        break;
+      }
+      fieldTypes.push_back(ft);
     }
-    if (!llvm::StructType::getTypeByName(context, s->name))
-      llvm::StructType::create(context, fieldTypes, s->name);
+    if (allResolved)
+      st->setBody(fieldTypes);
   }
 
   for (const auto &block : program.externBlocks) {
