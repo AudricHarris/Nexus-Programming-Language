@@ -1212,6 +1212,22 @@ Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
 
   Value *gep = builder.CreateStructGEP(st, structPtr, idx, e.field + ".ptr");
   Type *fieldTy = st->getElementType(idx);
+
+  // If the field holds an array descriptor by value (e.g. %array.f32 = {i64,
+  // ptr}) and the incoming value is a pointer to such a descriptor (an alloca
+  // or heap block), load the descriptor value out before storing. Without this,
+  // we store the raw pointer (a stack address) into the field instead of the
+  // {i64, ptr} struct contents, producing a dangling pointer on return.
+  if (TypeResolver::isArray(fieldTy)) {
+    if (auto *ai = dyn_cast<AllocaInst>(val)) {
+      if (ai->getAllocatedType() == fieldTy)
+        val = builder.CreateLoad(fieldTy, ai, e.field + ".arr.load");
+    } else if (val->getType()->isPointerTy()) {
+      // heap-allocated descriptor (e.g. from ArrayEmitter::makeND)
+      val = builder.CreateLoad(fieldTy, val, e.field + ".arr.load");
+    }
+  }
+
   builder.CreateStore(TypeResolver::coerce(builder, val, fieldTy), gep);
   return val;
 }

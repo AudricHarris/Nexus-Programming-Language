@@ -297,13 +297,23 @@ int main(int argc, char *argv[]) {
     // Linking
     std::string output = getOutputName(file);
 
+    fs::path shimsPath = fs::path(stdlibRoot) / "nexus_shims.c";
+    std::string shimsArg =
+        fs::exists(shimsPath) ? " \"" + shimsPath.string() + "\"" : "";
+
+    fs::path gladPath = fs::path(stdlibRoot) / "src" / "glad.c";
+    std::string gladArg =
+        fs::exists(gladPath) ? " \"" + gladPath.string() + "\"" : "";
+
+    std::string includeArg = " -I\"" + stdlibRoot + "/include\"";
+
     std::string cmd = "clang -Wno-override-module -fsanitize=address "
-                      "-fsanitize=leak -g out.ll -lglfw -lGL -o \"" +
-                      output + "\"";
+                      "-fsanitize=leak -g" + includeArg + " out.ll" +
+                      shimsArg + gladArg + " -lglfw -lGL -o \"" + output + "\"";
 
     std::cout << "Linking    : " << output << "\n";
     int res = std::system(cmd.c_str());
-    system("rm -rf out.ll");
+    //    system("rm -rf out.ll");
 
     if (res != 0) {
       std::cerr << "error: clang link failed for '" << file << "'\n";

@@ -109,7 +109,14 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
   StructType *arrTy = TypeResolver::getOrCreateArrayStruct(C, childElemTy);
   Value *len = dims[depth];
 
-  Value *descriptor = B.CreateAlloca(arrTy);
+  // Heap-allocate the descriptor so it survives past the enclosing function's
+  // return. A stack alloca here becomes a dangling pointer when the array is
+  // stored into a struct that is returned by value (e.g. Mat4.m).
+  const DataLayout &DL = M.getDataLayout();
+  Value *descSize = ConstantInt::get(i64Ty, DL.getTypeAllocSize(arrTy));
+  FunctionCallee mallocFn = M.getOrInsertFunction(
+      "malloc", FunctionType::get(PointerType::get(C, 0), {i64Ty}, false));
+  Value *descriptor = B.CreateCall(mallocFn, {descSize}, "arr.desc");
   Value *lenPtr = B.CreateStructGEP(arrTy, descriptor, 0);
   B.CreateStore(B.CreateZExt(len, i64Ty), lenPtr);
 
