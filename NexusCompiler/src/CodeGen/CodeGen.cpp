@@ -629,36 +629,52 @@ static Type *resolveElemType(llvm::LLVMContext &context,
 }
 
 Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
-  const std::string &name = e.array.token.getWord();
-  auto it = namedValues.find(name);
-  if (it == namedValues.end())
-    return logError(("Unknown variable: " + name).c_str());
+  Value *ptr = nullptr;
+  Type *ty = nullptr;
+  std::string name;
 
-  if (TypeResolver::isString(it->second.type)) {
-    if (e.indices.size() != 1)
-      return logError("String indexing takes exactly one index");
-    Value *idx = codegen(*e.indices[0]);
-    if (!idx)
+  if (e.object) {
+    ptr = codegen(*e.object);
+    if (!ptr)
       return nullptr;
-    if (idx->getType()->isIntegerTy(32))
-      idx = builder.CreateSExt(idx, Type::getInt64Ty(context));
+    if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(ptr))
+      ty = ai->getAllocatedType();
+    else if (auto *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(ptr))
+      ty = gep->getResultElementType();
+    else
+      return logError("Cannot determine type of array base expression");
+    name = "<expr>";
+  } else {
+    name = e.array.token.getWord();
+    auto it = namedValues.find(name);
+    if (it == namedValues.end())
+      return logError(("Unknown variable: " + name).c_str());
 
-    llvm::StructType *strSt = TypeResolver::getStringType(context);
-    Value *loaded =
-        builder.CreateLoad(strSt, it->second.allocaInst, "str.load");
-    Value *dataPtr = builder.CreateExtractValue(loaded, {0}, "str.data");
-    Value *charPtr =
-        builder.CreateGEP(Type::getInt8Ty(context), dataPtr, idx, "char.ptr");
-    return builder.CreateLoad(Type::getInt8Ty(context), charPtr, "char");
-  }
+    if (TypeResolver::isString(it->second.type)) {
+      if (e.indices.size() != 1)
+        return logError("String indexing takes exactly one index");
+      Value *idx = codegen(*e.indices[0]);
+      if (!idx)
+        return nullptr;
+      if (idx->getType()->isIntegerTy(32))
+        idx = builder.CreateSExt(idx, Type::getInt64Ty(context));
+      llvm::StructType *strSt = TypeResolver::getStringType(context);
+      Value *loaded =
+          builder.CreateLoad(strSt, it->second.allocaInst, "str.load");
+      Value *dataPtr = builder.CreateExtractValue(loaded, {0}, "str.data");
+      Value *charPtr =
+          builder.CreateGEP(Type::getInt8Ty(context), dataPtr, idx, "char.ptr");
+      return builder.CreateLoad(Type::getInt8Ty(context), charPtr, "char");
+    }
 
-  Value *ptr = it->second.allocaInst;
-  Type *ty = it->second.type;
+    ptr = it->second.allocaInst;
+    ty = it->second.type;
 
-  if (it->second.isReference) {
-    ptr = builder.CreateLoad(PointerType::get(context, 0), ptr);
-    if (it->second.pointeeType)
-      ty = it->second.pointeeType;
+    if (it->second.isReference) {
+      ptr = builder.CreateLoad(PointerType::get(context, 0), ptr);
+      if (it->second.pointeeType)
+        ty = it->second.pointeeType;
+    }
   }
 
   {
@@ -705,21 +721,39 @@ Value *CodeGenerator::visitArrayIndex(const ArrayIndexExpr &e) {
 }
 
 Value *CodeGenerator::visitArrayIndexAssign(const ArrayIndexAssignExpr &e) {
-  const std::string &name = e.array.token.getWord();
-  auto it = namedValues.find(name);
-  if (it == namedValues.end())
-    return logError(("Unknown variable: " + name).c_str());
-  if (it->second.isConst)
-    return logError(
-        ("Cannot assign to element of const array: " + name).c_str());
+  Value *ptr = nullptr;
+  Type *ty = nullptr;
+  std::string name;
 
-  Value *ptr = it->second.allocaInst;
-  Type *ty = it->second.type;
+  if (e.object) {
+    ptr = codegen(*e.object);
+    if (!ptr)
+      return nullptr;
+    if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(ptr))
+      ty = ai->getAllocatedType();
+    else if (auto *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(ptr))
+      ty = gep->getResultElementType();
+    else
+      return logError("Cannot determine type of array base expression");
+    name = "<expr>";
+  } else {
+    name = e.array.token.getWord();
+    auto it = namedValues.find(name);
+    if (it == namedValues.end())
+      return logError(("Unknown variable: " + name).c_str());
+    if (it->second.isConst)
+      return logError(
+          ("Cannot assign to element of const array: " + name).c_str());
 
-  if (it->second.isReference) {
-    ptr = builder.CreateLoad(PointerType::get(context, 0), ptr, name + ".ref");
-    if (it->second.pointeeType)
-      ty = it->second.pointeeType;
+    ptr = it->second.allocaInst;
+    ty = it->second.type;
+
+    if (it->second.isReference) {
+      ptr =
+          builder.CreateLoad(PointerType::get(context, 0), ptr, name + ".ref");
+      if (it->second.pointeeType)
+        ty = it->second.pointeeType;
+    }
   }
 
   {
@@ -1213,17 +1247,11 @@ Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
   Value *gep = builder.CreateStructGEP(st, structPtr, idx, e.field + ".ptr");
   Type *fieldTy = st->getElementType(idx);
 
-  // If the field holds an array descriptor by value (e.g. %array.f32 = {i64,
-  // ptr}) and the incoming value is a pointer to such a descriptor (an alloca
-  // or heap block), load the descriptor value out before storing. Without this,
-  // we store the raw pointer (a stack address) into the field instead of the
-  // {i64, ptr} struct contents, producing a dangling pointer on return.
   if (TypeResolver::isArray(fieldTy)) {
     if (auto *ai = dyn_cast<AllocaInst>(val)) {
       if (ai->getAllocatedType() == fieldTy)
         val = builder.CreateLoad(fieldTy, ai, e.field + ".arr.load");
     } else if (val->getType()->isPointerTy()) {
-      // heap-allocated descriptor (e.g. from ArrayEmitter::makeND)
       val = builder.CreateLoad(fieldTy, val, e.field + ".arr.load");
     }
   }
@@ -1736,18 +1764,15 @@ bool CodeGenerator::generate(const Program &program,
                            *module);
   }
 
-  // Pass 1: forward-declare every struct so that mutually-referencing types
-  // and out-of-order field references can always find the opaque pointer.
   for (const auto &s : program.structs) {
     if (!llvm::StructType::getTypeByName(context, s->name))
-      llvm::StructType::create(context, s->name); // opaque forward declaration
+      llvm::StructType::create(context, s->name);
   }
 
-  // Pass 2: fill in field bodies now that all struct names exist.
   for (const auto &s : program.structs) {
     llvm::StructType *st = llvm::StructType::getTypeByName(context, s->name);
     if (!st || !st->isOpaque())
-      continue; // already fully defined (duplicate import)
+      continue;
 
     std::vector<llvm::Type *> fieldTypes;
     bool allResolved = true;
