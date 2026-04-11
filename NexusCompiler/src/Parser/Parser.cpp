@@ -211,7 +211,7 @@ ExternBlock Parser::parseExternBlock() {
           ++dims;
         }
         if (check(TokenKind::IDENTIFIER))
-          consume(); // optional parameter name, discard it
+          consume();
         paramTypes.emplace_back(Identifier{typeTok}, dims, false, isRef);
       } while (match(TokenKind::COMMA));
     }
