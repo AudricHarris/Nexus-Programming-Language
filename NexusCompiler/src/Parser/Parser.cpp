@@ -871,11 +871,12 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
         expect(TokenKind::RBRACKET, "Expected ']'");
       } while (match(TokenKind::LBRACKET));
 
-      if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
+      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
         expr = std::make_unique<ArrayIndexExpr>(id->name, std::move(indices));
-      else
-        throw ParseError(peek().getLine(), peek().getColumn(),
-                         "Indexing requires an identifier");
+      } else {
+        expr = std::make_unique<ArrayIndexExpr>(std::move(expr),
+                                                std::move(indices));
+      }
       continue;
     }
 

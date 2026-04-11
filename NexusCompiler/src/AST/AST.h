@@ -432,16 +432,24 @@ struct NewArrayExpr : Expression {
 
 struct ArrayIndexExpr : Expression {
   Identifier array;
+  ExprPtr object;
   std::vector<ExprPtr> indices;
+
   ArrayIndexExpr(Identifier arr, std::vector<ExprPtr> idxs)
-      : array(std::move(arr)), indices(std::move(idxs)) {}
+      : array(std::move(arr)), object(nullptr), indices(std::move(idxs)) {}
+
+  ArrayIndexExpr(ExprPtr obj, std::vector<ExprPtr> idxs)
+      : array(Identifier{Token{TokenKind::IDENTIFIER, "", 0, 0}}),
+        object(std::move(obj)), indices(std::move(idxs)) {}
+
   llvm::Value *accept(ExprVisitor &v) const override {
     return v.visitArrayIndex(*this);
   }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"ArrayIndexExpr\",\"array\":"
-       << json_utils::escape(array.token.getWord()) << ",\"indices\":[";
+       << json_utils::escape(object ? "<expr>" : array.token.getWord())
+       << ",\"indices\":[";
     for (size_t i = 0; i < indices.size(); ++i) {
       if (i)
         os << ",";
@@ -453,11 +461,19 @@ struct ArrayIndexExpr : Expression {
 
 struct ArrayIndexAssignExpr : Expression {
   Identifier array;
+  ExprPtr object;
   std::vector<ExprPtr> indices;
   ExprPtr value;
+
   ArrayIndexAssignExpr(Identifier arr, std::vector<ExprPtr> idxs, ExprPtr val)
-      : array(std::move(arr)), indices(std::move(idxs)), value(std::move(val)) {
-  }
+      : array(std::move(arr)), object(nullptr), indices(std::move(idxs)),
+        value(std::move(val)) {}
+
+  ArrayIndexAssignExpr(ExprPtr obj, std::vector<ExprPtr> idxs, ExprPtr val)
+      : array(Identifier{Token{TokenKind::IDENTIFIER, "", 0, 0}}),
+        object(std::move(obj)), indices(std::move(idxs)),
+        value(std::move(val)) {}
+
   llvm::Value *accept(ExprVisitor &v) const override {
     return v.visitArrayIndexAssign(*this);
   }

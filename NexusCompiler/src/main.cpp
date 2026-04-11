@@ -305,11 +305,15 @@ int main(int argc, char *argv[]) {
     std::string gladArg =
         fs::exists(gladPath) ? " \"" + gladPath.string() + "\"" : "";
 
-    std::string includeArg = " -I\"" + stdlibRoot + "/include\"";
+    std::string includeArg = "";
+    if (fs::exists(shimsPath) || fs::exists(gladPath)) {
+      includeArg = " -I\"" + stdlibRoot + "/include\"";
+    }
 
     std::string cmd = "clang -Wno-override-module -fsanitize=address "
-                      "-fsanitize=leak -g" + includeArg + " out.ll" +
-                      shimsArg + gladArg + " -lglfw -lGL -o \"" + output + "\"";
+                      "-fsanitize=leak -g" +
+                      includeArg + " out.ll" + shimsArg + gladArg +
+                      " -lglfw -lGL -o \"" + output + "\"";
 
     std::cout << "Linking    : " << output << "\n";
     int res = std::system(cmd.c_str());
