@@ -46,10 +46,12 @@ Value *BuiltinEmitter::handleRead(IRBuilder<> &B, LLVMContext &ctx, Module *M) {
   const int BUF_SIZE = 1024;
   Type *i8Ty = Type::getInt8Ty(ctx);
   Type *i32Ty = Type::getInt32Ty(ctx);
+  Type *i64Ty = Type::getInt64Ty(ctx);
   Type *ptrTy = PointerType::getUnqual(ctx);
 
-  Value *buf =
-      B.CreateAlloca(i8Ty, ConstantInt::get(i32Ty, BUF_SIZE), "read.buf");
+  // Heap-allocate the buffer so the .data pointer is always valid heap memory
+  Value *buf = B.CreateCall(RTDecl::malloc_(M, ctx),
+                            {ConstantInt::get(i64Ty, BUF_SIZE)}, "read.buf");
 
   llvm::Function *fgetsF = M->getFunction("fgets");
   if (!fgetsF) {
@@ -70,7 +72,6 @@ Value *BuiltinEmitter::handleRead(IRBuilder<> &B, LLVMContext &ctx, Module *M) {
 
   Value *len = B.CreateCall(RTDecl::strlen_(M, ctx), {buf}, "read.len");
 
-  Type *i64Ty = Type::getInt64Ty(ctx);
   Value *len64 = B.CreateZExt(len, i64Ty);
   Value *lastIdx = B.CreateSub(len64, ConstantInt::get(i64Ty, 1), "last.idx");
   Value *lastPtr = B.CreateGEP(i8Ty, buf, lastIdx, "last.ptr");
@@ -82,5 +83,7 @@ Value *BuiltinEmitter::handleRead(IRBuilder<> &B, LLVMContext &ctx, Module *M) {
       B.CreateSelect(isNewline, B.CreateSub(len64, ConstantInt::get(i64Ty, 1)),
                      len64, "trimmed.len");
 
-  return StringOps::fromParts(B, ctx, M, buf, trimmed);
+  Value *strVal = StringOps::fromParts(B, ctx, M, buf, trimmed);
+  B.CreateCall(RTDecl::free_(M, ctx), {buf});
+  return strVal;
 }

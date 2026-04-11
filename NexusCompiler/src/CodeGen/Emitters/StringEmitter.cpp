@@ -100,6 +100,15 @@ llvm::Value *StringOps::fromValue(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
   llvm::Type *ty = val->getType();
   if (TypeResolver::isString(ty))
     return val;
+  if (ty->isPointerTy()) {
+    // A %string alloca arrives as a pointer — return it directly so
+    // concat/clone can load from it.  Raw char* falls through to strlen.
+    if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(val))
+      if (TypeResolver::isString(ai->getAllocatedType()))
+        return val;
+    llvm::Value *len = B.CreateCall(RTDecl::strlen_(M, ctx), {val}, "sl");
+    return fromParts(B, ctx, M, val, len);
+  }
   if (ty->isIntegerTy(1))
     return boolToStr(B, ctx, M, val);
   if (ty->isIntegerTy(8))
@@ -108,10 +117,6 @@ llvm::Value *StringOps::fromValue(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
     return intToStr(B, ctx, M, val);
   if (ty->isFloatingPointTy())
     return floatToStr(B, ctx, M, val);
-  if (ty->isPointerTy()) {
-    llvm::Value *len = B.CreateCall(RTDecl::strlen_(M, ctx), {val}, "sl");
-    return fromParts(B, ctx, M, val, len);
-  }
   return fromLiteral(B, ctx, M, "[unprintable]");
 }
 

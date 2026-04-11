@@ -76,6 +76,9 @@ inline llvm::Value *evalInterp(const std::string &inner, llvm::LLVMContext &ctx,
   if (isIdent) {
     auto it = vars.find(inner);
     if (it != vars.end() && !it->second.isMoved) {
+      if (TypeResolver::isString(it->second.type) ||
+          TypeResolver::isArray(it->second.type))
+        return it->second.allocaInst;
       return B.CreateLoad(it->second.type, it->second.allocaInst,
                           inner + ".load");
     }

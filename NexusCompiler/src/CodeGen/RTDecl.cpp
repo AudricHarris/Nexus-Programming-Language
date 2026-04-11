@@ -61,3 +61,13 @@ llvm::Function *RTDecl::strlen_(llvm::Module *M, llvm::LLVMContext &ctx) {
   }
   return f;
 }
+
+llvm::Function *RTDecl::free_(llvm::Module *M, llvm::LLVMContext &ctx) {
+  llvm::Function *f = M->getFunction("free");
+  if (!f) {
+    auto *ft = llvm::FunctionType::get(llvm::Type::getVoidTy(ctx),
+                                       {llvm::PointerType::get(ctx, 0)}, false);
+    f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "free", M);
+  }
+  return f;
+}

@@ -981,26 +981,19 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
             Type *expectedTy = callee->getFunctionType()->getParamType(i);
             expectsRawPtr = expectedTy->isPointerTy();
           }
-          if (expectsRawPtr) {
-            if (isExtern) {
-              Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
-              Value *strData =
-                  builder.CreateExtractValue(loaded, {0}, "str.data");
-              bool isGL = calleeName.size() >= 2 && calleeName[0] == 'g' &&
-                          calleeName[1] == 'l' &&
-                          (calleeName.size() < 4 || calleeName[2] != 'f');
-              if (isGL) {
-                AllocaInst *slot = builder.CreateAlloca(
-                    PointerType::get(context, 0), nullptr, "strptr.slot");
-                builder.CreateStore(strData, slot);
-                v = slot;
-              } else {
-                v = strData;
-              }
+          if (expectsRawPtr && isExtern) {
+            Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
+            Value *strData =
+                builder.CreateExtractValue(loaded, {0}, "str.data");
+            bool isGL = calleeName.size() >= 2 && calleeName[0] == 'g' &&
+                        calleeName[1] == 'l' &&
+                        (calleeName.size() < 4 || calleeName[2] != 'f');
+            if (isGL) {
+              AllocaInst *slot = builder.CreateAlloca(
+                  PointerType::get(context, 0), nullptr, "strptr.slot");
+              builder.CreateStore(strData, slot);
+              v = slot;
             } else {
-              Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
-              Value *strData =
-                  builder.CreateExtractValue(loaded, {0}, "str.data");
               v = strData;
             }
           } else {
@@ -1024,13 +1017,16 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         Type *vTy = v->getType();
         if (i < callee->arg_size()) {
           Type *expectedTy = callee->getFunctionType()->getParamType(i);
-          if (vTy->isPointerTy() && (TypeResolver::isString(expectedTy) ||
-                                     TypeResolver::isArray(expectedTy))) {
+          if (TypeResolver::isString(vTy) && expectedTy->isPointerTy() &&
+              callee->isDeclaration()) {
+            v = builder.CreateExtractValue(v, {0}, "str.data");
+          } else if (vTy->isPointerTy() &&
+                     (TypeResolver::isString(expectedTy) ||
+                      TypeResolver::isArray(expectedTy))) {
             v = builder.CreateLoad(expectedTy, v, "deref.arg");
           }
         }
       }
-
       if (callee->isDeclaration() && i < callee->arg_size()) {
         Type *expectedTy = callee->getFunctionType()->getParamType(i);
         if (expectedTy->isPointerTy()) {
@@ -1040,8 +1036,18 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
             if (sit != namedValues.end() &&
                 !TypeResolver::isString(sit->second.type) &&
                 !TypeResolver::isArray(sit->second.type)) {
-              v = sit->second.allocaInst;
+              if (sit->second.type && sit->second.type->isPointerTy()) {
+                v = builder.CreateLoad(sit->second.type, sit->second.allocaInst,
+                                       id->name.token.getWord() + ".load");
+              } else {
+                v = sit->second.allocaInst;
+              }
             }
+          } else if (!v->getType()->isPointerTy()) {
+            AllocaInst *tmp =
+                builder.CreateAlloca(v->getType(), nullptr, "ref.tmp");
+            builder.CreateStore(v, tmp);
+            v = tmp;
           }
         }
       }
@@ -1345,8 +1351,12 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   case AssignKind::Copy: {
     if (TypeResolver::isString(ty)) {
       Value *src = init;
-      if (src->getType()->isPointerTy()) {
-        src = builder.CreateLoad(ty, src, name + ".src.load");
+      // concat() calls CreateLoad(st, src) internally, so src must be a
+      // pointer. Pass alloca directly; only spill if it's a bare struct value.
+      if (!src->getType()->isPointerTy()) {
+        AllocaInst *tmp = builder.CreateAlloca(ty, nullptr, name + ".src.tmp");
+        builder.CreateStore(src, tmp);
+        src = tmp;
       }
 
       Value *empty = StringOps::fromLiteral(builder, context, module.get(), "");
