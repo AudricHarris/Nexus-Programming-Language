@@ -196,6 +196,11 @@ ExternBlock Parser::parseExternBlock() {
     std::vector<TypeDesc> paramTypes;
     if (!check(TokenKind::RPAREN)) {
       do {
+        bool isRef = false;
+        if (peek().getKind() == TokenKind::AND) {
+          consume();
+          isRef = true;
+        }
         Token typeTok =
             expect(TokenKind::IDENTIFIER, "Expected parameter type");
         int dims = 0;
@@ -206,8 +211,8 @@ ExternBlock Parser::parseExternBlock() {
           ++dims;
         }
         if (check(TokenKind::IDENTIFIER))
-          consume();
-        paramTypes.emplace_back(Identifier{typeTok}, dims);
+          consume(); // optional parameter name, discard it
+        paramTypes.emplace_back(Identifier{typeTok}, dims, false, isRef);
       } while (match(TokenKind::COMMA));
     }
     expect(TokenKind::RPAREN, "Expected ')'");
