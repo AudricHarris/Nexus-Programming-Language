@@ -27,67 +27,131 @@ static std::string normalizeFunctionName(const std::string &name) {
   return it != kMap.end() ? it->second : name;
 }
 
-static Value *evalStrLit(const std::string &raw, LLVMContext &ctx,
-                         IRBuilder<> &B,
-                         const std::map<std::string, VarInfo> &vars,
-                         Module *M) {
-  Value *result = StringOps::fromLiteral(B, ctx, M, "");
-  size_t i = 0;
-  std::string chunk;
+Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
+  std::string raw = codegen_utils::unescapeString(e.lit.getWord());
 
-  auto flushChunk = [&]() {
-    if (!chunk.empty()) {
-      Value *c = StringOps::fromLiteral(B, ctx, M, chunk);
-      result = StringOps::concat(B, ctx, M, result, c);
-      chunk.clear();
-    }
-  };
-
-  while (i < raw.size()) {
+  bool hasInterp = false;
+  for (size_t i = 0; i < raw.size(); ++i) {
     if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '{') {
-      chunk += '{';
-      i += 2;
+      ++i;
       continue;
     }
-    if (raw[i] != '{') {
-      chunk += raw[i++];
-      continue;
+    if (raw[i] == '{' && (i + 1 >= raw.size() || raw[i + 1] != '{')) {
+      hasInterp = true;
+      break;
     }
-    if (i + 1 < raw.size() && raw[i + 1] == '{') {
-      chunk += '{';
-      i += 2;
-      continue;
-    }
-
-    size_t start = i + 1, depth = 1, j = start;
-    while (j < raw.size() && depth > 0) {
-      if (raw[j] == '{')
-        ++depth;
-      else if (raw[j] == '}')
-        --depth;
-      if (depth > 0)
-        ++j;
-      else
-        break;
-    }
-    if (j >= raw.size()) {
-      chunk += raw[i++];
-      continue;
-    }
-
-    std::string inner = raw.substr(start, j - start);
-    Value *val = codegen_utils::evalInterp(inner, ctx, B, vars);
-    if (val) {
-      flushChunk();
-      Value *sv = StringOps::fromValue(B, ctx, M, val);
-      result = StringOps::concat(B, ctx, M, result, sv);
-    } else {
-      chunk += '{' + inner + '}';
-    }
-    i = j + 1;
   }
-  flushChunk();
-  return result;
+
+  if (hasInterp) {
+    auto registerTmp = [&](Value *v) {
+      if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v)) {
+        llvm::Function *currentFn = builder.GetInsertBlock()->getParent();
+        if (ai->getParent()->getParent() == currentFn) {
+          scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));
+        }
+      }
+    };
+
+    size_t i = 0;
+    std::string chunk;
+    Value *result = nullptr;
+
+    auto appendValue = [&](Value *v) {
+      if (!result) {
+        result = v;
+      } else {
+        Value *cat =
+            StringOps::concat(builder, context, module.get(), result, v);
+        registerTmp(cat);
+        result = cat;
+      }
+    };
+
+    auto flushChunk = [&]() {
+      if (!chunk.empty()) {
+        Value *c =
+            StringOps::fromLiteral(builder, context, module.get(), chunk);
+        registerTmp(c);
+        appendValue(c);
+        chunk.clear();
+      }
+    };
+
+    while (i < raw.size()) {
+      if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '{') {
+        chunk += '{';
+        i += 2;
+        continue;
+      }
+
+      if (raw[i] != '{') {
+        chunk += raw[i++];
+        continue;
+      }
+
+      if (i + 1 < raw.size() && raw[i + 1] == '{') {
+        chunk += '{';
+        i += 2;
+        continue;
+      }
+
+      size_t start = i + 1, depth = 1, j = start;
+      while (j < raw.size() && depth > 0) {
+        if (raw[j] == '{')
+          ++depth;
+        else if (raw[j] == '}')
+          --depth;
+        if (depth > 0)
+          ++j;
+        else
+          break;
+      }
+
+      if (j >= raw.size()) {
+        chunk += raw[i++];
+        continue;
+      }
+
+      std::string inner = raw.substr(start, j - start);
+      Value *val =
+          codegen_utils::evalInterp(inner, context, builder, namedValues);
+
+      if (val) {
+        flushChunk();
+        Value *sv = StringOps::fromValue(builder, context, module.get(), val);
+        registerTmp(sv);
+        appendValue(sv);
+      } else {
+        chunk += '{' + inner + '}';
+      }
+
+      i = j + 1;
+    }
+
+    flushChunk();
+
+    if (!result) {
+      Value *empty = StringOps::fromLiteral(builder, context, module.get(), "");
+      registerTmp(empty);
+      return empty;
+    }
+
+    return result;
+  }
+  std::string processed;
+  for (size_t i = 0; i < raw.size(); ++i) {
+    if (raw[i] == '{' && i + 1 < raw.size() && raw[i + 1] == '{') {
+      processed += '{';
+      ++i;
+    } else {
+      processed += raw[i];
+    }
+  }
+  processed = PrintEmitter::replaceHexColors(processed);
+  Value *v = StringOps::fromLiteral(builder, context, module.get(), processed);
+  if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v))
+    scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));
+  return v;
 }
 
 // ------------- //
@@ -185,44 +249,6 @@ Value *CodeGenerator::visitNullLit(const NullLitExpr &) {
   return llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0));
 }
 
-Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
-  std::string raw = codegen_utils::unescapeString(e.lit.getWord());
-
-  // Check for interpolation
-  bool hasInterp = false;
-  for (size_t i = 0; i < raw.size(); ++i) {
-    if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '{') {
-      ++i;
-      continue;
-    }
-    if (raw[i] == '{' && (i + 1 >= raw.size() || raw[i + 1] != '{')) {
-      hasInterp = true;
-      break;
-    }
-  }
-  if (hasInterp) {
-    Value *v = evalStrLit(raw, context, builder, namedValues, module.get());
-    if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v))
-      scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));
-    return v;
-  }
-
-  std::string processed;
-  for (size_t i = 0; i < raw.size(); ++i) {
-    if (raw[i] == '{' && i + 1 < raw.size() && raw[i + 1] == '{') {
-      processed += '{';
-      ++i;
-    } else {
-      processed += raw[i];
-    }
-  }
-  processed = PrintEmitter::replaceHexColors(processed);
-  Value *v = StringOps::fromLiteral(builder, context, module.get(), processed);
-  if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v))
-    scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));
-  return v;
-}
-
 Value *CodeGenerator::visitIdentifier(const IdentExpr &e) {
   const std::string &name = e.name.token.getWord();
   auto it = namedValues.find(name);
@@ -303,16 +329,12 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
     }
   }
 
-  // Promote mismatched numeric types so LLVM never sees a float+i32
-  // instruction. Rule: if either side is floating-point, widen the integer side
-  // to match.
   Type *lValTy = lhs->getType();
   Type *rValTy = rhs->getType();
   if (lValTy->isFloatingPointTy() && rValTy->isIntegerTy())
     rhs = builder.CreateSIToFP(rhs, lValTy, "itof");
   else if (rValTy->isFloatingPointTy() && lValTy->isIntegerTy())
     lhs = builder.CreateSIToFP(lhs, rValTy, "itof");
-  // If both are floats but different widths (float vs double), widen to double.
   else if (lValTy->isFloatingPointTy() && rValTy->isFloatingPointTy() &&
            lValTy != rValTy) {
     Type *wide =
@@ -324,7 +346,22 @@ Value *CodeGenerator::visitBinary(const BinaryExpr &expr) {
     if (rValTy != wide)
       rhs = builder.CreateFPExt(rhs, wide, "fpext");
   }
-
+  if (expr.op == BinaryOp::Eq || expr.op == BinaryOp::Ne) {
+    if (lhs->getType()->isPointerTy() && rhs->getType()->isIntegerTy()) {
+      if (auto *ci = llvm::dyn_cast<llvm::ConstantInt>(rhs)) {
+        if (ci->isZero())
+          rhs = llvm::ConstantPointerNull::get(
+              llvm::PointerType::get(context, 0));
+      }
+    }
+    if (rhs->getType()->isPointerTy() && lhs->getType()->isIntegerTy()) {
+      if (auto *ci = llvm::dyn_cast<llvm::ConstantInt>(lhs)) {
+        if (ci->isZero())
+          lhs = llvm::ConstantPointerNull::get(
+              llvm::PointerType::get(context, 0));
+      }
+    }
+  }
   Value *result =
       ArithmeticManager::emitBinaryOp(builder, context, expr.op, lhs, rhs);
   if (!result)
@@ -897,10 +934,8 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
                                       namedValues);
   if (rawName == "Print" && e.arguments.size() == 1)
     return PrintEmitter::handlePrint(e, builder, context, module.get());
-
   if (rawName == "Read")
     return BuiltinEmitter::handleRead(builder, context, module.get());
-
   if (rawName == "Random")
     return BuiltinEmitter::handleRandom(builder, context, module.get());
 
@@ -940,17 +975,17 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (auto *ai = dyn_cast<AllocaInst>(v)) {
         Type *allocTy = ai->getAllocatedType();
         if (TypeResolver::isString(allocTy)) {
-          bool expectsRawPtr = false;
           bool isExtern = callee->isDeclaration();
+          bool expectsRawPtr = false;
           if (i < callee->arg_size()) {
             Type *expectedTy = callee->getFunctionType()->getParamType(i);
             expectsRawPtr = expectedTy->isPointerTy();
           }
           if (expectsRawPtr) {
-            Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
-            Value *strData =
-                builder.CreateExtractValue(loaded, {0}, "str.data");
             if (isExtern) {
+              Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
+              Value *strData =
+                  builder.CreateExtractValue(loaded, {0}, "str.data");
               bool isGL = calleeName.size() >= 2 && calleeName[0] == 'g' &&
                           calleeName[1] == 'l' &&
                           (calleeName.size() < 4 || calleeName[2] != 'f');
@@ -963,10 +998,13 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
                 v = strData;
               }
             } else {
+              Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
+              Value *strData =
+                  builder.CreateExtractValue(loaded, {0}, "str.data");
               v = strData;
             }
           } else {
-            v = builder.CreateLoad(allocTy, ai, "arg.val");
+            v = ai;
           }
         } else if (TypeResolver::isArray(allocTy)) {
           bool isExtern = callee->isDeclaration();
@@ -1306,35 +1344,25 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   switch (d.kind) {
   case AssignKind::Copy: {
     if (TypeResolver::isString(ty)) {
-      Value *initPtr = init;
-      if (!llvm::isa<llvm::AllocaInst>(init) &&
-          !init->getType()->isPointerTy()) {
-        AllocaInst *tmp = builder.CreateAlloca(ty, nullptr, name + ".init.tmp");
-        builder.CreateStore(init, tmp);
-        initPtr = tmp;
+      Value *src = init;
+      if (src->getType()->isPointerTy()) {
+        src = builder.CreateLoad(ty, src, name + ".src.load");
       }
 
       Value *empty = StringOps::fromLiteral(builder, context, module.get(), "");
-      Value *copy =
-          StringOps::concat(builder, context, module.get(), initPtr, empty);
-      Value *copyVal = builder.CreateLoad(ty, copy);
-      builder.CreateStore(copyVal, alloca);
+      Value *fresh =
+          StringOps::concat(builder, context, module.get(), src, empty);
 
-      llvm::StructType *st = TypeResolver::getStringType(context);
-      Value *emptyData = builder.CreateExtractValue(
-          builder.CreateLoad(st, empty), {0}, "empty.data");
-      builder.CreateCall(getFree(), {emptyData});
+      Value *freshVal = builder.CreateLoad(ty, fresh, name + ".fresh");
+      builder.CreateStore(freshVal, alloca);
 
-      if (srcName.empty()) {
-        llvm::AllocaInst *initAI = llvm::dyn_cast<llvm::AllocaInst>(initPtr);
-        if (initAI && !scopeMgr.isTmp(initAI)) {
-          Value *initData = builder.CreateExtractValue(
-              builder.CreateLoad(st, initPtr), {0}, "init.data");
-          builder.CreateCall(getFree(), {initData});
-        }
+      if (auto *ai = dyn_cast<AllocaInst>(fresh)) {
+        llvm::StructType *st = TypeResolver::getStringType(context);
+        Value *dataPtr = builder.CreateStructGEP(st, ai, 0, "tmp.data");
+        builder.CreateStore(
+            ConstantPointerNull::get(PointerType::get(context, 0)), dataPtr);
       }
       vi.ownsHeap = true;
-
     } else if (TypeResolver::isArray(ty) ||
                dynamic_cast<const NewArrayExpr *>(d.initializer.get())) {
       bool isNew =
@@ -1647,6 +1675,10 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   if (!retTy)
     retTy = llvm::StructType::getTypeByName(
         context, func.returnType.base.token.getWord());
+
+  if (!retTy && fname == "main")
+    retTy = Type::getInt32Ty(context);
+
   if (!retTy)
     return nullptr;
 
@@ -1659,7 +1691,10 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
           llvm::StructType::getTypeByName(context, p.type.base.token.getWord());
     if (!pt)
       return nullptr;
-    paramTypes.push_back(p.isBorrowRef ? PointerType::get(context, 0) : pt);
+    if (p.isBorrowRef || TypeResolver::isString(pt))
+      paramTypes.push_back(PointerType::get(context, 0));
+    else
+      paramTypes.push_back(pt);
     paramIsRef.push_back(p.isBorrowRef);
   }
   borrowRefParams[fname] = paramIsRef;
@@ -1680,6 +1715,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 
   namedValues.clear();
   namedValues = globalValues;
+  scopeMgr.reset();
   scopeMgr.pushScope();
 
   size_t idx = 0;
@@ -1699,6 +1735,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
                  param.isConst);
       vi.pointeeType = pointee;
       namedValues[pname] = vi;
+      scopeMgr.declare(pname);
     } else {
       Type *declaredTy = TypeResolver::fromTypeDesc(context, param.type);
       if (!declaredTy)
@@ -1707,12 +1744,21 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
       if (!declaredTy)
         declaredTy = arg.getType();
 
-      AllocaInst *a = builder.CreateAlloca(declaredTy, nullptr, pname);
-      builder.CreateStore(&arg, a);
-      namedValues[pname] =
-          VarInfo(a, declaredTy, false, false, false, param.isConst);
+      if (TypeResolver::isString(declaredTy)) {
+        AllocaInst *a = createEntryAlloca(declaredTy, pname);
+        Value *strVal = builder.CreateLoad(declaredTy, &arg, pname + ".param");
+        builder.CreateStore(strVal, a);
+        VarInfo vi(a, declaredTy, false, false, false, param.isConst);
+        vi.ownsHeap = false;
+        namedValues[pname] = vi;
+      } else {
+        AllocaInst *a = createEntryAlloca(declaredTy, pname);
+        builder.CreateStore(&arg, a);
+        namedValues[pname] =
+            VarInfo(a, declaredTy, false, false, false, param.isConst);
+        scopeMgr.declare(pname);
+      }
     }
-    scopeMgr.declare(pname);
   }
 
   codegen(*func.body);
@@ -1728,6 +1774,8 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   }
 
   if (verifyFunction(*f, &errs())) {
+    errs() << "verifyFunction failed for: " << fname << "\n";
+    f->print(errs());
     f->eraseFromParent();
     return nullptr;
   }
@@ -1810,26 +1858,6 @@ bool CodeGenerator::generate(const Program &program,
           TypeResolver::fromName(context, decl.returnType.base.token.getWord());
       auto *ft = llvm::FunctionType::get(retTy, pts, false);
       llvm::Function::Create(ft, llvm::Function::ExternalLinkage, decl.name,
-                             *module);
-    }
-  }
-
-  for (const auto &fn : program.functions) {
-    const std::string fname = normalizeFunctionName(fn->name.token.getWord());
-    if (!module->getFunction(fname)) {
-      Type *retTy = TypeResolver::fromTypeDesc(context, fn->returnType);
-      if (!retTy)
-        retTy = llvm::Type::getVoidTy(context);
-
-      std::vector<Type *> paramTypes;
-      for (const auto &p : fn->params) {
-        Type *pt = TypeResolver::fromTypeDesc(context, p.type);
-        if (!pt)
-          continue;
-        paramTypes.push_back(p.isBorrowRef ? PointerType::get(context, 0) : pt);
-      }
-      auto *ft = FunctionType::get(retTy, paramTypes, false);
-      llvm::Function::Create(ft, llvm::Function::ExternalLinkage, fname,
                              *module);
     }
   }
@@ -1950,9 +1978,47 @@ bool CodeGenerator::generate(const Program &program,
     globalValues[gv->name] = vi;
   }
 
-  for (const auto &fn : program.functions)
-    if (!codegen(*fn))
+  // Forward declare all functions
+  for (const auto &fn : program.functions) {
+    const std::string fname = normalizeFunctionName(fn->name.token.getWord());
+    if (!module->getFunction(fname)) {
+      Type *retTy = TypeResolver::fromTypeDesc(context, fn->returnType);
+      if (!retTy)
+        retTy = llvm::StructType::getTypeByName(
+            context, fn->returnType.base.token.getWord());
+      if (!retTy && fname == "main")
+        retTy = Type::getInt32Ty(context);
+      if (!retTy)
+        retTy = llvm::Type::getVoidTy(context);
+
+      std::vector<Type *> paramTypes;
+      for (const auto &p : fn->params) {
+        Type *pt = TypeResolver::fromTypeDesc(context, p.type);
+        if (!pt)
+          pt = llvm::StructType::getTypeByName(context,
+                                               p.type.base.token.getWord());
+        if (!pt)
+          continue;
+        if (p.isBorrowRef || TypeResolver::isString(pt))
+          paramTypes.push_back(PointerType::get(context, 0));
+        else
+          paramTypes.push_back(pt);
+      }
+      auto *ft = FunctionType::get(retTy, paramTypes, false);
+      llvm::Function::Create(ft, llvm::Function::ExternalLinkage, fname,
+                             *module);
+    }
+  }
+
+  // Codegen all function bodies
+  for (const auto &fn : program.functions) {
+    const std::string fname = normalizeFunctionName(fn->name.token.getWord());
+    errs() << "Codegenning: " << fname << "\n";
+    if (!codegen(*fn)) {
+      errs() << "FAILED: " << fname << "\n";
       return false;
+    }
+  }
 
   std::error_code ec;
   raw_fd_ostream out(outputFilename + ".ll", ec, sys::fs::OF_None);

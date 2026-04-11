@@ -215,7 +215,7 @@ ExternBlock Parser::parseExternBlock() {
         paramTypes.emplace_back(Identifier{typeTok}, dims, false, isRef);
       } while (match(TokenKind::COMMA));
     }
-    expect(TokenKind::RPAREN, "Expected ')'");
+    expect(TokenKind::RPAREN, "E pected ')'");
 
     Token voidTok{TokenKind::IDENTIFIER, "void", nameTok.getLine(), 0};
     TypeDesc retType{Identifier{voidTok}};
@@ -707,8 +707,13 @@ std::unique_ptr<Expression> Parser::parseAssignment() {
     }
     if (auto *ai = dynamic_cast<ArrayIndexExpr *>(left.get())) {
       auto val = parseAssignment();
-      return std::make_unique<ArrayIndexAssignExpr>(
-          ai->array, std::move(ai->indices), std::move(val));
+      if (ai->object) {
+        return std::make_unique<ArrayIndexAssignExpr>(
+            std::move(ai->object), std::move(ai->indices), std::move(val));
+      } else {
+        return std::make_unique<ArrayIndexAssignExpr>(
+            ai->array, std::move(ai->indices), std::move(val));
+      }
     }
     if (auto *fa = dynamic_cast<FieldAccessExpr *>(left.get())) {
       auto val = parseAssignment();

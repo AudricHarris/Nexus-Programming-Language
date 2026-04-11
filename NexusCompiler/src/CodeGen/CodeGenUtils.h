@@ -66,7 +66,6 @@ inline llvm::Value *evalInterp(const std::string &inner, llvm::LLVMContext &ctx,
                                llvm::IRBuilder<> &B,
                                const std::map<std::string, VarInfo> &vars) {
 
-  // Plain identifier
   bool isIdent = !inner.empty();
   for (char c : inner)
     if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
@@ -77,9 +76,6 @@ inline llvm::Value *evalInterp(const std::string &inner, llvm::LLVMContext &ctx,
   if (isIdent) {
     auto it = vars.find(inner);
     if (it != vars.end() && !it->second.isMoved) {
-      if (TypeResolver::isString(it->second.type) ||
-          TypeResolver::isArray(it->second.type))
-        return it->second.allocaInst;
       return B.CreateLoad(it->second.type, it->second.allocaInst,
                           inner + ".load");
     }

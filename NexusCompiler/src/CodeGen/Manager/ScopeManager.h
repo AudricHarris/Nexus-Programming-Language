@@ -14,6 +14,7 @@ public:
   ScopeManager(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx, llvm::Module *M,
                std::map<std::string, VarInfo> &namedValues);
 
+  void reset();
   void pushScope();
   void declare(const std::string &name);
 

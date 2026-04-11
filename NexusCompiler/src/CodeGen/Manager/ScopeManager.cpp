@@ -17,6 +17,11 @@ ScopeManager::ScopeManager(IRBuilder<> &B, LLVMContext &ctx, Module *M,
 // Scope lifecycle //
 // --------------- //
 
+void ScopeManager::reset() {
+  stack_.clear();
+  tmpStack_.clear();
+}
+
 void ScopeManager::pushScope() {
   stack_.emplace_back();
   tmpStack_.emplace_back();
