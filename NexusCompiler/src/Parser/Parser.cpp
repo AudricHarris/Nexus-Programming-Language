@@ -916,7 +916,6 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
 }
 
 std::unique_ptr<Expression> Parser::parsePrimary() {
-  // null literal
   if (isIdentWord("null")) {
     consume();
     return std::make_unique<NullLitExpr>();
@@ -928,8 +927,15 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
     return std::make_unique<IntLitExpr>(tok);
   case TokenKind::LIT_FLOAT:
     return std::make_unique<FloatLitExpr>(tok);
-  case TokenKind::LIT_STRING:
-    return std::make_unique<StrLitExpr>(tok);
+  case TokenKind::LIT_STRING: {
+    std::string combined = tok.getWord();
+    while (peek().getKind() == TokenKind::LIT_STRING) {
+      combined += consume().getWord();
+    }
+    Token merged(TokenKind::LIT_STRING, combined, tok.getLine(),
+                 tok.getColumn());
+    return std::make_unique<StrLitExpr>(merged);
+  }
   case TokenKind::LIT_CHAR:
     return std::make_unique<CharLitExpr>(tok);
   case TokenKind::LIT_BOOL:
