@@ -27,6 +27,11 @@ static std::string normalizeFunctionName(const std::string &name) {
   return it != kMap.end() ? it->second : name;
 }
 
+static bool passAsPointer(llvm::Type *pt) {
+  return TypeResolver::isString(pt) || TypeResolver::isArray(pt) ||
+         pt->isStructTy();
+}
+
 Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
   std::string raw = codegen_utils::unescapeString(e.lit.getWord());
 
@@ -539,8 +544,6 @@ Value *CodeGenerator::visitCompoundAssign(const CompoundAssignExpr &e) {
 
   Type *targetTy = it->second.type;
 
-  // ── String += ────────────────────────────────────────────────────────────
-  // Only += is allowed on strings; all other compound ops are an error.
   if (TypeResolver::isString(targetTy)) {
     if (e.op != BinaryOp::Add)
       return logError(
@@ -551,36 +554,29 @@ Value *CodeGenerator::visitCompoundAssign(const CompoundAssignExpr &e) {
     if (!rhs)
       return nullptr;
 
-    // Determine rhs type so we can stringify non-string values automatically.
     Type *rhsTy = nullptr;
     if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(rhs))
       rhsTy = ai->getAllocatedType();
     else
       rhsTy = rhs->getType();
 
-    // Coerce rhs to a string alloca if it isn't one already.
     Value *rhsStr =
         TypeResolver::isString(rhsTy)
             ? rhs
             : StringOps::fromValue(builder, context, module.get(), rhs);
 
-    // Concatenate: new = old + rhs
     Value *concat = StringOps::concat(builder, context, module.get(),
                                       it->second.allocaInst, rhsStr);
 
-    // Free the old string buffer before overwriting.
     llvm::StructType *strSt = TypeResolver::getStringType(context);
     Value *oldVal =
         builder.CreateLoad(strSt, it->second.allocaInst, name + ".old");
     Value *oldData = builder.CreateExtractValue(oldVal, {0}, "old.data");
     builder.CreateCall(getFree(), {oldData});
 
-    // Store the concatenated result back.
     Value *newVal = builder.CreateLoad(strSt, concat, "concat.val");
     builder.CreateStore(newVal, it->second.allocaInst);
 
-    // Null out the temporary concat buffer's data pointer so it won't
-    // be double-freed if the scope manager cleans it up.
     if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(concat)) {
       Value *dataField = builder.CreateStructGEP(strSt, ai, 0, "tmp.data.ptr");
       builder.CreateStore(
@@ -591,7 +587,6 @@ Value *CodeGenerator::visitCompoundAssign(const CompoundAssignExpr &e) {
     return it->second.allocaInst;
   }
 
-  // ── Numeric compound assignment (+=, -=, *=, /=, %=, …) ─────────────────
   Value *cur =
       builder.CreateLoad(targetTy, it->second.allocaInst, name + ".load");
 
@@ -599,20 +594,14 @@ Value *CodeGenerator::visitCompoundAssign(const CompoundAssignExpr &e) {
   if (!rhs)
     return nullptr;
 
-  // Promote operands so both sides always have the same type before we hand
-  // them to emitBinaryOp. The variable's declared type wins: we widen rhs
-  // to match cur, never the other way around.
   Type *curTy = cur->getType();
   Type *rhsTy = rhs->getType();
   if (curTy->isFloatingPointTy() && rhsTy->isIntegerTy()) {
-    // int rhs into float/double var  (e.g. floatVar += 1)
     rhs = builder.CreateSIToFP(rhs, curTy, "itof");
   } else if (curTy->isIntegerTy() && rhsTy->isFloatingPointTy()) {
-    // float rhs into int var -- truncate (lossy but intentional)
     rhs = builder.CreateFPToSI(rhs, curTy, "ftoi");
   } else if (curTy->isFloatingPointTy() && rhsTy->isFloatingPointTy() &&
              curTy != rhsTy) {
-    // float vs double -- widen or truncate rhs to match the variable's type
     rhs = curTy->getPrimitiveSizeInBits() > rhsTy->getPrimitiveSizeInBits()
               ? builder.CreateFPExt(rhs, curTy, "fpext")
               : builder.CreateFPTrunc(rhs, curTy, "fptrunc");
@@ -624,11 +613,6 @@ Value *CodeGenerator::visitCompoundAssign(const CompoundAssignExpr &e) {
     return logError(
         ("Unsupported compound operator on variable: " + name).c_str());
 
-  // The arithmetic may have widened the result (e.g. float+double -> double).
-  // Always truncate/convert back to the variable's declared type before
-  // storing, otherwise we write more bytes than the alloca holds and corrupt
-  // the stack -- which is the root cause of the SEGV seen in out.ll where a
-  // double result was stored into a 4-byte float alloca.
   Type *resultTy = result->getType();
   if (resultTy != targetTy) {
     if (targetTy->isFloatingPointTy() && resultTy->isFloatingPointTy()) {
@@ -985,12 +969,10 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
             Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
             Value *strData =
                 builder.CreateExtractValue(loaded, {0}, "str.data");
-            bool isGL = calleeName.size() >= 2 && calleeName[0] == 'g' &&
-                        calleeName[1] == 'l' &&
-                        (calleeName.size() < 4 || calleeName[2] != 'f');
-            if (isGL) {
-              AllocaInst *slot = builder.CreateAlloca(
-                  PointerType::get(context, 0), nullptr, "strptr.slot");
+            bool needsPtrToPtr = (calleeName == "glShaderSource");
+            if (needsPtrToPtr) {
+              AllocaInst *slot = createEntryAlloca(PointerType::get(context, 0),
+                                                   "strptr.slot");
               builder.CreateStore(strData, slot);
               v = slot;
             } else {
@@ -1010,8 +992,10 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
             Value *loaded = builder.CreateLoad(allocTy, ai, "arr.load");
             v = builder.CreateExtractValue(loaded, {1}, "arr.data");
           } else {
-            v = builder.CreateLoad(allocTy, ai, "arg.val");
+            v = ai;
           }
+        } else if (allocTy->isStructTy() && !callee->isDeclaration()) {
+          v = ai;
         }
       } else {
         Type *vTy = v->getType();
@@ -1020,13 +1004,36 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
           if (TypeResolver::isString(vTy) && expectedTy->isPointerTy() &&
               callee->isDeclaration()) {
             v = builder.CreateExtractValue(v, {0}, "str.data");
+          } else if (vTy->isPointerTy() && expectedTy->isPointerTy() &&
+                     callee->isDeclaration()) {
+            if (auto *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(v)) {
+              llvm::Type *resultTy = gep->getResultElementType();
+              if (TypeResolver::isArray(resultTy)) {
+                Value *loaded =
+                    builder.CreateLoad(resultTy, v, "arr.field.load");
+                v = builder.CreateExtractValue(loaded, {1}, "arr.data");
+              } else {
+                llvm::Type *srcTy = gep->getSourceElementType();
+                if (TypeResolver::isArray(srcTy)) {
+                  Value *loaded =
+                      builder.CreateLoad(srcTy, v, "arr.field.load");
+                  v = builder.CreateExtractValue(loaded, {1}, "arr.data");
+                }
+              }
+            }
           } else if (vTy->isPointerTy() &&
                      (TypeResolver::isString(expectedTy) ||
                       TypeResolver::isArray(expectedTy))) {
             v = builder.CreateLoad(expectedTy, v, "deref.arg");
+          } else if (vTy->isStructTy() && expectedTy->isPointerTy() &&
+                     !callee->isDeclaration()) {
+            AllocaInst *tmp = createEntryAlloca(vTy, "struct.arg.tmp");
+            builder.CreateStore(v, tmp);
+            v = tmp;
           }
         }
       }
+
       if (callee->isDeclaration() && i < callee->arg_size()) {
         Type *expectedTy = callee->getFunctionType()->getParamType(i);
         if (expectedTy->isPointerTy()) {
@@ -1044,8 +1051,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
               }
             }
           } else if (!v->getType()->isPointerTy()) {
-            AllocaInst *tmp =
-                builder.CreateAlloca(v->getType(), nullptr, "ref.tmp");
+            AllocaInst *tmp = createEntryAlloca(v->getType(), "ref.tmp");
             builder.CreateStore(v, tmp);
             v = tmp;
           }
@@ -1227,7 +1233,7 @@ Value *CodeGenerator::visitStructLit(const StructLitExpr &e) {
   if (!st)
     return logError(("Unknown struct type: " + e.typeName).c_str());
 
-  AllocaInst *alloca = builder.CreateAlloca(st, nullptr, e.typeName + ".lit");
+  AllocaInst *alloca = createEntryAlloca(st, e.typeName + ".lit");
 
   for (unsigned i = 0; i < e.values.size(); ++i) {
     if (i >= st->getNumElements())
@@ -1351,8 +1357,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   case AssignKind::Copy: {
     if (TypeResolver::isString(ty)) {
       Value *src = init;
-      // concat() calls CreateLoad(st, src) internally, so src must be a
-      // pointer. Pass alloca directly; only spill if it's a bare struct value.
       if (!src->getType()->isPointerTy()) {
         AllocaInst *tmp = builder.CreateAlloca(ty, nullptr, name + ".src.tmp");
         builder.CreateStore(src, tmp);
@@ -1692,6 +1696,9 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   if (!retTy)
     return nullptr;
 
+  // Build parameter types.
+  // Convention: borrow-refs, strings, arrays, and user structs are all passed
+  // as opaque ptr.  Primitive scalars (int, float, bool, raw ptr) are by value.
   std::vector<Type *> paramTypes;
   std::vector<bool> paramIsRef;
   for (const auto &p : func.params) {
@@ -1701,7 +1708,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
           llvm::StructType::getTypeByName(context, p.type.base.token.getWord());
     if (!pt)
       return nullptr;
-    if (p.isBorrowRef || TypeResolver::isString(pt))
+    if (p.isBorrowRef || passAsPointer(pt))
       paramTypes.push_back(PointerType::get(context, 0));
     else
       paramTypes.push_back(pt);
@@ -1761,7 +1768,25 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
         VarInfo vi(a, declaredTy, false, false, false, param.isConst);
         vi.ownsHeap = false;
         namedValues[pname] = vi;
+      } else if (TypeResolver::isArray(declaredTy)) {
+        AllocaInst *a = createEntryAlloca(declaredTy, pname);
+        Value *arrVal = builder.CreateLoad(declaredTy, &arg, pname + ".param");
+        builder.CreateStore(arrVal, a);
+        VarInfo vi(a, declaredTy, false, false, false, param.isConst);
+        vi.ownsHeap = false;
+        namedValues[pname] = vi;
+        scopeMgr.declare(pname);
+      } else if (declaredTy->isStructTy()) {
+        AllocaInst *a = createEntryAlloca(declaredTy, pname);
+        Value *structVal =
+            builder.CreateLoad(declaredTy, &arg, pname + ".param");
+        builder.CreateStore(structVal, a);
+        VarInfo vi(a, declaredTy, false, false, false, param.isConst);
+        vi.ownsHeap = false;
+        namedValues[pname] = vi;
+        scopeMgr.declare(pname);
       } else {
+        // Primitive scalar: arg is already the value; store into alloca.
         AllocaInst *a = createEntryAlloca(declaredTy, pname);
         builder.CreateStore(&arg, a);
         namedValues[pname] =
@@ -1988,7 +2013,6 @@ bool CodeGenerator::generate(const Program &program,
     globalValues[gv->name] = vi;
   }
 
-  // Forward declare all functions
   for (const auto &fn : program.functions) {
     const std::string fname = normalizeFunctionName(fn->name.token.getWord());
     if (!module->getFunction(fname)) {
@@ -2009,7 +2033,7 @@ bool CodeGenerator::generate(const Program &program,
                                                p.type.base.token.getWord());
         if (!pt)
           continue;
-        if (p.isBorrowRef || TypeResolver::isString(pt))
+        if (p.isBorrowRef || passAsPointer(pt))
           paramTypes.push_back(PointerType::get(context, 0));
         else
           paramTypes.push_back(pt);
@@ -2020,7 +2044,6 @@ bool CodeGenerator::generate(const Program &program,
     }
   }
 
-  // Codegen all function bodies
   for (const auto &fn : program.functions) {
     const std::string fname = normalizeFunctionName(fn->name.token.getWord());
     errs() << "Codegenning: " << fname << "\n";
