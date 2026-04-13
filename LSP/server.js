@@ -21,7 +21,8 @@ const KEYWORDS = [
   'if', 'else', 'for', 'while', 'range', 'return', 'match', 'new',
   'export', 'import', 'static', 'self', 'Sequential',
   'true', 'false', 'public', 'private', 'protected',
-  'const', 'sum', 'class', 'implement', 'Constructor', 'Factory', 'struct', 'extern'
+  'const', 'class', 'implement', 'impl', 'struct', 'extern',
+  'using', 'fn', 'mut', 'enum', 'sum', 'let',
 ];
 
 const TYPES = [
@@ -29,17 +30,19 @@ const TYPES = [
   'u8', 'u16', 'u32', 'u64', 'uint', 'ulong', 'ushort',
   'f32', 'f64', 'float',
   'bool', 'char', 'str', 'string', 'void', 'ptr',
-  'let',
+  'Vec2', 'Vec3', 'Vec4', 'Option', 'Array',
 ];
 
 // Rich built-in function table: name -> { sig, doc }
 const BUILTIN_FUNCTIONS = {
-  'Print': { sig: 'Print(value: any)', doc: 'Print a value to stdout without a newline.' },
-  'Printf': { sig: 'Printf(fmt: str, ...args)', doc: 'Formatted print. Use {var} for interpolation and \\n for newlines. Supports #RRGGBB colour prefix.' },
-  'Warn': { sig: 'Warn(value: any)', doc: 'Print a warning to stderr.' },
-  'Warnf': { sig: 'Warnf(fmt: str, ...args)', doc: 'Formatted warning to stderr.' },
-  'Read': { sig: 'Read() -> str', doc: 'Read a line of input from stdin. Returns trimmed string.' },
-  'Random': { sig: 'Random() -> f64', doc: 'Return a random f64 in [0, 1).' },
+  'Print':    { sig: 'Print(value: any)',            doc: 'Print a value to stdout without a newline.' },
+  'Printf':   { sig: 'Printf(fmt: str, ...args)',    doc: 'Formatted print. Use {var} for interpolation and \\n for newlines.' },
+  'Warn':     { sig: 'Warn(value: any)',             doc: 'Print a warning to stderr.' },
+  'Warnf':   { sig: 'Warnf(fmt: str, ...args)',     doc: 'Formatted warning to stderr.' },
+  'Read':     { sig: 'Read() -> str',                doc: 'Read a line of input from stdin. Returns trimmed string.' },
+  'Random':   { sig: 'Random() -> f64',              doc: 'Return a random f64 in [0, 1).' },
+  'RandomInt':{ sig: 'RandomInt(min: i32, max: i32) -> i32', doc: 'Return a random integer in [min, max].' },
+  'print':    { sig: 'print(value: any)',            doc: 'Print a value to stdout.' },
 };
 
 // Snippets: label -> { insert, doc }
@@ -48,9 +51,17 @@ const SNIPPETS = {
     insert: 'class ${1:ClassName}\n{\n\t$0\n}',
     doc: 'Class declaration',
   },
+  'struct': {
+    insert: 'struct ${1:Name}\n{\n\t${2:field}: ${3:type};\n\t$0\n}',
+    doc: 'Struct declaration',
+  },
+  'enum': {
+    insert: 'enum ${1:TypeName}\n{\n\t${2:Variant}\n}',
+    doc: 'Enum declaration',
+  },
   'sum': {
     insert: 'sum ${1:TypeName}\n{\n\t${2:Variant}\n}',
-    doc: 'Sum type (enum) declaration',
+    doc: 'Sum type declaration',
   },
   'match': {
     insert: 'match (${1:value})\n{\n\t${2:Pattern} => ${3:expression}\n}',
@@ -69,12 +80,16 @@ const SNIPPETS = {
     doc: 'If / else statement',
   },
   'fn': {
-    insert: '${1:FunctionName}(${2:params}) -> ${3:void}\n{\n\t$0\n}',
+    insert: 'fn ${1:name}(${2:params}) -> ${3:void}\n{\n\t$0\n}',
     doc: 'Function definition',
   },
-  'Options<T>': {
-    insert: 'Options<${1:T}>',
-    doc: 'Generic Options type',
+  'impl': {
+    insert: 'impl ${1:TraitName}\n{\n\t$0\n}',
+    doc: 'Impl block',
+  },
+  'Option<T>': {
+    insert: 'Option<${1:T}>',
+    doc: 'Generic Option type',
   },
 };
 
@@ -94,6 +109,20 @@ function resolveWorkspace(docUri) {
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 
+// Token type indices — order must match SEMANTIC_TOKEN_TYPES array
+const TT_KEYWORD     = 0;
+const TT_TYPE        = 1;
+const TT_FUNCTION    = 2;
+const TT_VARIABLE    = 3;
+const TT_NUMBER      = 4;
+const TT_STRING      = 5;
+const TT_COMMENT     = 6;
+const TT_OPERATOR    = 7;
+const TT_PUNCTUATION = 8;
+const TT_PARAMETER   = 9;
+const TT_PROPERTY    = 10;
+const TT_ENUM_MEMBER = 11;
+
 const SEMANTIC_TOKEN_TYPES = [
   'keyword',     // 0
   'type',        // 1
@@ -104,6 +133,9 @@ const SEMANTIC_TOKEN_TYPES = [
   'comment',     // 6
   'operator',    // 7
   'punctuation', // 8
+  'parameter',   // 9
+  'property',    // 10
+  'enumMember',  // 11
 ];
 
 connection.onInitialize((params) => {
@@ -137,7 +169,6 @@ connection.onInitialize((params) => {
       },
 
       hoverProvider: true,
-
       workspaceSymbolProvider: true,
 
       ...(hasWorkspaceFolderCapability
@@ -172,18 +203,34 @@ function extractSymbols(text, docUri) {
 
   let m;
 
-  // Top-level function:  Name(params) -> RetType {
-  const fnRx = /^([A-Z][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([a-zA-Z0-9_\[\]]+))?\s*\{/gm;
+  // fn Name(params) -> RetType {
+  const fnRx = /\bfn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([a-zA-Z0-9_<>\[\]]+))?\s*\{/gm;
   while ((m = fnRx.exec(text)) !== null) {
     const name = m[1];
     const params = m[2].trim();
     const ret = m[3] ? m[3].trim() : 'void';
     store.set(name, {
       kind: CompletionItemKind.Function,
-      detail: `${name}(${params}) -> ${ret}`,
+      detail: `fn ${name}(${params}) -> ${ret}`,
       doc: 'User-defined function',
       uri: docUri,
     });
+  }
+
+  // Top-level PascalCase function (old style): Name(params) -> RetType {
+  const legacyFnRx = /^([A-Z][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([a-zA-Z0-9_<>\[\]]+))?\s*\{/gm;
+  while ((m = legacyFnRx.exec(text)) !== null) {
+    const name = m[1];
+    const params = m[2].trim();
+    const ret = m[3] ? m[3].trim() : 'void';
+    if (!store.has(name)) {
+      store.set(name, {
+        kind: CompletionItemKind.Function,
+        detail: `${name}(${params}) -> ${ret}`,
+        doc: 'User-defined function',
+        uri: docUri,
+      });
+    }
   }
 
   // class Name
@@ -192,15 +239,21 @@ function extractSymbols(text, docUri) {
     store.set(m[1], { kind: CompletionItemKind.Class, detail: `class ${m[1]}`, doc: 'User-defined class', uri: docUri });
   }
 
-  // sum Name
-  const sumRx = /\bsum\s+([A-Z][a-zA-Z0-9_]*)/g;
-  while ((m = sumRx.exec(text)) !== null) {
-    store.set(m[1], { kind: CompletionItemKind.Enum, detail: `sum ${m[1]}`, doc: 'Sum type', uri: docUri });
+  // struct Name
+  const structRx = /\bstruct\s+([A-Z][a-zA-Z0-9_]*)/g;
+  while ((m = structRx.exec(text)) !== null) {
+    store.set(m[1], { kind: CompletionItemKind.Struct, detail: `struct ${m[1]}`, doc: 'User-defined struct', uri: docUri });
+  }
+
+  // enum / sum Name
+  const enumRx = /\b(?:enum|sum)\s+([A-Z][a-zA-Z0-9_]*)/g;
+  while ((m = enumRx.exec(text)) !== null) {
+    store.set(m[1], { kind: CompletionItemKind.Enum, detail: `enum ${m[1]}`, doc: 'Enum / sum type', uri: docUri });
   }
 
   // Local / typed variables: i32 name, bool name, let name, etc.
   const typePattern = TYPES.join('|');
-  const varRx = new RegExp(`\\b(?:${typePattern})(?:\\[\\])*\\s+([a-z_][a-zA-Z0-9_]*)`, 'g');
+  const varRx = new RegExp(`\\b(?:${typePattern})(?:<[^>]+>)?(?:\\[\\])*\\s+([a-z_][a-zA-Z0-9_]*)`, 'g');
   while ((m = varRx.exec(text)) !== null) {
     const name = m[1];
     if (!store.has(name)) {
@@ -236,7 +289,6 @@ documents.onDidOpen(async event => {
 });
 
 documents.onDidClose(event => {
-  // Intentionally keep symbols in memory across close — that is the "remember" feature.
   connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
 });
 
@@ -247,9 +299,7 @@ connection.onDocumentOnTypeFormatting((params) => {
   const text = doc.getText();
   const offset = doc.offsetAt(params.position);
 
-  // Need at least 2 chars before cursor
   if (offset < 2) return null;
-
   const before2 = text.slice(offset - 2, offset);
   if (before2 !== '/!') return null;
 
@@ -271,7 +321,6 @@ connection.onHover((params) => {
   const text = doc.getText();
   const offset = doc.offsetAt(params.position);
 
-  // Expand selection to full word (allow dots for Math.Sqrt etc.)
   let start = offset;
   let end = offset;
   while (start > 0 && /[a-zA-Z0-9_.]/.test(text[start - 1])) start--;
@@ -318,21 +367,18 @@ connection.onCompletion((params) => {
   const doc = documents.get(params.textDocument.uri);
   const completions = [];
 
-  // Keywords
   KEYWORDS.forEach(kw => completions.push({
     label: kw,
     kind: CompletionItemKind.Keyword,
     data: { type: 'keyword', name: kw },
   }));
 
-  // Types
   TYPES.forEach(t => completions.push({
     label: t,
     kind: CompletionItemKind.TypeParameter,
     data: { type: 'builtin_type', name: t },
   }));
 
-  // Built-in functions
   Object.keys(BUILTIN_FUNCTIONS).forEach(fn => completions.push({
     label: fn,
     kind: CompletionItemKind.Function,
@@ -340,7 +386,6 @@ connection.onCompletion((params) => {
     data: { type: 'builtin_fn', name: fn },
   }));
 
-  // Snippets
   Object.entries(SNIPPETS).forEach(([label, snip]) => completions.push({
     label,
     kind: CompletionItemKind.Snippet,
@@ -350,7 +395,6 @@ connection.onCompletion((params) => {
     data: { type: 'snippet', name: label },
   }));
 
-  // User-defined symbols from workspace memory
   if (doc) {
     const store = getSymbolStore(resolveWorkspace(doc.uri));
     for (const [name, info] of store) {
@@ -397,13 +441,7 @@ function validateTextDocument(textDocument) {
   const text = textDocument.getText();
   const diagnostics = [];
 
-  // Compiler directives  /![NAME]!/
-  const directives = new Set([...text.matchAll(/\/!\[([A-Z_]+)\]!\//g)].map(m => m[1]));
-  const STRICT = directives.has('STRICT');
-  const WARN_UNUSED = directives.has('WARN_UNUSED');
-  const NO_GLOBALS = directives.has('NO_GLOBALS');
-  const NO_WARNINGS = directives.has('NO_WARNINGS');
-
+  // Brace balance check
   const openBraces = (text.match(/\{/g) || []).length;
   const closeBraces = (text.match(/\}/g) || []).length;
   if (openBraces !== closeBraces) {
@@ -415,6 +453,7 @@ function validateTextDocument(textDocument) {
     });
   }
 
+  // /! block comment balance check
   const openComments = (text.match(/\/!/g) || []).length;
   const closeComments = (text.match(/!\//g) || []).length;
   if (openComments !== closeComments) {
@@ -426,88 +465,10 @@ function validateTextDocument(textDocument) {
     });
   }
 
-  if (STRICT) {
-    const rx = /\blet\b/g;
-    let m;
-    while ((m = rx.exec(text)) !== null) {
-      diagnostics.push({
-        severity: 1,
-        range: { start: textDocument.positionAt(m.index), end: textDocument.positionAt(m.index + 3) },
-        message: '"let" is forbidden in STRICT mode. Use an explicit type.',
-        source: 'nexus-lsp',
-      });
-    }
-  }
-
-  if (NO_GLOBALS) {
-    const typePattern = [...TYPES, 'let'].join('|');
-    const rx = new RegExp(`^\\s*(?:${typePattern})(?:\\[\\])*\\s+([a-zA-Z_][a-zA-Z0-9_]*)`, 'gm');
-    let m;
-    while ((m = rx.exec(text)) !== null) {
-      const before = text.slice(0, m.index);
-      const open = (before.match(/\{/g) || []).length;
-      const close = (before.match(/\}/g) || []).length;
-      if (open === close) {
-        diagnostics.push({
-          severity: 1,
-          range: { start: textDocument.positionAt(m.index), end: textDocument.positionAt(m.index + m[0].length) },
-          message: 'Global variables are not allowed (NO_GLOBALS)',
-          source: 'nexus-lsp',
-        });
-      }
-    }
-  }
-
-  if (WARN_UNUSED && !NO_WARNINGS) {
-    const typePattern = [...TYPES, 'let'].join('|');
-    const rx = new RegExp(`\\b(?:${typePattern})(?:\\[\\])*\\s+([a-zA-Z_][a-zA-Z0-9_]*)`, 'g');
-    let m;
-    while ((m = rx.exec(text)) !== null) {
-      const name = m[1];
-      const count = [...text.matchAll(new RegExp(`\\b${name}\\b`, 'g'))].length;
-      if (count <= 1) {
-        diagnostics.push({
-          severity: 2,
-          range: { start: textDocument.positionAt(m.index), end: textDocument.positionAt(m.index + m[0].length) },
-          message: `Variable '${name}' is declared but never used`,
-          source: 'nexus-lsp',
-        });
-      }
-    }
-  }
-
-  {
-    const fnRx = /([A-Z][a-zA-Z0-9_]*)\s*\([^)]*\)\s*->\s*void\s*\{/g;
-    let fm;
-    while ((fm = fnRx.exec(text)) !== null) {
-      let depth = 0, i = fm.index + fm[0].length - 1;
-      const bodyStart = i;
-      while (i < text.length) {
-        if (text[i] === '{') depth++;
-        else if (text[i] === '}') { depth--; if (depth === 0) break; }
-        i++;
-      }
-      const body = text.slice(bodyStart, i);
-      const retRx = /\breturn\s+(?!;)(\S)/g;
-      let rm;
-      while ((rm = retRx.exec(body)) !== null) {
-        const absIdx = bodyStart + rm.index;
-        diagnostics.push({
-          severity: 2,
-          range: { start: textDocument.positionAt(absIdx), end: textDocument.positionAt(absIdx + rm[0].length) },
-          message: `Function '${fm[1]}' is declared -> void but returns a value`,
-          source: 'nexus-lsp',
-        });
-      }
-    }
-  }
-
-  const final = NO_WARNINGS
-    ? diagnostics.filter(d => d.severity === 1)
-    : diagnostics;
-
-  connection.sendDiagnostics({ uri: textDocument.uri, diagnostics: final });
+  connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
 }
+
+// ─── Semantic tokens ──────────────────────────────────────────────────────────
 
 connection.languages.semanticTokens.on((params) => {
   const doc = documents.get(params.textDocument.uri);
@@ -515,18 +476,20 @@ connection.languages.semanticTokens.on((params) => {
 
   const text = doc.getText();
   const data = [];
-  let pos = 0, line = 0, col = 0, lastLine = 0, lastCol = 0;
+  let pos = 0;
+  let line = 0, col = 0;
+  let lastLine = 0, lastCol = 0;
 
   const pushToken = (tLine, tCol, length, tType) => {
     const lineDelta = tLine - lastLine;
-    const colDelta = lineDelta === 0 ? tCol - lastCol : tCol;
+    const colDelta  = lineDelta === 0 ? tCol - lastCol : tCol;
     data.push(lineDelta, colDelta, length, tType, 0);
     lastLine = tLine;
-    lastCol = tCol;
+    lastCol  = tCol;
   };
 
-  const syncPos = (from, to) => {
-    for (let i = from; i < to; i++) {
+  const advanceTo = (target) => {
+    for (let i = pos; i < target; i++) {
       if (text[i] === '\n') { line++; col = 0; } else { col++; }
     }
   };
@@ -534,101 +497,147 @@ connection.languages.semanticTokens.on((params) => {
   while (pos < text.length) {
     const ch = text[pos];
 
+    // Newline
     if (ch === '\n') { line++; col = 0; pos++; continue; }
-    if (/\s/.test(ch)) { col++; pos++; continue; }
 
-    // /* single-line comment (ends at newline) */
-    if (text.startsWith('/*', pos)) {
+    // Whitespace
+    if (/[ \t\r]/.test(ch)) { col++; pos++; continue; }
+
+    // ── // single-line comment ──────────────────────────────────────────────
+    if (text.startsWith('//', pos)) {
       const sl = line, sc = col;
       let end = text.indexOf('\n', pos);
       if (end === -1) end = text.length;
-      pushToken(sl, sc, end - pos, 6);
-      col += end - pos;
+      pushToken(sl, sc, end - pos, TT_COMMENT);
+      advanceTo(end);
       pos = end;
       continue;
     }
 
-    // /! block comment !/  (multi-line)
+    // ── /* */ single-line block comment ────────────────────────────────────
+    if (text.startsWith('/*', pos)) {
+      const sl = line, sc = col, start = pos;
+      let end = text.indexOf('*/', pos + 2);
+      if (end === -1) end = text.length; else end += 2;
+      // Emit one token per line for multi-line /* */ comments
+      const seg = text.slice(start, end).split('\n');
+      for (let i = 0; i < seg.length; i++) {
+        if (seg[i].length > 0) pushToken(sl + i, i === 0 ? sc : 0, seg[i].length, TT_COMMENT);
+      }
+      advanceTo(end);
+      line = sl + seg.length - 1;
+      col = seg[seg.length - 1].length;
+      pos = end;
+      continue;
+    }
+
+    // ── /! !/ block comment ────────────────────────────────────────────────
     if (text.startsWith('/!', pos)) {
-      const sl = line, sc = col;
+      const sl = line, sc = col, start = pos;
       let end = text.indexOf('!/', pos + 2);
       if (end === -1) end = text.length; else end += 2;
-      const seg = text.slice(pos, end).split('\n');
-      if (seg.length === 1) {
-        pushToken(sl, sc, seg[0].length, 6);
-        col += seg[0].length;
-      } else {
-        for (let i = 0; i < seg.length; i++) {
-          if (seg[i].length > 0) pushToken(sl + i, i === 0 ? sc : 0, seg[i].length, 6);
-        }
-        line = sl + seg.length - 1;
-        col = seg[seg.length - 1].length;
+      const seg = text.slice(start, end).split('\n');
+      for (let i = 0; i < seg.length; i++) {
+        if (seg[i].length > 0) pushToken(sl + i, i === 0 ? sc : 0, seg[i].length, TT_COMMENT);
       }
+      advanceTo(end);
+      line = sl + seg.length - 1;
+      col = seg[seg.length - 1].length;
       pos = end;
       continue;
     }
 
-    // char literal  'x'  or  '\n'
+    // ── char literal 'x' or '\n' ───────────────────────────────────────────
     if (ch === "'") {
       const sl = line, sc = col;
       let end = pos + 1;
       if (end < text.length && text[end] === '\\') end += 2; else end++;
       if (end < text.length && text[end] === "'") end++;
-      pushToken(sl, sc, end - pos, 5);
+      pushToken(sl, sc, end - pos, TT_STRING);
       col += end - pos;
       pos = end;
       continue;
     }
 
-    // string literal  "..."
+    // ── string literal "..." ───────────────────────────────────────────────
     if (ch === '"') {
       const sl = line, sc = col, start = pos;
       let end = pos + 1;
       while (end < text.length && !(text[end] === '"' && text[end - 1] !== '\\')) end++;
       if (end < text.length) end++;
-      pushToken(sl, sc, end - start, 5);
-      syncPos(start, end);
+      pushToken(sl, sc, end - start, TT_STRING);
+      advanceTo(end);
       pos = end;
       continue;
     }
 
-    // number
-    if (/[0-9]/.test(ch)) {
+    // ── number literal ─────────────────────────────────────────────────────
+    if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(text[pos + 1] || ''))) {
       const sl = line, sc = col, start = pos;
-      while (pos < text.length && /[0-9.eE+\-]/.test(text[pos])) pos++;
-      pushToken(sl, sc, pos - start, 4);
+      // hex  0x...
+      if (ch === '0' && (text[pos + 1] === 'x' || text[pos + 1] === 'X')) {
+        pos += 2;
+        while (pos < text.length && /[0-9a-fA-F_]/.test(text[pos])) pos++;
+      } else {
+        while (pos < text.length && /[0-9_]/.test(text[pos])) pos++;
+        if (pos < text.length && text[pos] === '.') {
+          pos++;
+          while (pos < text.length && /[0-9_]/.test(text[pos])) pos++;
+        }
+        if (pos < text.length && /[eE]/.test(text[pos])) {
+          pos++;
+          if (pos < text.length && /[+\-]/.test(text[pos])) pos++;
+          while (pos < text.length && /[0-9_]/.test(text[pos])) pos++;
+        }
+      }
+      pushToken(sl, sc, pos - start, TT_NUMBER);
       col += pos - start;
       continue;
     }
 
-    // identifier / keyword / type / builtin
+    // ── identifier / keyword / type / builtin ──────────────────────────────
     if (/[a-zA-Z_]/.test(ch)) {
       const sl = line, sc = col, start = pos;
-      while (pos < text.length && /[a-zA-Z0-9_.]/.test(text[pos])) pos++;
+      while (pos < text.length && /[a-zA-Z0-9_]/.test(text[pos])) pos++;
       const word = text.slice(start, pos);
 
+      // Peek ahead past whitespace to see if a '(' follows (= call site)
+      let peek = pos;
+      while (peek < text.length && /[ \t]/.test(text[peek])) peek++;
+      const nextCh = text[peek];
+
       let tt;
-      if (KEYWORDS.includes(word)) tt = 0; // keyword
-      else if (TYPES.includes(word)) tt = 1; // type
-      else if (/^[A-Z]/.test(word)) tt = 1; // PascalCase = type/class
-      else if (BUILTIN_FUNCTIONS[word]) tt = 2; // built-in fn
-      else tt = 3; // variable
+      if (KEYWORDS.includes(word)) {
+        tt = TT_KEYWORD;
+      } else if (BUILTIN_FUNCTIONS[word]) {
+        tt = TT_FUNCTION;
+      } else if (nextCh === '(') {
+        // anything immediately before '(' is a call — PascalCase or not
+        tt = TT_FUNCTION;
+      } else if (TYPES.includes(word)) {
+        tt = TT_TYPE;
+      } else if (/^[A-Z]/.test(word)) {
+        // PascalCase with no '(' following — type / class / enum / struct
+        tt = TT_TYPE;
+      } else {
+        tt = TT_VARIABLE;
+      }
 
       pushToken(sl, sc, word.length, tt);
       col += word.length;
       continue;
     }
 
-    // operator
-    if ('+-*/%=<>!&|^~'.includes(ch)) {
-      pushToken(line, col, 1, 7);
+    // ── operators ──────────────────────────────────────────────────────────
+    if ('+-*/%=<>!&|^~@'.includes(ch)) {
+      pushToken(line, col, 1, TT_OPERATOR);
       col++; pos++;
       continue;
     }
 
-    // punctuation
+    // ── punctuation ────────────────────────────────────────────────────────
     if ('(){}[],.;:'.includes(ch)) {
-      pushToken(line, col, 1, 8);
+      pushToken(line, col, 1, TT_PUNCTUATION);
       col++; pos++;
       continue;
     }
