@@ -1,10 +1,10 @@
-sum Options<T>
+enum Options<T>
 {
 	None,
 	Some(T value)
 }
 
-sum TransactionResult
+enum TransactionResult
 {
 	Success(i32 balance),
 	InsufficientFunds(i32 available, i32 requested),

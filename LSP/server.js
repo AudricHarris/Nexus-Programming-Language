@@ -22,7 +22,7 @@ const KEYWORDS = [
   'export', 'import', 'static', 'self', 'Sequential',
   'true', 'false', 'public', 'private', 'protected',
   'const', 'class', 'implement', 'impl', 'struct', 'extern',
-  'using', 'fn', 'mut', 'enum', 'sum', 'let',
+  'embed', 'fn', 'mut', 'enum', 'sum', 'let', 'trait'
 ];
 
 const TYPES = [
