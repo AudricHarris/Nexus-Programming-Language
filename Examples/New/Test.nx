@@ -1,0 +1,33 @@
+/* This is just an Example to show how the code functions */
+
+fn RandomInt(i32 end) -> i32
+{
+	return (Random() * end) as i32;
+}
+
+fn RandomInt(i32 start, i32 end) -> i32
+{
+	i32 gap = end - start;
+
+	return (Random() * gaP + end) as i32;
+}
+
+fn Randomize(&mut i32 t)
+{
+	t = RandomInt(20);
+}
+
+fn Main() -> bool
+{
+	i32 t;
+	Randomize(t);
+
+	if ( t % 2 == 0)
+	{
+		Printf("The number {t} is Even.\n");
+		return true;
+	}
+	
+	Printf("The number {t} is Odd.\n");
+	return true;
+}

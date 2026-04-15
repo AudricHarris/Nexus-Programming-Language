@@ -1,0 +1,160 @@
+/*
+CORE RULES OF THE LANGUAGE
+
+1. Types are either VALUE or REFERENCE
+2. "T"        = value (owned)
+3. "&T"       = read-only (immutable) reference
+4. "&mut T"   = exclusive mutable reference
+5. primitives follow the SAME rules as structs
+
+6. Classes are REFERENCE TYPES (identity-based)
+   - variables store references to heap objects
+   - assignment copies references, NOT objects
+
+7. Function arguments are passed by VALUE unless prefixed:
+   - &T      = borrow read-only
+   - &mut T  = borrow mutable
+
+8. Ownership rule:
+   - values are MOVED unless explicitly referenced
+*/
+
+// -- STRUCT TYPES (value types) -- //
+
+struct Vec3
+{
+	f32 x;
+	f32 y;
+	f32 z;
+}
+
+struct Transform
+{
+	// Stored inline inside owning object (no heap indirection)
+	Vec3 position;
+	Vec3 rotation;
+	Vec3 scale = {1.0, 1.0, 1.0};
+	f32 speed;
+}
+
+struct Health
+{
+	f32 value = 100.0;
+	f32 max = 100.0;
+}
+
+struct Xp
+{
+	i32 val;
+}
+
+
+// -- ENUM TYPES -- //
+
+enum Option<T>
+{
+	None,
+	Some(T value) // NOTE: value is MOVED into Some
+}
+
+
+// -- TRAITS -- //
+
+trait Updatable
+{
+	// Default rule: self is read-only unless &mut is specified
+	fn Update(&mut Self self, f32 dt);
+}
+
+
+// -- CLASS (REFERENCE TYPE / IDENTITY OBJECT) -- //
+
+class Player
+{
+	embed Transform;
+	embed Xp as { val -> xpValue };
+
+	Health health;
+	bool isAlive = true;
+
+	static fn Create() -> Option<Player>
+	{
+		if (RandomInt(1, 5) == 1)
+			return Option::None;
+
+		Player p = new Player
+		{
+			position = {1.0, 1.0, 1.0},
+			rotation = {0.0, 0.0, 0.0},
+			speed = 6.5,
+			xpValue = 20
+		};
+
+		return Option::Some(p);
+	}
+
+	fn TakeDamage(&mut Self self, f32 amount)
+	{
+		self.health.value -= amount;
+
+		if (self.health.value <= 0.0)
+			self.isAlive = false;
+	}
+
+	fn WillDie(&Self self, f32 amount) -> bool
+	{
+		f32 predicted = self.health.value - amount;
+		return predicted <= 0.0;
+	}
+}
+
+impl Player : Updatable
+{
+	fn Update(&mut Self self, f32 dt)
+	{
+		self.position.x += self.speed * dt;
+		self.health.value -= 0.1 * dt;
+	}
+}
+
+
+// -- FREE FUNCTION -- //
+
+fn Squared(&mut f32 v)
+{
+	// NOTE:
+	// v is a mutable reference, so changes affect caller directly
+	v = v * v;
+}
+
+
+// -- MAIN -- //
+
+fn main()
+{
+	Option<Player> opt = Player::Create();
+
+	f32 v = 0.016;
+
+	// explicit mutable borrow
+	Squared(&mut v);
+
+
+	match (opt)
+	{
+		Option::Some(player) =>
+		{
+			// NOTE:
+			// player is MOVED out of Option::Some
+			// player is a reference type (class), so it refers to heap object
+
+			player.Update(v);        // v is copied (f32 is value type)
+			player.TakeDamage(30.0); // 30.0 is a literal copy
+		}
+
+		Option::None =>
+		{
+			Print("Failed to create player");
+		}
+	}
+}

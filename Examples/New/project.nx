@@ -1,0 +1,16 @@
+/* This will allow people to define dependencies and information about their projects
+ Example : Name, Version, Last Modified, Created
+*/
+
+project UiInterface
+{
+	name = "Video Loader";
+	version = "0.1";
+	
+	dependencies
+	{
+		glfw = "3.3+";
+		glad = "latest";
+		opengl = "system";
+	}
+}
