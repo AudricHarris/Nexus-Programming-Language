@@ -5,39 +5,6 @@
 #include <string>
 #include <string_view>
 
-/*
- * Let's start with the basics and expand on that
- * We need the simplest program or a small program to get an idea on how to
- * build this
- *
- * Example test.nx :
- * Main()
- * {
- *    i32 num = 5;
- *    num++;
- *    /! I am testing code !/
- *    Printf("This is a test {num}");
- *    i32 num2 = num;
- *    /! num is now invalid if called compiler will scream !/
- *    return;
- * }
- *
- * BECOMES :
- * TOK_IDENTIFIER TOK_LPAREN TOK_RPAREN
- * TOK_LBRACE
- *    TOK_IDENTIFIER TOK_IDENTIFIER TOK_ASSIGN TOK_INT TOK_SEMI
- *    TOK_IDENTIFIER TOK_LPAREN TOK_STRING TOK_RPAREN TOK_SEMI
- *    TOK_I32 TOK_IDENTIFIER TOK_MOVE TOK_IDENTIFIER TOK_SEMI
- *    TOK_RETURN TOK_SEMI
- * TOK_RBRACE
- *
- * This manual parsing allows me to identify different types
- * Example
- * variable/param = TYPE_X followed by KW_name
- * Method = KW_name + PUNC_lParam + (param)* + PUNC_rParam + body
- */
-
-// This is a initial version and will see updates
 enum class TokenKind {
   // KeyWords
   IDENTIFIER,
@@ -134,4 +101,5 @@ public:
   int getColumn() const { return this->column; }
   std::string toString();
 };
+
 #endif
