@@ -765,8 +765,6 @@ std::unique_ptr<Expression> Parser::parseAssignment() {
     return r;
   if (auto r = tryCompound(TokenKind::DIV_ASSIGN, BinaryOp::Div))
     return r;
-  if (auto r = tryCompound(TokenKind::DIVF_ASSIGN, BinaryOp::DivFloor))
-    return r;
 
   return left;
 }
@@ -849,8 +847,6 @@ std::unique_ptr<Expression> Parser::parseMultiplicative() {
     BinaryOp op;
     if (match(TokenKind::PROD))
       op = BinaryOp::Mul;
-    else if (match(TokenKind::DIV_FLOOR))
-      op = BinaryOp::DivFloor;
     else if (match(TokenKind::DIV))
       op = BinaryOp::Div;
     else if (match(TokenKind::MOD))

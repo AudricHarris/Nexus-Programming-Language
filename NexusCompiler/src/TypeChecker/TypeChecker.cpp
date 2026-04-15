@@ -398,7 +398,6 @@ NexusType TypeChecker::inferBinary(const BinaryExpr &e) {
   case BinaryOp::Sub:
   case BinaryOp::Mul:
   case BinaryOp::Div:
-  case BinaryOp::DivFloor:
   case BinaryOp::Mod: {
     if (e.op == BinaryOp::Add && L.base == "str" && R.base == "str")
       return NexusType::make("str"); // string concatenation

@@ -128,7 +128,6 @@ enum class BinaryOp {
   Sub,
   Mul,
   Div,
-  DivFloor,
   Mod,
   Eq,
   Ne,
@@ -154,8 +153,6 @@ inline std::string toString(BinaryOp op) {
     return "Mul";
   case BinaryOp::Div:
     return "Div";
-  case BinaryOp::DivFloor:
-    return "DivFloor";
   case BinaryOp::Mod:
     return "Mod";
   case BinaryOp::Eq:

@@ -118,10 +118,6 @@ Value *ArithmeticManager::emitBinaryOp(IRBuilder<> &B, LLVMContext &ctx,
   case BinaryOp::Div:
     return B.CreateFDiv(promoteToDouble(B, l), promoteToDouble(B, r), "fdiv");
 
-  case BinaryOp::DivFloor:
-    return B.CreateSDiv(promoteToInt(B, ctx, l), promoteToInt(B, ctx, r),
-                        "sdiv");
-
   case BinaryOp::Mod:
     return B.CreateSRem(promoteToInt(B, ctx, l), promoteToInt(B, ctx, r),
                         "srem");
