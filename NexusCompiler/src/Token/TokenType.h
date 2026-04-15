@@ -38,7 +38,6 @@ enum class TokenKind {
   SUB,
   PROD,
   DIV,
-  DIV_FLOOR,
   MOD,
   LT, //<
   GT,
@@ -73,6 +72,7 @@ enum class TokenKind {
   RETURN_TYPE,
   NEW,
   END_OF_FILE,
+  COMMENT,
   UNKNOWN,
 
   NUM_TOKENS

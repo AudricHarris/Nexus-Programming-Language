@@ -84,8 +84,6 @@ std::string Token::toString() {
     return "PROD  ";
   case TokenKind::DIV:
     return "DIV  ";
-  case TokenKind::DIV_FLOOR:
-    return "DIV_FLOOR  ";
   case TokenKind::MOD:
     return "MOD  ";
   case TokenKind::LT:
@@ -146,6 +144,8 @@ std::string Token::toString() {
     return "NEW  ";
   case TokenKind::END_OF_FILE:
     return "EOF\n\n";
+  case TokenKind::COMMENT:
+    return "COMMENT  ";
   case TokenKind::UNKNOWN:
     return "UNKNOWN  ";
   case TokenKind::NUM_TOKENS:
