@@ -15,6 +15,7 @@ enum class TokenKind {
   RETURN,
   AS,
   FN,
+  MUT,
   CONST,
   IMPORT,
   PUBLIC,

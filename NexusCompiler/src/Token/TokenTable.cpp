@@ -46,6 +46,8 @@ std::string Token::toString() {
     return "AS  ";
   case TokenKind::FN:
     return "FN  ";
+  case TokenKind::MUT:
+    return "MUT  ";
   case TokenKind::CONST:
     return "CONST  ";
   case TokenKind::IMPORT:

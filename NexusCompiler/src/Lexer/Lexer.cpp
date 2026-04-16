@@ -191,12 +191,18 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
   case 2:
     if (w == "if")
       return TokenKind::IF;
+    if (w == "fn")
+      return TokenKind::FN;
+    if (w == "as")
+      return TokenKind::AS;
     break;
   case 3:
     if (w == "new")
       return TokenKind::NEW;
     if (w == "for")
       return TokenKind::FOR;
+    if (w == "mut")
+      return TokenKind::MUT;
     break;
   case 4:
     if (w == "else")
@@ -439,9 +445,6 @@ std::vector<Token> Lexer::Tokenize() {
       continue;
     }
 
-    /*------------------------------------------------*/
-    /* Compound assignment operators:  +=  -=  *=  /= */
-    /*------------------------------------------------*/
     if (this->pos + 1 < this->srcLen && this->src[this->pos + 1] == '=') {
       TokenKind kind = TokenKind::UNKNOWN;
       switch (c) {
