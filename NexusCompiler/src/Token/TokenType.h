@@ -13,6 +13,8 @@ enum class TokenKind {
   WHILE,
   FOR,
   RETURN,
+  AS,
+  FN,
   CONST,
   IMPORT,
   PUBLIC,
