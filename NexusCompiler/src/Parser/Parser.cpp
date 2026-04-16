@@ -153,9 +153,15 @@ std::unique_ptr<Program> Parser::parse() {
         }
       }
 
-      auto fn = parseFunctionDecl();
-      fn->isPublic = isPublic;
-      prog->functions.push_back(std::move(fn));
+      if (check(TokenKind::FN)) {
+        auto fn = parseFunctionDecl();
+        fn->isPublic = isPublic;
+        prog->functions.push_back(std::move(fn));
+        continue;
+      }
+      throw ParseError(peek().getLine(), peek().getColumn(),
+                       "Unexpected token at top level: `" + peek().getWord() +
+                           "`");
 
     } catch (const ParseError &e) {
       std::cerr << e.what() << "\n";
@@ -340,6 +346,7 @@ std::unique_ptr<GlobalVarDecl> Parser::parseGlobalVarDecl() {
 // Function declaration //
 // -------------------- //
 std::unique_ptr<Function> Parser::parseFunctionDecl() {
+  expect(TokenKind::FN, "Expected 'fn'");
   Token nameToken = expect(TokenKind::IDENTIFIER, "Expected function name");
   expect(TokenKind::LPAREN, "Expected '(' after function name");
 
@@ -349,6 +356,8 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
       bool isBorrowRef = false, isConst = false;
       if (check(TokenKind::AND)) {
         consume();
+        if (check(TokenKind::MUT))
+          consume();
         isBorrowRef = true;
       }
       if (check(TokenKind::CONST)) {
@@ -914,6 +923,13 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
         return std::make_unique<Decrement>(id->name);
       throw ParseError(peek().getLine(), peek().getColumn(),
                        "'--' requires an identifier");
+    }
+
+    if (match(TokenKind::AS)) {
+      Token castTok = expect(TokenKind::IDENTIFIER, "Expected type after 'as'");
+      TypeDesc td(Identifier{castTok});
+      expr = std::make_unique<CastExpr>(std::move(expr), std::move(td));
+      continue;
     }
 
     break;

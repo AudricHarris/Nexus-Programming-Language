@@ -43,6 +43,7 @@ public:
   llvm::Value *visitBinary(const BinaryExpr &e) override;
   llvm::Value *visitUnary(const UnaryExpr &e) override;
   llvm::Value *visitCall(const CallExpr &e) override;
+  llvm::Value *visitCast(const CastExpr &e) override;
   llvm::Value *visitAssign(const AssignExpr &e) override;
   llvm::Value *visitIncrement(const Increment &e) override;
   llvm::Value *visitDecrement(const Decrement &e) override;

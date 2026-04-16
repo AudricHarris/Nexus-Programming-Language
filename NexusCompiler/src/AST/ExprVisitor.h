@@ -11,6 +11,7 @@ struct NullLitExpr;
 struct IdentExpr;
 struct BinaryExpr;
 struct UnaryExpr;
+struct CastExpr;
 struct CallExpr;
 struct AssignExpr;
 struct Increment;
@@ -43,6 +44,7 @@ struct ExprVisitor {
   virtual llvm::Value *visitIdentifier(const IdentExpr &) = 0;
   virtual llvm::Value *visitBinary(const BinaryExpr &) = 0;
   virtual llvm::Value *visitUnary(const UnaryExpr &) = 0;
+  virtual llvm::Value *visitCast(const CastExpr &) = 0;
   virtual llvm::Value *visitCall(const CallExpr &) = 0;
   virtual llvm::Value *visitAssign(const AssignExpr &) = 0;
   virtual llvm::Value *visitIncrement(const Increment &) = 0;

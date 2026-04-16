@@ -326,6 +326,25 @@ struct UnaryExpr : Expression {
   }
 };
 
+struct CastExpr : Expression {
+  ExprPtr expr;
+  TypeDesc targetType;
+
+  CastExpr(ExprPtr e, TypeDesc t)
+      : expr(std::move(e)), targetType(std::move(t)) {}
+
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitCast(*this);
+  }
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"CastExpr\",\"target\":"
+       << json_utils::escape(targetType.fullName()) << ",\"expr\":";
+    expr->toJson(os, indent + 2);
+    os << "}";
+  }
+};
+
 struct CallExpr : Expression {
   Identifier callee;
   std::vector<ExprPtr> arguments;

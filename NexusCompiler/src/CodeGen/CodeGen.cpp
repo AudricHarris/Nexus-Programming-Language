@@ -908,6 +908,10 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   return ArrayEmitter::makeND(builder, context, *module, elemType, dimValues);
 }
 
+Value *CodeGenerator::visitCast(const CastExpr &e) {
+  return logError("Failed");
+}
+
 Value *CodeGenerator::visitCall(const CallExpr &e) {
   const std::string rawName = e.callee.token.getWord();
   const std::string calleeName = normalizeFunctionName(rawName);
