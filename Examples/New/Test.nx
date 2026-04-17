@@ -1,3 +1,4 @@
+/![STRICT]!/
 /* This is just an Example to show how the code functions */
 
 fn RandomInt(i32 end) -> i32
@@ -9,7 +10,7 @@ fn RandomInt(i32 start, i32 end) -> i32
 {
 	i32 gap = end - start;
 
-	return (Random() * gaP + end) as i32;
+	return (Random() * gap + end) as i32;
 }
 
 fn Randomize(&mut i32 t)

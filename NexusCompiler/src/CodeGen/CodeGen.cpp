@@ -909,7 +909,77 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
 }
 
 Value *CodeGenerator::visitCast(const CastExpr &e) {
-  return logError("Failed");
+  Value *val = codegen(*e.expr);
+  if (!val)
+    return nullptr;
+
+  const std::string &targetName = e.targetType.base.token.getWord();
+  Type *srcTy = val->getType();
+
+  Type *dstTy = nullptr;
+  if (targetName == "i8")
+    dstTy = Type::getInt8Ty(context);
+  else if (targetName == "i16")
+    dstTy = Type::getInt16Ty(context);
+  else if (targetName == "i32")
+    dstTy = Type::getInt32Ty(context);
+  else if (targetName == "i64")
+    dstTy = Type::getInt64Ty(context);
+  else if (targetName == "f32")
+    dstTy = Type::getFloatTy(context);
+  else if (targetName == "f64")
+    dstTy = Type::getDoubleTy(context);
+  else if (targetName == "bool")
+    dstTy = Type::getInt1Ty(context);
+  else
+    return logError(("Unknown cast target type: " + targetName).c_str());
+
+  if (srcTy == dstTy)
+    return val;
+
+  if (srcTy->isIntegerTy() && dstTy->isIntegerTy()) {
+    unsigned srcBits = srcTy->getIntegerBitWidth();
+    unsigned dstBits = dstTy->getIntegerBitWidth();
+    if (dstBits < srcBits)
+      return builder.CreateTrunc(val, dstTy, "cast.trunc");
+    if (srcBits == 1)
+      return builder.CreateZExt(val, dstTy, "cast.zext");
+    return builder.CreateSExt(val, dstTy, "cast.sext");
+  }
+
+  if (srcTy->isFloatingPointTy() && dstTy->isFloatingPointTy()) {
+    if (srcTy->getPrimitiveSizeInBits() < dstTy->getPrimitiveSizeInBits())
+      return builder.CreateFPExt(val, dstTy, "cast.fpext");
+    return builder.CreateFPTrunc(val, dstTy, "cast.fptrunc");
+  }
+
+  if (srcTy->isFloatingPointTy() && dstTy->isIntegerTy()) {
+    if (dstTy->getIntegerBitWidth() == 1)
+      return builder.CreateFCmpONE(val, ConstantFP::get(srcTy, 0.0),
+                                   "cast.ftobool");
+    return builder.CreateFPToSI(val, dstTy, "cast.fptosi");
+  }
+
+  if (srcTy->isIntegerTy() && dstTy->isFloatingPointTy()) {
+    if (srcTy->getIntegerBitWidth() == 1)
+      return builder.CreateUIToFP(val, dstTy, "cast.uitofp");
+    return builder.CreateSIToFP(val, dstTy, "cast.sitofp");
+  }
+
+  if (srcTy->isIntegerTy() && dstTy->isIntegerTy() &&
+      dstTy->getIntegerBitWidth() == 1)
+    return builder.CreateICmpNE(val, ConstantInt::get(srcTy, 0), "cast.tobool");
+
+  if (srcTy->isPointerTy() && dstTy->isPointerTy())
+    return builder.CreatePointerCast(val, dstTy, "cast.ptr");
+
+  if (srcTy->isIntegerTy() && dstTy->isPointerTy())
+    return builder.CreateIntToPtr(val, dstTy, "cast.itoptr");
+
+  if (srcTy->isPointerTy() && dstTy->isIntegerTy())
+    return builder.CreatePtrToInt(val, dstTy, "cast.ptrtoi");
+
+  return logError(("Unsupported cast: " + targetName).c_str());
 }
 
 Value *CodeGenerator::visitCall(const CallExpr &e) {
