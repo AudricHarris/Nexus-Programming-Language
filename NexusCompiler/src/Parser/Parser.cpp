@@ -673,8 +673,6 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
     throw ParseError(peek().getLine(), peek().getColumn(),
                      "Expected '=', '<-', or '&='");
 
-  // If the initializer starts with '{', treat it as a positional struct
-  // literal.
   std::unique_ptr<Expression> init;
   if (check(TokenKind::LBRACE)) {
     consume(); // '{'
