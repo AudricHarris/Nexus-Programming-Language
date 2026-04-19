@@ -10,7 +10,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
 #include <string>
-#include <unordered_map>
+#include <unordered_set>
 
 using namespace llvm;
 
@@ -982,6 +982,15 @@ Value *CodeGenerator::visitCast(const CastExpr &e) {
   return logError(("Unsupported cast: " + targetName).c_str());
 }
 
+static std::string mangleName(const std::string &name,
+                              const std::vector<Parameter> &params) {
+  static const std::unordered_set<std::string> kNoMangle = {
+      "Main", "Printf", "Print", "Random", "Read"};
+  if (kNoMangle.count(name))
+    return normalizeFunctionName(name);
+  return name + "$" + std::to_string(params.size());
+}
+
 Value *CodeGenerator::visitCall(const CallExpr &e) {
   const std::string rawName = e.callee.token.getWord();
   const std::string calleeName = normalizeFunctionName(rawName);
@@ -997,11 +1006,16 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
   if (rawName == "Random")
     return BuiltinEmitter::handleRandom(builder, context, module.get());
 
-  llvm::Function *callee = module->getFunction(calleeName);
-  if (!callee)
-    return logError(("Unknown function: " + calleeName).c_str());
-  if (!callee->isVarArg() && callee->arg_size() != e.arguments.size())
-    return logError("Wrong number of arguments");
+  llvm::Function *callee = nullptr;
+  for (int arity = 0;; ++arity) {
+    std::string candidate =
+        calleeName + "$" + std::to_string(e.arguments.size());
+    callee = module->getFunction(candidate);
+    if (callee)
+      break;
+    callee = module->getFunction(calleeName);
+    break;
+  }
 
   auto refIt = borrowRefParams.find(calleeName);
   std::vector<Value *> args;
@@ -1796,6 +1810,12 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     f = llvm::Function::Create(ft, llvm::Function::ExternalLinkage, fname,
                                *module);
   }
+
+  if (f && !f->empty()) {
+    logError(("Function already defined: " + fname).c_str());
+    return nullptr;
+  }
+
   f->addFnAttr("stackrealignment");
 
   BasicBlock *entry = BasicBlock::Create(context, "entry", f);
