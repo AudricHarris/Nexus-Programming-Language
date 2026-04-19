@@ -399,7 +399,9 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
   if (it == namedValues.end())
     return logError(("Undeclared variable: " + tgt).c_str());
   if (it->second.isConst)
-    return logError(("Cannot reassign const variable: " + tgt).c_str());
+    return logError(("Cannot reassign const or non mutable variable: " + tgt +
+                     " on line " + std::to_string(e.target.token.getLine()))
+                        .c_str());
 
   if (it->second.isReference) {
     Value *val = codegen(*e.value);
@@ -1785,9 +1787,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   if (!retTy)
     return nullptr;
 
-  // Build parameter types.
-  // Convention: borrow-refs, strings, arrays, and user structs are all passed
-  // as opaque ptr.  Primitive scalars (int, float, bool, raw ptr) are by value.
   std::vector<Type *> paramTypes;
   std::vector<bool> paramIsRef;
   for (const auto &p : func.params) {
@@ -1843,7 +1842,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
       if (!pointee)
         pointee = llvm::StructType::getTypeByName(
             context, param.type.base.token.getWord());
-      // &T is read-only (isConst=true); &mut T is writable (isConst=false)
       bool readOnly = !param.isMut;
       VarInfo vi(ptrAlloca, PointerType::get(context, 0), false, false, true,
                  readOnly);

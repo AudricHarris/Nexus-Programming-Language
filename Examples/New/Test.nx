@@ -8,14 +8,20 @@ fn RandomInt(i32 end) -> i32
 
 fn RandomInt(i32 start, i32 end) -> i32
 {
-	i32 gap = end - start;
+	if (start > end)
+	{
+		i32 tmp = start;
+		start = end;
+		end = tmp;
+	}
 
-	return (Random() * gap + end) as i32;
+	i32 gap = end - start;
+	return (Random() * gap + start) as i32;
 }
 
 fn Randomize(&mut i32 t)
 {
-	t = RandomInt(20);
+	t = RandomInt(-9, -5);
 }
 
 fn Main() -> bool
