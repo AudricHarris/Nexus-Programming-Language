@@ -1822,8 +1822,10 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
       if (!pointee)
         pointee = llvm::StructType::getTypeByName(
             context, param.type.base.token.getWord());
+      // &T is read-only (isConst=true); &mut T is writable (isConst=false)
+      bool readOnly = !param.isMut;
       VarInfo vi(ptrAlloca, PointerType::get(context, 0), false, false, true,
-                 param.isConst);
+                 readOnly);
       vi.pointeeType = pointee;
       namedValues[pname] = vi;
       scopeMgr.declare(pname);

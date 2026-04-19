@@ -353,12 +353,15 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
   std::vector<Parameter> params;
   if (!match(TokenKind::RPAREN)) {
     do {
-      bool isBorrowRef = false, isConst = false;
+      bool isBorrowRef = false, isMut = false, isConst = false;
       if (check(TokenKind::AND)) {
         consume();
-        if (check(TokenKind::MUT))
-          consume();
         isBorrowRef = true;
+        if (check(TokenKind::MUT)) {
+          consume();
+          isMut = true; // &mut T  — mutable reference
+        }
+        // else: &T  — read-only (immutable) reference
       }
       if (check(TokenKind::CONST)) {
         consume();
@@ -376,7 +379,7 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
 
       Token nameTok = expect(TokenKind::IDENTIFIER, "Expected parameter name");
       params.emplace_back(TypeDesc(Identifier{typeTok}, dims, isConst),
-                          Identifier{nameTok}, isBorrowRef, isConst);
+                          Identifier{nameTok}, isBorrowRef, isConst, isMut);
     } while (match(TokenKind::COMMA));
 
     expect(TokenKind::RPAREN, "Expected ')'");

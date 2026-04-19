@@ -189,7 +189,7 @@ int main(int argc, char *argv[]) {
   std::string firstArg = argv[1];
 
   if (firstArg == "--version") {
-    std::cout << "nexus 1.4.3\n";
+    std::cout << "nexus 1.5.0\n";
     return 0;
   }
 

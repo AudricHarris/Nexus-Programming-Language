@@ -114,10 +114,13 @@ struct Parameter {
   TypeDesc type;
   Identifier name;
   bool isBorrowRef = false;
+  bool isMut = false;
   bool isConst = false;
 
-  Parameter(TypeDesc t, Identifier n, bool ref = false, bool c = false)
-      : type(std::move(t)), name(std::move(n)), isBorrowRef(ref), isConst(c) {}
+  Parameter(TypeDesc t, Identifier n, bool ref = false, bool c = false,
+            bool mut = false)
+      : type(std::move(t)), name(std::move(n)), isBorrowRef(ref), isMut(mut),
+        isConst(c) {}
 };
 
 // --------- //
@@ -193,7 +196,6 @@ inline std::string toString(UnaryOp op) {
 struct Expression {
   virtual ~Expression() = default;
   virtual void toJson(std::ostream &os, int indent = 0) const = 0;
-  // Dispatch to a visitor — every concrete node overrides this.
   virtual llvm::Value *accept(ExprVisitor &v) const = 0;
 };
 
