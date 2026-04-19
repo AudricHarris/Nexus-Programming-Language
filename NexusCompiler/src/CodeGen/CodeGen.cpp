@@ -1017,7 +1017,8 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
     break;
   }
 
-  auto refIt = borrowRefParams.find(calleeName);
+  auto refIt =
+      borrowRefParams.find(callee ? callee->getName().str() : calleeName);
   std::vector<Value *> args;
   for (size_t i = 0; i < e.arguments.size(); ++i) {
     bool isRef = refIt != borrowRefParams.end() && i < refIt->second.size() &&
@@ -1771,7 +1772,7 @@ Value *CodeGenerator::visitReturn(const Return &s) {
 // ---------------- //
 
 llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
-  const std::string fname = normalizeFunctionName(func.name.token.getWord());
+  const std::string fname = mangleName(func.name.token.getWord(), func.params);
 
   Type *retTy = TypeResolver::fromTypeDesc(context, func.returnType);
   if (!retTy)
@@ -2110,7 +2111,7 @@ bool CodeGenerator::generate(const Program &program,
   }
 
   for (const auto &fn : program.functions) {
-    const std::string fname = normalizeFunctionName(fn->name.token.getWord());
+    const std::string fname = mangleName(fn->name.token.getWord(), fn->params);
     if (!module->getFunction(fname)) {
       Type *retTy = TypeResolver::fromTypeDesc(context, fn->returnType);
       if (!retTy)
@@ -2141,7 +2142,7 @@ bool CodeGenerator::generate(const Program &program,
   }
 
   for (const auto &fn : program.functions) {
-    const std::string fname = normalizeFunctionName(fn->name.token.getWord());
+    const std::string fname = mangleName(fn->name.token.getWord(), fn->params);
     errs() << "Codegenning: " << fname << "\n";
     if (!codegen(*fn)) {
       errs() << "FAILED: " << fname << "\n";
