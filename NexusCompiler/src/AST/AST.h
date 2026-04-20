@@ -290,6 +290,32 @@ struct IdentExpr : Expression {
   }
 };
 
+struct BorrowArgExpr : Expression {
+  Identifier name;
+  explicit BorrowArgExpr(const Identifier &n) : name(n) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitBorrowArg(*this);
+  }
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"BorrowArgExpr\",\"name\":"
+       << json_utils::escape(name.token.getWord()) << "}";
+  }
+};
+
+struct BorrowMutArgExpr : Expression {
+  Identifier name;
+  explicit BorrowMutArgExpr(const Identifier &n) : name(n) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitBorrowMutArg(*this);
+  }
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"BorrowMutArgExpr\",\"name\":"
+       << json_utils::escape(name.token.getWord()) << "}";
+  }
+};
+
 struct BinaryExpr : Expression {
   BinaryOp op;
   ExprPtr left, right;

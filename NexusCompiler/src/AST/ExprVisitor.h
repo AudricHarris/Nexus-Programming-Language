@@ -8,6 +8,8 @@ struct StrLitExpr;
 struct BoolLitExpr;
 struct CharLitExpr;
 struct NullLitExpr;
+struct BorrowArgExpr;
+struct BorrowMutArgExpr;
 struct IdentExpr;
 struct BinaryExpr;
 struct UnaryExpr;
@@ -42,6 +44,8 @@ struct ExprVisitor {
   virtual llvm::Value *visitCharLit(const CharLitExpr &) = 0;
   virtual llvm::Value *visitNullLit(const NullLitExpr &) = 0;
   virtual llvm::Value *visitIdentifier(const IdentExpr &) = 0;
+  virtual llvm::Value *visitBorrowArg(const BorrowArgExpr &) = 0;
+  virtual llvm::Value *visitBorrowMutArg(const BorrowMutArgExpr &) = 0;
   virtual llvm::Value *visitBinary(const BinaryExpr &) = 0;
   virtual llvm::Value *visitUnary(const UnaryExpr &) = 0;
   virtual llvm::Value *visitCast(const CastExpr &) = 0;

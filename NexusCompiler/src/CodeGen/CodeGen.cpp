@@ -1023,143 +1023,234 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       borrowRefParams.find(callee ? callee->getName().str() : calleeName);
   std::vector<Value *> args;
   for (size_t i = 0; i < e.arguments.size(); ++i) {
-    bool isRef = refIt != borrowRefParams.end() && i < refIt->second.size() &&
-                 refIt->second[i];
-    if (isRef) {
-      auto *id = dynamic_cast<const IdentExpr *>(e.arguments[i].get());
-      if (!id)
-        return logError("Borrow-ref parameter requires an identifier");
-      auto sit = namedValues.find(id->name.token.getWord());
+    bool paramIsRef = refIt != borrowRefParams.end() &&
+                      i < refIt->second.size() && refIt->second[i];
+
+    const Expression *argExpr = e.arguments[i].get();
+    bool argIsBorrow = dynamic_cast<const BorrowArgExpr *>(argExpr) != nullptr;
+    bool argIsBorrowMut =
+        dynamic_cast<const BorrowMutArgExpr *>(argExpr) != nullptr;
+
+    if (paramIsRef) {
+      if (!argIsBorrow && !argIsBorrowMut) {
+        bool needsMut = false;
+        if (refIt != borrowRefParams.end()) {
+          auto mutIt = borrowMutParams.find(callee ? callee->getName().str()
+                                                   : calleeName);
+          if (mutIt != borrowMutParams.end() && i < mutIt->second.size())
+            needsMut = mutIt->second[i];
+        }
+        std::string expected = needsMut ? "&mut " : "&";
+        std::string argName = "<expr>";
+        int lineNum = 0;
+        if (auto *id = dynamic_cast<const IdentExpr *>(argExpr)) {
+          argName = id->name.token.getWord();
+          lineNum = id->name.token.getLine();
+        }
+        return logError(("Argument " + std::to_string(i + 1) + " to '" +
+                         rawName + "' must be passed by reference: use `" +
+                         expected + argName + "` at line " +
+                         std::to_string(lineNum))
+                            .c_str());
+      }
+
+      Identifier borrowedName =
+          argIsBorrowMut ? static_cast<const BorrowMutArgExpr *>(argExpr)->name
+                         : static_cast<const BorrowArgExpr *>(argExpr)->name;
+
+      if (!argIsBorrowMut) {
+        auto mutIt =
+            borrowMutParams.find(callee ? callee->getName().str() : calleeName);
+        if (mutIt != borrowMutParams.end() && i < mutIt->second.size() &&
+            mutIt->second[i]) {
+          return logError(("Argument " + std::to_string(i + 1) + " to '" +
+                           rawName + "' expects &mut, but got &. Use `&mut " +
+                           borrowedName.token.getWord() + "` at line " +
+                           std::to_string(borrowedName.token.getLine()))
+                              .c_str());
+        }
+      } else {
+        bool paramExpectsMut = false;
+        auto mutIt =
+            borrowMutParams.find(callee ? callee->getName().str() : calleeName);
+        if (mutIt != borrowMutParams.end() && i < mutIt->second.size())
+          paramExpectsMut = mutIt->second[i];
+
+        if (!paramExpectsMut) {
+          return logError(("Argument " + std::to_string(i + 1) + " to '" +
+                           rawName +
+                           "' expects immutable reference (&), but got mutable "
+                           "reference (&mut). Use `&" +
+                           borrowedName.token.getWord() + "` at line " +
+                           std::to_string(borrowedName.token.getLine()))
+                              .c_str());
+        }
+      }
+
+      const std::string &vname = borrowedName.token.getWord();
+      auto sit = namedValues.find(vname);
       if (sit == namedValues.end())
-        return logError(
-            ("Unknown variable: " + id->name.token.getWord()).c_str());
+        return logError(("Unknown variable: " + vname + " at line " +
+                         std::to_string(borrowedName.token.getLine()))
+                            .c_str());
 
       if (sit->second.isReference) {
         Value *ptr = builder.CreateLoad(PointerType::get(context, 0),
-                                        sit->second.allocaInst,
-                                        id->name.token.getWord() + ".fwd");
+                                        sit->second.allocaInst, vname + ".fwd");
         args.push_back(ptr);
       } else {
         args.push_back(sit->second.allocaInst);
       }
-    } else {
-      Value *v = codegen(*e.arguments[i]);
-      if (!v)
-        return nullptr;
+      continue;
+    }
 
-      if (auto *ai = dyn_cast<AllocaInst>(v)) {
-        Type *allocTy = ai->getAllocatedType();
-        if (TypeResolver::isString(allocTy)) {
-          bool isExtern = callee->isDeclaration();
-          bool expectsRawPtr = false;
-          if (i < callee->arg_size()) {
-            Type *expectedTy = callee->getFunctionType()->getParamType(i);
-            expectsRawPtr = expectedTy->isPointerTy();
-          }
-          if (expectsRawPtr && isExtern) {
-            Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
-            Value *strData =
-                builder.CreateExtractValue(loaded, {0}, "str.data");
-            bool needsPtrToPtr = (calleeName == "glShaderSource");
-            if (needsPtrToPtr) {
-              AllocaInst *slot = createEntryAlloca(PointerType::get(context, 0),
-                                                   "strptr.slot");
-              builder.CreateStore(strData, slot);
-              v = slot;
-            } else {
-              v = strData;
-            }
-          } else {
-            v = ai;
-          }
-        } else if (TypeResolver::isArray(allocTy)) {
-          bool isExtern = callee->isDeclaration();
-          bool expectsRawPtr = false;
-          if (i < callee->arg_size()) {
-            Type *expectedTy = callee->getFunctionType()->getParamType(i);
-            expectsRawPtr = expectedTy->isPointerTy();
-          }
-          if (isExtern && expectsRawPtr) {
-            Value *loaded = builder.CreateLoad(allocTy, ai, "arr.load");
-            v = builder.CreateExtractValue(loaded, {1}, "arr.data");
-          } else {
-            v = ai;
-          }
-        } else if (allocTy->isStructTy() && !callee->isDeclaration()) {
-          v = ai;
-        }
+    if (argIsBorrow || argIsBorrowMut) {
+      int lineNum = 0;
+      std::string varName;
+      if (argIsBorrow) {
+        auto *ba = static_cast<const BorrowArgExpr *>(argExpr);
+        varName = ba->name.token.getWord();
+        lineNum = ba->name.token.getLine();
       } else {
-        Type *vTy = v->getType();
+        auto *bma = static_cast<const BorrowMutArgExpr *>(argExpr);
+        varName = bma->name.token.getWord();
+        lineNum = bma->name.token.getLine();
+      }
+      return logError(
+          ("Argument " + std::to_string(i + 1) + " to '" + rawName +
+           "' is not a reference parameter; remove the '&'/'&mut' from '" +
+           varName + "' at line " + std::to_string(lineNum))
+              .c_str());
+    }
+
+    if (argIsBorrow || argIsBorrowMut) {
+      return logError(("Argument " + std::to_string(i + 1) + " to '" + rawName +
+                       "' is not a reference parameter; remove the '&'/'&mut'")
+                          .c_str());
+    }
+
+    Value *v = codegen(*e.arguments[i]);
+    if (!v)
+      return nullptr;
+
+    if (auto *ai = dyn_cast<AllocaInst>(v)) {
+      Type *allocTy = ai->getAllocatedType();
+      if (TypeResolver::isString(allocTy)) {
+        bool isExtern = callee->isDeclaration();
+        bool expectsRawPtr = false;
         if (i < callee->arg_size()) {
           Type *expectedTy = callee->getFunctionType()->getParamType(i);
-          if (TypeResolver::isString(vTy) && expectedTy->isPointerTy() &&
-              callee->isDeclaration()) {
-            v = builder.CreateExtractValue(v, {0}, "str.data");
-          } else if (vTy->isPointerTy() && expectedTy->isPointerTy() &&
-                     callee->isDeclaration()) {
-            if (auto *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(v)) {
-              llvm::Type *resultTy = gep->getResultElementType();
-              if (TypeResolver::isArray(resultTy)) {
-                Value *loaded =
-                    builder.CreateLoad(resultTy, v, "arr.field.load");
+          expectsRawPtr = expectedTy->isPointerTy();
+        }
+        if (expectsRawPtr && isExtern) {
+          Value *loaded = builder.CreateLoad(allocTy, ai, "str.load");
+          Value *strData = builder.CreateExtractValue(loaded, {0}, "str.data");
+          bool needsPtrToPtr = (calleeName == "glShaderSource");
+          if (needsPtrToPtr) {
+            AllocaInst *slot =
+                createEntryAlloca(PointerType::get(context, 0), "strptr.slot");
+            builder.CreateStore(strData, slot);
+            v = slot;
+          } else {
+            v = strData;
+          }
+        } else {
+          v = ai;
+        }
+      } else if (TypeResolver::isArray(allocTy)) {
+        bool isExtern = callee->isDeclaration();
+        bool expectsRawPtr = false;
+        if (i < callee->arg_size()) {
+          Type *expectedTy = callee->getFunctionType()->getParamType(i);
+          expectsRawPtr = expectedTy->isPointerTy();
+        }
+        if (isExtern && expectsRawPtr) {
+          Value *loaded = builder.CreateLoad(allocTy, ai, "arr.load");
+          v = builder.CreateExtractValue(loaded, {1}, "arr.data");
+        } else {
+          v = ai;
+        }
+      } else if (allocTy->isStructTy() && !callee->isDeclaration()) {
+        v = ai;
+      }
+    } else {
+      Type *vTy = v->getType();
+      if (i < callee->arg_size()) {
+        Type *expectedTy = callee->getFunctionType()->getParamType(i);
+        if (TypeResolver::isString(vTy) && expectedTy->isPointerTy() &&
+            callee->isDeclaration()) {
+          v = builder.CreateExtractValue(v, {0}, "str.data");
+        } else if (vTy->isPointerTy() && expectedTy->isPointerTy() &&
+                   callee->isDeclaration()) {
+          if (auto *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(v)) {
+            llvm::Type *resultTy = gep->getResultElementType();
+            if (TypeResolver::isArray(resultTy)) {
+              Value *loaded = builder.CreateLoad(resultTy, v, "arr.field.load");
+              v = builder.CreateExtractValue(loaded, {1}, "arr.data");
+            } else {
+              llvm::Type *srcTy = gep->getSourceElementType();
+              if (TypeResolver::isArray(srcTy)) {
+                Value *loaded = builder.CreateLoad(srcTy, v, "arr.field.load");
                 v = builder.CreateExtractValue(loaded, {1}, "arr.data");
-              } else {
-                llvm::Type *srcTy = gep->getSourceElementType();
-                if (TypeResolver::isArray(srcTy)) {
-                  Value *loaded =
-                      builder.CreateLoad(srcTy, v, "arr.field.load");
-                  v = builder.CreateExtractValue(loaded, {1}, "arr.data");
-                }
               }
             }
-          } else if (vTy->isPointerTy() &&
-                     (TypeResolver::isString(expectedTy) ||
-                      TypeResolver::isArray(expectedTy))) {
-            v = builder.CreateLoad(expectedTy, v, "deref.arg");
-          } else if (vTy->isStructTy() && expectedTy->isPointerTy() &&
-                     !callee->isDeclaration()) {
-            AllocaInst *tmp = createEntryAlloca(vTy, "struct.arg.tmp");
-            builder.CreateStore(v, tmp);
-            v = tmp;
           }
+        } else if (vTy->isPointerTy() && (TypeResolver::isString(expectedTy) ||
+                                          TypeResolver::isArray(expectedTy))) {
+          v = builder.CreateLoad(expectedTy, v, "deref.arg");
+        } else if (vTy->isStructTy() && expectedTy->isPointerTy() &&
+                   !callee->isDeclaration()) {
+          AllocaInst *tmp = createEntryAlloca(vTy, "struct.arg.tmp");
+          builder.CreateStore(v, tmp);
+          v = tmp;
         }
       }
-
-      if (callee->isDeclaration() && i < callee->arg_size()) {
-        Type *expectedTy = callee->getFunctionType()->getParamType(i);
-        if (expectedTy->isPointerTy()) {
-          if (auto *id =
-                  dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
-            auto sit = namedValues.find(id->name.token.getWord());
-            if (sit != namedValues.end() &&
-                !TypeResolver::isString(sit->second.type) &&
-                !TypeResolver::isArray(sit->second.type)) {
-              if (sit->second.type && sit->second.type->isPointerTy()) {
-                v = builder.CreateLoad(sit->second.type, sit->second.allocaInst,
-                                       id->name.token.getWord() + ".load");
-              } else {
-                v = sit->second.allocaInst;
-              }
-            }
-          } else if (!v->getType()->isPointerTy()) {
-            AllocaInst *tmp = createEntryAlloca(v->getType(), "ref.tmp");
-            builder.CreateStore(v, tmp);
-            v = tmp;
-          }
-        }
-      }
-
-      if (!callee->isVarArg() && i < callee->arg_size()) {
-        Type *expectedTy = callee->getFunctionType()->getParamType(i);
-        v = TypeResolver::coerce(builder, v, expectedTy);
-      }
-
-      args.push_back(v);
     }
+
+    if (callee->isDeclaration() && i < callee->arg_size()) {
+      Type *expectedTy = callee->getFunctionType()->getParamType(i);
+      if (expectedTy->isPointerTy()) {
+        if (auto *id = dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
+          auto sit = namedValues.find(id->name.token.getWord());
+          if (sit != namedValues.end() &&
+              !TypeResolver::isString(sit->second.type) &&
+              !TypeResolver::isArray(sit->second.type)) {
+            if (sit->second.type && sit->second.type->isPointerTy()) {
+              v = builder.CreateLoad(sit->second.type, sit->second.allocaInst,
+                                     id->name.token.getWord() + ".load");
+            } else {
+              v = sit->second.allocaInst;
+            }
+          }
+        } else if (!v->getType()->isPointerTy()) {
+          AllocaInst *tmp = createEntryAlloca(v->getType(), "ref.tmp");
+          builder.CreateStore(v, tmp);
+          v = tmp;
+        }
+      }
+    }
+
+    if (!callee->isVarArg() && i < callee->arg_size()) {
+      Type *expectedTy = callee->getFunctionType()->getParamType(i);
+      v = TypeResolver::coerce(builder, v, expectedTy);
+    }
+
+    args.push_back(v);
   }
 
   bool isVoid = callee->getReturnType()->isVoidTy();
   return builder.CreateCall(callee, args, isVoid ? "" : "call");
+}
+
+Value *CodeGenerator::visitBorrowArg(const BorrowArgExpr &e) {
+  return logError(
+      ("'&" + e.name.token.getWord() + "' is only valid as a call argument")
+          .c_str());
+}
+Value *CodeGenerator::visitBorrowMutArg(const BorrowMutArgExpr &e) {
+  return logError(
+      ("'&mut " + e.name.token.getWord() + "' is only valid as a call argument")
+          .c_str());
 }
 
 Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
@@ -1804,6 +1895,11 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   }
   borrowRefParams[fname] = paramIsRef;
 
+  std::vector<bool> paramIsMut;
+  for (const auto &p : func.params)
+    paramIsMut.push_back(p.isBorrowRef && p.isMut);
+  borrowMutParams[fname] = paramIsMut;
+
   llvm::Function *f = module->getFunction(fname);
   if (!f) {
     auto *ft = FunctionType::get(retTy, paramTypes, false);
@@ -1881,7 +1977,6 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
         namedValues[pname] = vi;
         scopeMgr.declare(pname);
       } else {
-        // Primitive scalar: arg is already the value; store into alloca.
         AllocaInst *a = createEntryAlloca(declaredTy, pname);
         builder.CreateStore(&arg, a);
         namedValues[pname] =

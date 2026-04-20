@@ -40,6 +40,8 @@ public:
   llvm::Value *visitCharLit(const CharLitExpr &e) override;
   llvm::Value *visitNullLit(const NullLitExpr &) override;
   llvm::Value *visitIdentifier(const IdentExpr &e) override;
+  llvm::Value *visitBorrowArg(const BorrowArgExpr &e) override;
+  llvm::Value *visitBorrowMutArg(const BorrowMutArgExpr &e) override;
   llvm::Value *visitBinary(const BinaryExpr &e) override;
   llvm::Value *visitUnary(const UnaryExpr &e) override;
   llvm::Value *visitCall(const CallExpr &e) override;
@@ -76,7 +78,8 @@ private:
   // Symbol tables
   std::map<std::string, VarInfo> namedValues;
   std::map<std::string, VarInfo> globalValues;
-  std::map<std::string, std::vector<bool>> borrowRefParams;
+  std::unordered_map<std::string, std::vector<bool>> borrowRefParams;
+  std::unordered_map<std::string, std::vector<bool>> borrowMutParams;
 
   // Struct definitions (populated at start of generate())
   std::vector<StructDecl *> structDefs;

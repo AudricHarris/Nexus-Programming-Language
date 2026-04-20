@@ -977,7 +977,23 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
       std::vector<ExprPtr> args;
       if (!match(TokenKind::RPAREN)) {
         do {
-          args.push_back(parseExpression());
+          if (check(TokenKind::AND)) {
+            consume();
+            if (check(TokenKind::MUT)) {
+              consume();
+              Token nameTok = expect(TokenKind::IDENTIFIER,
+                                     "Expected variable name after '&mut'");
+              args.push_back(
+                  std::make_unique<BorrowMutArgExpr>(Identifier{nameTok}));
+            } else {
+              Token nameTok = expect(TokenKind::IDENTIFIER,
+                                     "Expected variable name after '&'");
+              args.push_back(
+                  std::make_unique<BorrowArgExpr>(Identifier{nameTok}));
+            }
+          } else {
+            args.push_back(parseExpression());
+          }
         } while (match(TokenKind::COMMA));
         expect(TokenKind::RPAREN, "Expected ')'");
       }
