@@ -2236,9 +2236,7 @@ bool CodeGenerator::generate(const Program &program,
 
   for (const auto &fn : program.functions) {
     const std::string fname = mangleName(fn->name.token.getWord(), fn->params);
-    errs() << "Codegenning: " << fname << "\n";
     if (!codegen(*fn)) {
-      errs() << "FAILED: " << fname << "\n";
       return false;
     }
   }
