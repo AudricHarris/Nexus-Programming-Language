@@ -1,6 +1,4 @@
-/![STRICT]!/
 /* This is just an Example to show how the code functions */
-
 fn RandomInt(i32 end) -> i32
 {
 	return (Random() * end) as i32;
@@ -27,7 +25,7 @@ fn Randomize(&mut i32 t)
 fn Main() -> bool
 {
 	i32 t;
-	Randomize(t);
+	Randomize(&mut t);
 
 	if ( t % 2 == 0)
 	{
@@ -36,5 +34,5 @@ fn Main() -> bool
 	}
 	
 	Printf("The number {t} is Odd.\n");
-	return true;
+	return false;
 }

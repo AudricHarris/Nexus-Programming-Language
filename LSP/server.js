@@ -15,7 +15,6 @@ const { TextDocument } = require('vscode-languageserver-textdocument');
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
 
-// ─────────────────────────────────────────────
 
 const KEYWORDS = [
   'if', 'else', 'for', 'while', 'range', 'return', 'match', 'new',
@@ -33,7 +32,8 @@ const TYPES = [
   'Vec2', 'Vec3', 'Vec4', 'Option', 'Array',
 ];
 
-// Rich built-in function table: name -> { sig, doc }
+const DIRECTIVES = ['STRICT', 'WARN_UNUSED', 'NO_GLOBALS'];
+
 const BUILTIN_FUNCTIONS = {
   'Print':    { sig: 'Print(value: any)',            doc: 'Print a value to stdout without a newline.' },
   'Printf':   { sig: 'Printf(fmt: str, ...args)',    doc: 'Formatted print. Use {var} for interpolation and \\n for newlines.' },
@@ -45,7 +45,6 @@ const BUILTIN_FUNCTIONS = {
   'print':    { sig: 'print(value: any)',            doc: 'Print a value to stdout.' },
 };
 
-// Snippets: label -> { insert, doc }
 const SNIPPETS = {
   'class': {
     insert: 'class ${1:ClassName}\n{\n\t$0\n}',
@@ -109,7 +108,6 @@ function resolveWorkspace(docUri) {
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 
-// Token type indices — order must match SEMANTIC_TOKEN_TYPES array
 const TT_KEYWORD     = 0;
 const TT_TYPE        = 1;
 const TT_FUNCTION    = 2;
@@ -122,20 +120,22 @@ const TT_PUNCTUATION = 8;
 const TT_PARAMETER   = 9;
 const TT_PROPERTY    = 10;
 const TT_ENUM_MEMBER = 11;
+const TT_DIRECTIVE   = 12;
 
 const SEMANTIC_TOKEN_TYPES = [
-  'keyword',     // 0
-  'type',        // 1
-  'function',    // 2
-  'variable',    // 3
-  'number',      // 4
-  'string',      // 5
-  'comment',     // 6
-  'operator',    // 7
-  'punctuation', // 8
-  'parameter',   // 9
-  'property',    // 10
-  'enumMember',  // 11
+  'keyword',
+  'type',
+  'function',
+  'variable',
+  'number',
+  'string',
+  'comment',
+  'operator',
+  'punctuation',
+  'parameter',
+  'property',
+  'enumMember',
+  'directive',
 ];
 
 connection.onInitialize((params) => {
@@ -162,7 +162,6 @@ connection.onInitialize((params) => {
         full: true,
       },
 
-      // Auto-close /! comment — fires when user types '!'
       documentOnTypeFormattingProvider: {
         firstTriggerCharacter: '!',
         moreTriggerCharacter: [],
@@ -192,18 +191,28 @@ connection.onInitialized(() => {
   }
 });
 
+function extractDirectives(text) {
+  const directives = [];
+  const directiveRegex = /\/!\[([A-Z_]+)\]!\//g;
+  let match;
+  while ((match = directiveRegex.exec(text)) !== null) {
+    if (DIRECTIVES.includes(match[1])) {
+      directives.push(match[1]);
+    }
+  }
+  return directives;
+}
+
 function extractSymbols(text, docUri) {
   const wsKey = resolveWorkspace(docUri);
   const store = getSymbolStore(wsKey);
 
-  // Clear stale entries from this file
   for (const [name, info] of store.entries()) {
     if (info.uri === docUri) store.delete(name);
   }
 
   let m;
 
-  // fn Name(params) -> RetType {
   const fnRx = /\bfn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([a-zA-Z0-9_<>\[\]]+))?\s*\{/gm;
   while ((m = fnRx.exec(text)) !== null) {
     const name = m[1];
@@ -217,7 +226,6 @@ function extractSymbols(text, docUri) {
     });
   }
 
-  // Top-level PascalCase function (old style): Name(params) -> RetType {
   const legacyFnRx = /^([A-Z][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([a-zA-Z0-9_<>\[\]]+))?\s*\{/gm;
   while ((m = legacyFnRx.exec(text)) !== null) {
     const name = m[1];
@@ -233,25 +241,21 @@ function extractSymbols(text, docUri) {
     }
   }
 
-  // class Name
   const classRx = /\bclass\s+([A-Z][a-zA-Z0-9_]*)/g;
   while ((m = classRx.exec(text)) !== null) {
     store.set(m[1], { kind: CompletionItemKind.Class, detail: `class ${m[1]}`, doc: 'User-defined class', uri: docUri });
   }
 
-  // struct Name
   const structRx = /\bstruct\s+([A-Z][a-zA-Z0-9_]*)/g;
   while ((m = structRx.exec(text)) !== null) {
     store.set(m[1], { kind: CompletionItemKind.Struct, detail: `struct ${m[1]}`, doc: 'User-defined struct', uri: docUri });
   }
 
-  // enum / sum Name
   const enumRx = /\b(?:enum|sum)\s+([A-Z][a-zA-Z0-9_]*)/g;
   while ((m = enumRx.exec(text)) !== null) {
     store.set(m[1], { kind: CompletionItemKind.Enum, detail: `enum ${m[1]}`, doc: 'Enum / sum type', uri: docUri });
   }
 
-  // Local / typed variables: i32 name, bool name, let name, etc.
   const typePattern = TYPES.join('|');
   const varRx = new RegExp(`\\b(?:${typePattern})(?:<[^>]+>)?(?:\\[\\])*\\s+([a-z_][a-zA-Z0-9_]*)`, 'g');
   while ((m = varRx.exec(text)) !== null) {
@@ -323,9 +327,28 @@ connection.onHover((params) => {
 
   let start = offset;
   let end = offset;
-  while (start > 0 && /[a-zA-Z0-9_.]/.test(text[start - 1])) start--;
-  while (end < text.length && /[a-zA-Z0-9_.]/.test(text[end])) end++;
+  while (start > 0 && /[a-zA-Z0-9_.!\/\[\]]/.test(text[start - 1])) start--;
+  while (end < text.length && /[a-zA-Z0-9_.!\/\[\]]/.test(text[end])) end++;
   const word = text.slice(start, end);
+
+  const directiveMatch = word.match(/\/!\[([A-Z_]+)\]!\//);
+  if (directiveMatch) {
+    const directive = directiveMatch[1];
+    const docs = {
+      'STRICT': '**Directive: `STRICT`**\n\nStrict mode: disallows `let` keyword. All variables must have explicit types.\n\n```nexus\n/![STRICT]!/\n```',
+      'WARN_UNUSED': '**Directive: `WARN_UNUSED`**\n\nWarns about declared but unused variables.\n\n```nexus\n/![WARN_UNUSED]!/\n```',
+      'NO_GLOBALS': '**Directive: `NO_GLOBALS`**\n\nDisallows global variable declarations.\n\n```nexus\n/![NO_GLOBALS]!/\n```'
+    };
+    
+    if (docs[directive]) {
+      return {
+        contents: {
+          kind: 'markdown',
+          value: docs[directive]
+        }
+      };
+    }
+  }
 
   if (BUILTIN_FUNCTIONS[word]) {
     const { sig, doc: d } = BUILTIN_FUNCTIONS[word];
@@ -379,6 +402,14 @@ connection.onCompletion((params) => {
     data: { type: 'builtin_type', name: t },
   }));
 
+  DIRECTIVES.forEach(d => completions.push({
+    label: `/![${d}]!/`,
+    kind: CompletionItemKind.Keyword,
+    detail: `Compiler directive: ${d}`,
+    insertText: `/![${d}]!/`,
+    data: { type: 'directive', name: d },
+  }));
+
   Object.keys(BUILTIN_FUNCTIONS).forEach(fn => completions.push({
     label: fn,
     kind: CompletionItemKind.Function,
@@ -430,6 +461,14 @@ connection.onCompletionResolve((item) => {
   } else if (d.type === 'snippet') {
     const sn = SNIPPETS[d.name];
     if (sn) item.documentation = { kind: 'plaintext', value: sn.doc };
+  } else if (d.type === 'directive') {
+    const docs = {
+      'STRICT': 'Disallows `let` keyword. All variables must have explicit types.',
+      'WARN_UNUSED': 'Warns about declared but unused variables.',
+      'NO_GLOBALS': 'Disallows global variable declarations.'
+    };
+    item.detail = `Compiler directive: ${d.name}`;
+    item.documentation = { kind: 'markdown', value: docs[d.name] };
   } else if (d.type === 'user_symbol') {
     item.documentation = { kind: 'plaintext', value: 'Defined in workspace' };
   }
@@ -440,8 +479,110 @@ connection.onCompletionResolve((item) => {
 function validateTextDocument(textDocument) {
   const text = textDocument.getText();
   const diagnostics = [];
+  
+  const directives = extractDirectives(text);
+  const isStrict = directives.includes('STRICT');
+  const warnUnused = directives.includes('WARN_UNUSED');
+  const noGlobals = directives.includes('NO_GLOBALS');
 
-  // Brace balance check
+  if (isStrict) {
+    const letRegex = /\blet\s+/g;
+    let letMatch;
+    while ((letMatch = letRegex.exec(text)) !== null) {
+      const pos = letMatch.index;
+      const startPos = textDocument.positionAt(pos);
+      const endPos = textDocument.positionAt(pos + 3);
+      diagnostics.push({
+        severity: 1, // Error
+        range: { start: startPos, end: endPos },
+        message: "'let' keyword is not allowed in STRICT mode. Use explicit types instead.",
+        source: 'nexus-lsp',
+      });
+    }
+  }
+
+  if (noGlobals) {
+    const lines = text.split('\n');
+    let inFunction = false;
+    let braceDepth = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      
+      if (trimmed.startsWith('fn ') || (trimmed.match(/^[A-Z][a-zA-Z0-9_]*\s*\(/) && !trimmed.startsWith('//'))) {
+        inFunction = true;
+      }
+      
+      braceDepth += (line.match(/\{/g) || []).length;
+      braceDepth -= (line.match(/\}/g) || []).length;
+      
+      if (braceDepth === 0) {
+        inFunction = false;
+      }
+      
+      if (!inFunction && braceDepth === 0 && !trimmed.startsWith('//') && !trimmed.startsWith('/*') && !trimmed.startsWith('*')) {
+        const globalVarRegex = /^(?!(?:fn|class|struct|enum|sum|impl|import|export|pub|using))\s*([a-zA-Z_][a-zA-Z0-9_<>]*\s+[a-zA-Z_][a-zA-Z0-9_]*\s*[=;])/;
+        const match = line.match(globalVarRegex);
+        if (match && !trimmed.startsWith('/![')) {
+          diagnostics.push({
+            severity: 1,
+            range: {
+              start: { line: i, character: 0 },
+              end: { line: i, character: match[0].length }
+            },
+            message: "Global variables are not allowed in NO_GLOBALS mode.",
+            source: 'nexus-lsp',
+          });
+        }
+      }
+    }
+  }
+
+  if (warnUnused) {
+    const declaredVars = new Map();
+    const varDeclRegex = /(?:\b(?:i32|i64|i16|i8|u32|u64|f32|f64|bool|char|str|string)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:=|[;]))|(?:let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:=|[;]))/g;
+    let varMatch;
+    
+    while ((varMatch = varDeclRegex.exec(text)) !== null) {
+      const varName = varMatch[1] || varMatch[2];
+      if (varName && !varName.match(/^_/)) {
+        const pos = varMatch.index;
+        declaredVars.set(varName, {
+          name: varName,
+          position: textDocument.positionAt(pos),
+          used: false
+        });
+      }
+    }
+    
+    for (const [name, info] of declaredVars) {
+      const usageRegex = new RegExp(`\\b${name}\\b`, 'g');
+      let usageMatch;
+      let firstMatchPos = -1;
+      let usageCount = 0;
+      
+      while ((usageMatch = usageRegex.exec(text)) !== null) {
+        if (firstMatchPos === -1) firstMatchPos = usageMatch.index;
+        if (Math.abs(usageMatch.index - info.position.character) > name.length) {
+          usageCount++;
+        }
+      }
+      
+      if (usageCount === 0 && firstMatchPos !== -1) {
+        diagnostics.push({
+          severity: 2, // Warning
+          range: {
+            start: info.position,
+            end: { line: info.position.line, character: info.position.character + name.length }
+          },
+          message: `Unused variable: '${name}'`,
+          source: 'nexus-lsp',
+        });
+      }
+    }
+  }
+
   const openBraces = (text.match(/\{/g) || []).length;
   const closeBraces = (text.match(/\}/g) || []).length;
   if (openBraces !== closeBraces) {
@@ -453,7 +594,6 @@ function validateTextDocument(textDocument) {
     });
   }
 
-  // /! block comment balance check
   const openComments = (text.match(/\/!/g) || []).length;
   const closeComments = (text.match(/!\//g) || []).length;
   if (openComments !== closeComments) {
@@ -468,7 +608,6 @@ function validateTextDocument(textDocument) {
   connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
 }
 
-// ─── Semantic tokens ──────────────────────────────────────────────────────────
 
 connection.languages.semanticTokens.on((params) => {
   const doc = documents.get(params.textDocument.uri);
@@ -497,13 +636,12 @@ connection.languages.semanticTokens.on((params) => {
   while (pos < text.length) {
     const ch = text[pos];
 
-    // Newline
     if (ch === '\n') { line++; col = 0; pos++; continue; }
 
-    // Whitespace
     if (/[ \t\r]/.test(ch)) { col++; pos++; continue; }
 
-    // ── // single-line comment ──────────────────────────────────────────────
+   
+
     if (text.startsWith('//', pos)) {
       const sl = line, sc = col;
       let end = text.indexOf('\n', pos);
@@ -514,12 +652,10 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // ── /* */ single-line block comment ────────────────────────────────────
     if (text.startsWith('/*', pos)) {
       const sl = line, sc = col, start = pos;
       let end = text.indexOf('*/', pos + 2);
       if (end === -1) end = text.length; else end += 2;
-      // Emit one token per line for multi-line /* */ comments
       const seg = text.slice(start, end).split('\n');
       for (let i = 0; i < seg.length; i++) {
         if (seg[i].length > 0) pushToken(sl + i, i === 0 ? sc : 0, seg[i].length, TT_COMMENT);
@@ -531,8 +667,7 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // ── /! !/ block comment ────────────────────────────────────────────────
-    if (text.startsWith('/!', pos)) {
+    if (text.startsWith('/!', pos) ) {
       const sl = line, sc = col, start = pos;
       let end = text.indexOf('!/', pos + 2);
       if (end === -1) end = text.length; else end += 2;
@@ -547,7 +682,6 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // ── char literal 'x' or '\n' ───────────────────────────────────────────
     if (ch === "'") {
       const sl = line, sc = col;
       let end = pos + 1;
@@ -559,7 +693,6 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // ── string literal "..." ───────────────────────────────────────────────
     if (ch === '"') {
       const sl = line, sc = col, start = pos;
       let end = pos + 1;
@@ -571,10 +704,8 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // ── number literal ─────────────────────────────────────────────────────
     if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(text[pos + 1] || ''))) {
       const sl = line, sc = col, start = pos;
-      // hex  0x...
       if (ch === '0' && (text[pos + 1] === 'x' || text[pos + 1] === 'X')) {
         pos += 2;
         while (pos < text.length && /[0-9a-fA-F_]/.test(text[pos])) pos++;
@@ -595,13 +726,11 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // ── identifier / keyword / type / builtin ──────────────────────────────
     if (/[a-zA-Z_]/.test(ch)) {
       const sl = line, sc = col, start = pos;
       while (pos < text.length && /[a-zA-Z0-9_]/.test(text[pos])) pos++;
       const word = text.slice(start, pos);
 
-      // Peek ahead past whitespace to see if a '(' follows (= call site)
       let peek = pos;
       while (peek < text.length && /[ \t]/.test(text[peek])) peek++;
       const nextCh = text[peek];
@@ -612,12 +741,10 @@ connection.languages.semanticTokens.on((params) => {
       } else if (BUILTIN_FUNCTIONS[word]) {
         tt = TT_FUNCTION;
       } else if (nextCh === '(') {
-        // anything immediately before '(' is a call — PascalCase or not
         tt = TT_FUNCTION;
       } else if (TYPES.includes(word)) {
         tt = TT_TYPE;
       } else if (/^[A-Z]/.test(word)) {
-        // PascalCase with no '(' following — type / class / enum / struct
         tt = TT_TYPE;
       } else {
         tt = TT_VARIABLE;
@@ -628,14 +755,12 @@ connection.languages.semanticTokens.on((params) => {
       continue;
     }
 
-    // ── operators ──────────────────────────────────────────────────────────
     if ('+-*/%=<>!&|^~@'.includes(ch)) {
       pushToken(line, col, 1, TT_OPERATOR);
       col++; pos++;
       continue;
     }
 
-    // ── punctuation ────────────────────────────────────────────────────────
     if ('(){}[],.;:'.includes(ch)) {
       pushToken(line, col, 1, TT_PUNCTUATION);
       col++; pos++;
