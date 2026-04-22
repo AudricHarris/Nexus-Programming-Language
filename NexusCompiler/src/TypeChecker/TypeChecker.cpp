@@ -59,10 +59,6 @@ bool TypeChecker::isAssignable(const NexusType &from,
 
 void TypeChecker::registerStructs(const Program &prog) {
   for (auto &sd : prog.structs) {
-    if (structs_.count(sd->name)) {
-      error("Duplicate struct declaration: '" + sd->name + "'");
-      continue;
-    }
     std::vector<std::pair<std::string, NexusType>> fields;
     for (auto &f : sd->fields) {
       NexusType ft = NexusType::fromTypeDesc(f.type);
@@ -78,10 +74,6 @@ void TypeChecker::registerStructs(const Program &prog) {
 void TypeChecker::registerFunctions(const Program &prog) {
   for (auto &fn : prog.functions) {
     const std::string &nm = fn->name.token.getWord();
-    if (funcs_.count(nm)) {
-      error("Duplicate function declaration: '" + nm + "'");
-      continue;
-    }
     FuncSig sig;
     sig.ret = NexusType::fromTypeDesc(fn->returnType);
     for (auto &p : fn->params)
