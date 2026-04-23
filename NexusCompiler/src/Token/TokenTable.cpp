@@ -38,6 +38,8 @@ std::string Token::toString() {
     return "ELSE  ";
   case TokenKind::WHILE:
     return "WHILE  ";
+  case TokenKind::LOOP:
+    return "LOOP\n";
   case TokenKind::FOR:
     return "FOR  ";
   case TokenKind::RETURN:

@@ -11,6 +11,7 @@ enum class TokenKind {
   IF,
   ElSE,
   WHILE,
+  LOOP,
   FOR,
   RETURN,
   AS,

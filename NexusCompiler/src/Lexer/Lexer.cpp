@@ -209,6 +209,8 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
       return TokenKind::ElSE;
     if (w == "true")
       return TokenKind::LIT_BOOL;
+    if (w == "loop")
+      return TokenKind::LOOP;
     break;
   case 5:
     if (w == "while")

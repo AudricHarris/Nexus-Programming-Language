@@ -450,6 +450,8 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     return parseIfStatement();
   if (match(TokenKind::WHILE))
     return parseWhileLoop();
+  if (match(TokenKind::LOOP))
+    return parseLoop();
   if (match(TokenKind::FOR))
     return parseForLoop();
   if (check(TokenKind::CONTINUE) || check(TokenKind::BREAK))
@@ -554,6 +556,13 @@ std::unique_ptr<WhileStmt> Parser::parseWhileLoop() {
   expect(TokenKind::LPAREN, "Expected '('");
   auto cond = parseExpression();
   expect(TokenKind::RPAREN, "Expected ')'");
+  auto body = parseBlock();
+  return std::make_unique<WhileStmt>(std::move(cond), std::move(body));
+}
+
+std::unique_ptr<WhileStmt> Parser::parseLoop() {
+  Token tok = Token(TokenKind::LIT_BOOL, "true", 0, 0);
+  auto cond = std::make_unique<BoolLitExpr>(tok);
   auto body = parseBlock();
   return std::make_unique<WhileStmt>(std::move(cond), std::move(body));
 }
