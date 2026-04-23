@@ -38,4 +38,15 @@ fn Main() -> bool
 		
 		Printf("The number {t} is Odd.\n");
 	}
+
+
+	Printf("End\n");
+
+	i32 x = 7;
+
+	if ( 5 < x && x < 10)
+		Printf("{x} is bitween 5 and 10\n");
+	
+	if ( 5 < x < 10)
+		Printf("{x} is bitween 5 and 10\n");
 }
