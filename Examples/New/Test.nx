@@ -19,20 +19,23 @@ fn RandomInt(i32 start, i32 end) -> i32
 
 fn Randomize(&mut i32 t)
 {
-	t = RandomInt(-9, -5);
+	t = RandomInt(0,100);
 }
 
 fn Main() -> bool
 {
 	i32 t;
-	Randomize(&mut t);
-
-	if ( t % 2 == 0)
+	loop
 	{
-		Printf("The number {t} is Even.\n");
-		return true;
+		Randomize(&mut t);
+		if ( t % 2 == 0)
+		{
+			Printf("The number {t} is Even.\n");
+			continue;
+		}
+
+		if (t == 5) break;
+		
+		Printf("The number {t} is Odd.\n");
 	}
-	
-	Printf("The number {t} is Odd.\n");
-	return false;
 }
