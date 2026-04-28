@@ -25,6 +25,10 @@ fn Randomize(&mut i32 t)
 fn Main() -> bool
 {
 	i32 t;
+
+	i32[] tab = new i32[5];
+	tab[0] = 5;
+	
 	loop
 	{
 		Randomize(&mut t);
@@ -42,11 +46,13 @@ fn Main() -> bool
 
 	Printf("End\n");
 
-	i32 x = 7;
+	let x = 7;
 
 	if ( 5 < x && x < 10)
 		Printf("{x} is bitween 5 and 10\n");
 	
 	if ( 5 < x < 10)
 		Printf("{x} is bitween 5 and 10\n");
+
+
 }
