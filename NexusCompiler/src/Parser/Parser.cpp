@@ -359,9 +359,8 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
         isBorrowRef = true;
         if (check(TokenKind::MUT)) {
           consume();
-          isMut = true; // &mut T  — mutable reference
+          isMut = true;
         }
-        // else: &T  — read-only (immutable) reference
       }
       if (check(TokenKind::CONST)) {
         consume();
@@ -457,6 +456,9 @@ std::unique_ptr<Statement> Parser::parseStatement() {
   if (check(TokenKind::CONTINUE) || check(TokenKind::BREAK))
     return parseLoopBreak();
   if (check(TokenKind::CONST))
+    return parseVarDeclStatement(AssignKind::Copy);
+
+  if (peek().getKind() == TokenKind::IDENTIFIER && peek().getWord() == "let")
     return parseVarDeclStatement(AssignKind::Copy);
 
   if (looksLikeType(peekAt(0))) {
@@ -667,11 +669,15 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
   }
 
   Token typeTok = consume();
+  const bool isInferred = (typeTok.getWord() == "let");
+
   int dims = 0;
-  while (check(TokenKind::LBRACKET)) {
-    consume();
-    expect(TokenKind::RBRACKET, "Expected ']'");
-    ++dims;
+  if (!isInferred) {
+    while (check(TokenKind::LBRACKET)) {
+      consume();
+      expect(TokenKind::RBRACKET, "Expected ']'");
+      ++dims;
+    }
   }
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected variable name");
 
@@ -686,7 +692,7 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
                      "Expected '=', '<-', or '&='");
 
   std::unique_ptr<Expression> init;
-  if (check(TokenKind::LBRACE)) {
+  if (!isInferred && check(TokenKind::LBRACE)) {
     consume(); // '{'
     std::vector<ExprPtr> vals;
     if (!check(TokenKind::RBRACE)) {
@@ -826,23 +832,53 @@ std::unique_ptr<Expression> Parser::parseEquality() {
   return expr;
 }
 
-std::unique_ptr<Expression> Parser::parseComparison() {
-  auto expr = parseAdditive();
-  while (true) {
-    BinaryOp op;
-    if (match(TokenKind::LT))
-      op = BinaryOp::Lt;
-    else if (match(TokenKind::GT))
-      op = BinaryOp::Gt;
-    else if (match(TokenKind::LE))
-      op = BinaryOp::Le;
-    else if (match(TokenKind::GE))
-      op = BinaryOp::Ge;
-    else
-      break;
-    expr = std::make_unique<BinaryExpr>(op, std::move(expr), parseAdditive());
+// Returns true and sets op if the current token is a relational operator,
+// without consuming it.
+static bool peekRelOp(TokenKind k, BinaryOp &op) {
+  switch (k) {
+  case TokenKind::LT:
+    op = BinaryOp::Lt;
+    return true;
+  case TokenKind::GT:
+    op = BinaryOp::Gt;
+    return true;
+  case TokenKind::LE:
+    op = BinaryOp::Le;
+    return true;
+  case TokenKind::GE:
+    op = BinaryOp::Ge;
+    return true;
+  default:
+    return false;
   }
-  return expr;
+}
+
+std::unique_ptr<Expression> Parser::parseComparison() {
+  auto lhs = parseAdditive();
+
+  BinaryOp firstOp;
+  if (!peekRelOp(peek().getKind(), firstOp))
+    return lhs;
+
+  consume();
+  std::vector<BinaryOp> ops;
+  std::vector<std::unique_ptr<Expression>> operands;
+  ops.push_back(firstOp);
+  operands.push_back(parseAdditive());
+
+  BinaryOp nextOp;
+  while (peekRelOp(peek().getKind(), nextOp)) {
+    consume();
+    ops.push_back(nextOp);
+    operands.push_back(parseAdditive());
+  }
+
+  if (ops.size() == 1)
+    return std::make_unique<BinaryExpr>(ops[0], std::move(lhs),
+                                        std::move(operands[0]));
+
+  return std::make_unique<ChainedCmpExpr>(std::move(lhs), std::move(ops),
+                                          std::move(operands));
 }
 
 std::unique_ptr<Expression> Parser::parseAdditive() {
