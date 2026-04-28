@@ -337,6 +337,37 @@ struct BinaryExpr : Expression {
   }
 };
 
+struct ChainedCmpExpr : Expression {
+  ExprPtr lhs;
+  std::vector<BinaryOp> ops;
+  std::vector<ExprPtr> operands;
+
+  ChainedCmpExpr(ExprPtr l, std::vector<BinaryOp> o, std::vector<ExprPtr> rhs)
+      : lhs(std::move(l)), ops(std::move(o)), operands(std::move(rhs)) {}
+
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitChainedCmp(*this);
+  }
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"ChainedCmpExpr\",\"lhs\":";
+    lhs->toJson(os, indent + 2);
+    os << ",\"ops\":[";
+    for (size_t i = 0; i < ops.size(); ++i) {
+      if (i)
+        os << ",";
+      os << json_utils::escape(toString(ops[i]));
+    }
+    os << "],\"operands\":[";
+    for (size_t i = 0; i < operands.size(); ++i) {
+      if (i)
+        os << ",";
+      operands[i]->toJson(os, indent + 2);
+    }
+    os << "]}";
+  }
+};
+
 struct UnaryExpr : Expression {
   UnaryOp op;
   ExprPtr operand;
