@@ -58,7 +58,9 @@ public:
   llvm::Value *visitFieldAccess(const FieldAccessExpr &e) override;
   llvm::Value *visitFieldAssign(const FieldAssignExpr &e) override;
   llvm::Value *visitStructLit(const StructLitExpr &e) override;
+  llvm::Value *visitChainedCmp(const ChainedCmpExpr &e) override;
 
+  llvm::Value *visitBlock(const Block &b);
   llvm::Value *visitVarDecl(const VarDecl &d) override;
   llvm::Value *visitExprStmt(const ExprStmt &s) override;
   llvm::Value *visitIfStmt(const IfStmt &s) override;
@@ -84,6 +86,11 @@ private:
   // Struct definitions (populated at start of generate())
   std::vector<StructDecl *> structDefs;
 
+  // Field accessing
+  unsigned findFieldIndex(const std::vector<StructDecl *> &defs,
+                          const std::string &structName,
+                          const std::string &fieldName, bool &found);
+
   // Subsystems
   ScopeManager scopeMgr;
 
@@ -93,7 +100,7 @@ private:
   // Thin wrappers
   llvm::Value *codegen(const Expression &expr);
   llvm::Value *codegen(const Statement &stmt);
-  void codegen(const Block &block);
+  llvm::Value *codegen(const Block &block);
   llvm::Function *codegen(const AST_H::Function &func);
 
   // Helpers
