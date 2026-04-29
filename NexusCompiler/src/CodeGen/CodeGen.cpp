@@ -8,6 +8,7 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -1290,10 +1291,27 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
     bool paramIsRef = refIt != borrowRefParams.end() &&
                       i < refIt->second.size() && refIt->second[i];
 
+    auto mutIt = borrowMutParams.find(callee->getName().str());
+    bool paramIsMut = mutIt != borrowMutParams.end() &&
+                      i < mutIt->second.size() && mutIt->second[i];
+
     Value *v = nullptr;
 
     // BorrowArg / BorrowMutArg: pass the alloca address directly.
     if (auto *ba = dynamic_cast<const BorrowArgExpr *>(e.arguments[i].get())) {
+      if (paramIsMut) {
+        return logError(("Argument " + std::to_string(i + 1) + " of '" +
+                         rawName +
+                         "': parameter is '&mut' but '&' (immutable) was "
+                         "passed use '&mut <var>'")
+                            .c_str());
+      }
+      if (!paramIsRef) {
+        return logError(("Argument " + std::to_string(i + 1) + " of '" +
+                         rawName +
+                         "': parameter is not a reference, remove '&'")
+                            .c_str());
+      }
       auto sit = namedValues.find(ba->name.token.getWord());
       if (sit == namedValues.end())
         return logError(
@@ -1301,13 +1319,37 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       v = sit->second.allocaInst;
     } else if (auto *bm = dynamic_cast<const BorrowMutArgExpr *>(
                    e.arguments[i].get())) {
+      if (!paramIsRef && !paramIsMut) {
+        return logError(("Argument " + std::to_string(i + 1) + " of '" +
+                         rawName +
+                         "': parameter is not a reference, remove '&mut'")
+                            .c_str());
+      }
       auto sit = namedValues.find(bm->name.token.getWord());
       if (sit == namedValues.end())
         return logError(
             ("Unknown variable: " + bm->name.token.getWord()).c_str());
       v = sit->second.allocaInst;
-    } else if (paramIsRef) {
-      // Pass by reference: look up the alloca without loading.
+    } else if (paramIsRef || paramIsMut) {
+      bool isBorrowMut = dynamic_cast<const BorrowMutArgExpr *>(
+                             e.arguments[i].get()) != nullptr;
+      bool isBorrow =
+          dynamic_cast<const BorrowArgExpr *>(e.arguments[i].get()) != nullptr;
+
+      if (!isBorrowMut && !isBorrow) {
+        return logError(("Argument " + std::to_string(i + 1) + " of '" +
+                         rawName +
+                         "': parameter is declared by-reference use '&mut "
+                         "<var>' or '& <var>'")
+                            .c_str());
+      }
+      if (paramIsMut && !isBorrowMut) {
+        return logError(("Argument " + std::to_string(i + 1) + " of '" +
+                         rawName +
+                         "': parameter is '&mut' but '&' (immutable) was "
+                         "passed use '&mut <var>'")
+                            .c_str());
+      }
       if (auto *id = dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
         auto sit = namedValues.find(id->name.token.getWord());
         if (sit != namedValues.end())
@@ -1888,6 +1930,12 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
                           ? builder.CreateLoad(ty, init, name + ".arr.load")
                           : init;
       builder.CreateStore(arrVal, alloca);
+      // buildLevel() heap-allocates the top-level descriptor and returns a
+      // pointer to it.  Now that its value is safely copied into the stack
+      // alloca, free the descriptor itself.  The data buffers it references
+      // are owned by the alloca and will be released by the scope manager.
+      if (isNew && init->getType()->isPointerTy())
+        builder.CreateCall(getFree(), {init});
       vi.ownsHeap = isNew;
 
     } else if (ty->isStructTy()) {

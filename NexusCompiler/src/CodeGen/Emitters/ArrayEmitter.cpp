@@ -152,6 +152,17 @@ static Value *buildLevel(IRBuilder<> &B, LLVMContext &C, Module &M,
     Value *childDesc = buildLevel(B, C, M, elementType, dims, depth + 1);
     Value *childVal = B.CreateLoad(childSt, childDesc);
     B.CreateStore(childVal, slot);
+    // Free the child descriptor — its value has been copied into the slot.
+    // The data buffer it pointed to is now owned by the slot; only the
+    // heap-allocated descriptor wrapper itself is released here.
+    llvm::Function *freeF = M.getFunction("free");
+    if (!freeF) {
+      auto *ft = FunctionType::get(Type::getVoidTy(C),
+                                   {PointerType::get(C, 0)}, false);
+      freeF = llvm::Function::Create(ft, llvm::Function::ExternalLinkage,
+                                     "free", M);
+    }
+    B.CreateCall(freeF, {childDesc});
     Value *next = B.CreateAdd(iVal, ConstantInt::get(i64Ty, 1));
     B.CreateStore(next, index);
     B.CreateBr(loopBB);
