@@ -317,7 +317,7 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Linking    : " << output << "\n";
     int res = std::system(cmd.c_str());
-    system("rm -rf out.ll");
+    // system("rm -rf out.ll");
 
     if (res != 0) {
       std::cerr << "error: clang link failed for '" << file << "'\n";

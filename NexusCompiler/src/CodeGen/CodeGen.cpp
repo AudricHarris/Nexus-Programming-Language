@@ -1377,20 +1377,49 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
 
         if (TypeResolver::isString(vTy) && expectedTy->isPointerTy() &&
             callee->isDeclaration()) {
-          // Extern function expecting char* — extract the data pointer.
+          // Extern function expecting char* — str value: extract data pointer.
           v = builder.CreateExtractValue(v, {0}, "str.data");
         } else if (vTy->isPointerTy() && expectedTy->isPointerTy() &&
                    callee->isDeclaration()) {
-          // Array-field GEP passed to extern expecting raw data pointer.
-          if (auto *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(v)) {
-            llvm::Type *resultTy = gep->getResultElementType();
-            llvm::Type *srcTy = gep->getSourceElementType();
-            if (TypeResolver::isArray(resultTy) ||
-                TypeResolver::isArray(srcTy)) {
-              llvm::Type *loadTy =
-                  TypeResolver::isArray(resultTy) ? resultTy : srcTy;
-              Value *loaded = builder.CreateLoad(loadTy, v, "arr.field.load");
-              v = builder.CreateExtractValue(loaded, {1}, "arr.data");
+          // v is a pointer (alloca) — check what it points to.
+          // Find the pointee type via the namedValues table so we can unwrap
+          // str* and array* arguments that visitIdentifier returns as allocas.
+          llvm::Type *pointeeTy = nullptr;
+          if (auto *id =
+                  dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
+            auto sit = namedValues.find(id->name.token.getWord());
+            if (sit != namedValues.end())
+              pointeeTy = sit->second.type;
+          }
+          // Fallback: if v is an alloca (e.g. a string literal not in
+          // namedValues), read the allocated type directly.
+          if (!pointeeTy) {
+            if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v))
+              pointeeTy = ai->getAllocatedType();
+          }
+
+          if (pointeeTy && TypeResolver::isString(pointeeTy)) {
+            // str variable passed to extern char* param — load the struct then
+            // extract the inner char* (field 0).
+            Value *strVal = builder.CreateLoad(pointeeTy, v, "str.load");
+            v = builder.CreateExtractValue(strVal, {0}, "str.data");
+          } else if (pointeeTy && TypeResolver::isArray(pointeeTy)) {
+            // array variable passed to extern ptr param — load the struct then
+            // extract the inner data pointer (field 1).
+            Value *arrVal = builder.CreateLoad(pointeeTy, v, "arr.load");
+            v = builder.CreateExtractValue(arrVal, {1}, "arr.data");
+          } else {
+            // Array-field GEP passed to extern expecting raw data pointer.
+            if (auto *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(v)) {
+              llvm::Type *resultTy = gep->getResultElementType();
+              llvm::Type *srcTy = gep->getSourceElementType();
+              if (TypeResolver::isArray(resultTy) ||
+                  TypeResolver::isArray(srcTy)) {
+                llvm::Type *loadTy =
+                    TypeResolver::isArray(resultTy) ? resultTy : srcTy;
+                Value *loaded = builder.CreateLoad(loadTy, v, "arr.field.load");
+                v = builder.CreateExtractValue(loaded, {1}, "arr.data");
+              }
             }
           }
         } else if (vTy->isPointerTy() && (TypeResolver::isString(expectedTy) ||
