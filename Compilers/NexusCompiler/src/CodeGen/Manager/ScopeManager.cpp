@@ -2,6 +2,8 @@
 #include "../TypeResolver.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
+#include <llvm/IR/BasicBlock.h>
+#include <string>
 
 using namespace llvm;
 
@@ -20,6 +22,7 @@ ScopeManager::ScopeManager(IRBuilder<> &B, LLVMContext &ctx, Module *M,
 void ScopeManager::reset() {
   stack_.clear();
   tmpStack_.clear();
+  destructorsEmitted_ = false;
 }
 
 void ScopeManager::pushScope() {
@@ -63,16 +66,24 @@ std::vector<std::string> ScopeManager::popScope() {
 }
 
 void ScopeManager::popAll() {
+  if (destructorsEmitted_) {
+    stack_.clear();
+    tmpStack_.clear();
+    return;
+  }
   while (!stack_.empty())
     popScope();
 }
 
 void ScopeManager::emitAllDestructors() {
+  if (destructorsEmitted_)
+    return;
+  destructorsEmitted_ = true;
+
   for (int i = static_cast<int>(stack_.size()) - 1; i >= 0; --i) {
-    if (i < static_cast<int>(tmpStack_.size())) {
+    if (i < static_cast<int>(tmpStack_.size()))
       for (auto &vi : tmpStack_[i])
         emitDestructor(vi);
-    }
     emitDestructorsFor(stack_[i]);
   }
 }
@@ -121,8 +132,42 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
     return;
 
   if (ty->isStructTy() && !TypeResolver::isString(ty) &&
-      !TypeResolver::isArray(ty))
+      !TypeResolver::isArray(ty)) {
+    StructType *st = cast<StructType>(ty);
+    for (unsigned i = 0; i < st->getNumElements(); i++) {
+      Type *fieldTy = st->getElementType(i);
+      if (!TypeResolver::isString(fieldTy) && !TypeResolver::isArray(fieldTy))
+        continue;
+
+      Value *fieldPtr = B_.CreateStructGEP(st, vi.allocaInst, i,
+                                           "field.dtor." + std::to_string(i));
+
+      VarInfo fieldVi(cast<AllocaInst>(fieldPtr), fieldTy, false, false, false,
+                      false);
+      fieldVi.ownsHeap = true;
+
+      if (TypeResolver::isString(fieldTy)) {
+        Value *load = B_.CreateLoad(cast<StructType>(fieldTy), fieldPtr);
+        Value *data = B_.CreateExtractValue(load, {0});
+        llvm::Function *fn = B_.GetInsertBlock()->getParent();
+
+        BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free", fn);
+        BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip", fn);
+        Value *isNull = B_.CreateICmpEQ(
+            data, ConstantPointerNull::get(PointerType::get(ctx_, 0)),
+            "is.null");
+
+        B_.CreateCondBr(isNull, skipBB, freeBB);
+        B_.SetInsertPoint(freeBB);
+        B_.CreateCall(getFree(), {data});
+        B_.CreateBr(skipBB);
+        B_.SetInsertPoint(skipBB);
+      } else if (TypeResolver::isArray(fieldTy)) {
+        emitArrayFree(fieldPtr, cast<StructType>(fieldTy), 0);
+      }
+    }
     return;
+  }
 
   if (TypeResolver::isString(ty)) {
     StructType *st = cast<StructType>(ty);

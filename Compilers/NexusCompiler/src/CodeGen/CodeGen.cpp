@@ -1797,6 +1797,10 @@ Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
       val = builder.CreateLoad(fieldTy, val, e.field + ".arr.load");
     }
   }
+  if (TypeResolver::isString(fieldTy)) {
+    if (val->getType()->isPointerTy())
+      val = builder.CreateLoad(fieldTy, val, e.field + ".val");
+  }
 
   builder.CreateStore(TypeResolver::coerce(builder, val, fieldTy), gep);
   return val;
@@ -1898,7 +1902,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   AllocaInst *alloca = createEntryAlloca(ty, name);
   VarInfo vi(alloca, ty, false, false, false, d.isConst);
 
-  // Declaration without initializer: register the slot and return.
   if (!d.initializer) {
     namedValues[name] = vi;
     scopeMgr.declare(name);
@@ -1916,21 +1919,17 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   switch (d.kind) {
   case AssignKind::Copy: {
     if (TypeResolver::isString(ty)) {
-      // Copy a string: allocate a fresh heap buffer (concat with "").
       Value *src = init;
       if (!src->getType()->isPointerTy()) {
         AllocaInst *tmp = builder.CreateAlloca(ty, nullptr, name + ".src.tmp");
         builder.CreateStore(src, tmp);
         src = tmp;
       }
-      Value *empty = StringOps::fromLiteral(builder, context, module.get(), "");
-      Value *fresh =
-          StringOps::concat(builder, context, module.get(), src, empty);
+      Value *fresh = StringOps::clone(builder, context, module.get(), src);
 
       Value *freshVal = builder.CreateLoad(ty, fresh, name + ".fresh");
       builder.CreateStore(freshVal, alloca);
 
-      // Null the temporary's data pointer so the copy owns the buffer.
       if (auto *ai = dyn_cast<AllocaInst>(fresh)) {
         llvm::StructType *st = TypeResolver::getStringType(context);
         Value *dataPtr = builder.CreateStructGEP(st, ai, 0, "tmp.data");
@@ -1944,8 +1943,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
       bool isNew =
           dynamic_cast<const NewArrayExpr *>(d.initializer.get()) != nullptr;
       if (isNew) {
-        // If ArrayEmitter returned a different alloca type (e.g. for jagged
-        // arrays), re-allocate to the correct type.
         if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(init)) {
           Type *realTy = srcAI->getAllocatedType();
           if (realTy != ty) {
@@ -1959,10 +1956,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
                           ? builder.CreateLoad(ty, init, name + ".arr.load")
                           : init;
       builder.CreateStore(arrVal, alloca);
-      // buildLevel() heap-allocates the top-level descriptor and returns a
-      // pointer to it.  Now that its value is safely copied into the stack
-      // alloca, free the descriptor itself.  The data buffers it references
-      // are owned by the alloca and will be released by the scope manager.
       if (isNew && init->getType()->isPointerTy())
         builder.CreateCall(getFree(), {init});
       vi.ownsHeap = isNew;
@@ -1974,8 +1967,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
       builder.CreateStore(structVal, alloca);
       vi.ownsHeap = false;
 
-      // Register string fields from struct literals for destruction at scope
-      // exit.
       if (dynamic_cast<const StructLitExpr *>(d.initializer.get())) {
         auto *st = llvm::dyn_cast<llvm::StructType>(ty);
         const StructDecl *def = nullptr;
@@ -1996,8 +1987,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
             if (auto *fa = llvm::dyn_cast<AllocaInst>(fieldGep)) {
               scopeMgr.declareTmp(fa, TypeResolver::getStringType(context));
             } else {
-              // GEP is not an alloca; copy the string into a fresh alloca so
-              // the scope manager can free it properly.
               AllocaInst *strCopy = builder.CreateAlloca(
                   TypeResolver::getStringType(context), nullptr,
                   name + ".f" + std::to_string(i) + ".destructor");
@@ -2036,13 +2025,31 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   }
 
   case AssignKind::Borrow: {
-    if (srcName.empty())
-      return logError("Borrow requires identifier");
-    auto &srcInfo = namedValues[srcName];
-    // Borrow: alias the source's alloca directly.
-    vi = {srcInfo.allocaInst, srcInfo.type, true, false};
+    Value *src = init;
+
+    llvm::Value *srcAlloca = nullptr;
+    llvm::Type *srcTy = ty;
+
+    if (dyn_cast<AllocaInst>(src) || src->getType()->isPointerTy()) {
+      srcAlloca = src;
+    } else if (!srcName.empty()) {
+      auto it = namedValues.find(srcName);
+      if (it != namedValues.end()) {
+        srcAlloca = it->second.allocaInst;
+        srcTy = it->second.type;
+      }
+    }
+
+    if (!srcAlloca)
+      return logError("Borrow requires an addressable expression");
+
+    vi = {srcAlloca, srcTy, true, false};
     vi.ownsHeap = false;
-    srcInfo.isBorrowed = true;
+
+    // Only mark isBorrowed on plain named variables
+    if (!srcName.empty() && namedValues.count(srcName))
+      namedValues[srcName].isBorrowed = true;
+
     break;
   }
   }
@@ -2286,7 +2293,6 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   if (s.value)
     retVal = codegen(**s.value);
 
-  // Free all heap allocations owned by the current scope before returning.
   scopeMgr.emitAllDestructors();
 
   if (retVal) {
@@ -2302,6 +2308,11 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   } else {
     builder.CreateRetVoid();
   }
+
+  llvm::Function *fn = builder.GetInsertBlock()->getParent();
+  llvm::BasicBlock *dead = llvm::BasicBlock::Create(context, "ret.dead", fn);
+  builder.SetInsertPoint(dead);
+
   return nullptr;
 }
 

@@ -1,3 +1,8 @@
+/* This is the nexus Programming language                                  */
+/* This prototype code demonstrates the syntax of the language             */
+/* it's a low level multi-paradigm language similar to CPP                 */
+/* it's in the same family of languages as rust being a ownership language */
+
 /* This is just an Example to show how the code functions */
 fn RandomInt(i32 end) -> i32
 {
@@ -26,9 +31,6 @@ fn Main() -> bool
 {
 	i32 t;
 
-	i32[] tab = new i32[5];
-	tab[0] = 5;
-	
 	loop
 	{
 		Randomize(&mut t);
@@ -44,15 +46,20 @@ fn Main() -> bool
 	}
 
 
-	Printf("End\n");
+	Printf("Last Message : {tab}\n");
 
-	let x = 7;
-
-	if ( 5 < x && x < 10)
-		Printf("{x} is bitween 5 and 10\n");
+	let x = RandomInt(10, 20);
+	let y = 15;
 	
-	if ( 5 < x < 10)
-		Printf("{x} is bitween 5 and 10\n");
+	if ( 5 < x && x < y)
+		Printf("{x} is bitween 5 and 15\n");
+	else
+		Print("Non valid : 1");
+	
+	if ( 5 < y < x)
+		Printf("15 is bitween 5 and {x}\n");
+	else
+		Print("Non valid : 2");
 
 
 }
