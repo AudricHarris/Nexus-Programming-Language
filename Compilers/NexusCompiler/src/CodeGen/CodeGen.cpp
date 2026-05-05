@@ -8,7 +8,6 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
-#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_set>
