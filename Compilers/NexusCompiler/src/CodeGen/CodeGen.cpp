@@ -2311,6 +2311,7 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
   llvm::BasicBlock *dead = llvm::BasicBlock::Create(context, "ret.dead", fn);
   builder.SetInsertPoint(dead);
+  builder.CreateUnreachable(); // ← ADD THIS LINE
 
   return nullptr;
 }

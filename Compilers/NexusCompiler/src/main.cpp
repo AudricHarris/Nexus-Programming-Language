@@ -312,8 +312,8 @@ int main(int argc, char *argv[]) {
 
     std::string cmd = "clang -Wno-override-module -fsanitize=address "
                       "-fsanitize=leak -g" +
-                      includeArg + " out.ll" + shimsArg + gladArg +
-                      " -lglfw -lGL -o \"" + output + "\"";
+                      includeArg + " out.ll" + shimsArg + gladArg + " -o \"" +
+                      output + "\"";
 
     std::cout << "Linking    : " << output << "\n";
     int res = std::system(cmd.c_str());
