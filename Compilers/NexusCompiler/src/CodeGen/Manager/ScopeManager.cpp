@@ -7,6 +7,17 @@
 
 using namespace llvm;
 
+// BasicBlock::getTerminator() asserts in newer LLVM builds when the block has
+// no terminator ("cannot get terminator of non-well-formed block").
+// Use Instruction::isTerminator() on the last instruction instead — it is a
+// plain opcode-category predicate and never asserts.
+static bool blockHasTerminator(llvm::IRBuilder<> &B) {
+  llvm::BasicBlock *bb = B.GetInsertBlock();
+  if (!bb || bb->empty())
+    return false;
+  return bb->back().isTerminator();
+}
+
 // ------------ //
 // Construction //
 // ------------ //
@@ -54,13 +65,26 @@ bool ScopeManager::isTmp(llvm::AllocaInst *alloca) const {
 std::vector<std::string> ScopeManager::popScope() {
   if (stack_.empty())
     return {};
+
+  if (destructorsEmitted_) {
+    if (!tmpStack_.empty())
+      tmpStack_.pop_back();
+    auto names = stack_.back();
+    stack_.pop_back();
+    return names;
+  }
+
+  bool canEmit = !blockHasTerminator(B_);
+
   if (!tmpStack_.empty()) {
-    for (auto &vi : tmpStack_.back())
-      emitDestructor(vi);
+    if (canEmit)
+      for (auto &vi : tmpStack_.back())
+        emitDestructor(vi);
     tmpStack_.pop_back();
   }
   auto names = stack_.back();
-  emitDestructorsFor(names);
+  if (canEmit)
+    emitDestructorsFor(names);
   stack_.pop_back();
   return names;
 }
@@ -107,6 +131,9 @@ bool ScopeManager::isLocal(const std::string &name) const {
 
 void ScopeManager::emitDestructorsFor(const std::vector<std::string> &names) {
   for (auto it = names.rbegin(); it != names.rend(); ++it) {
+    if (blockHasTerminator(B_))
+      return;
+
     auto nv = namedValues_.find(*it);
     if (nv == namedValues_.end())
       continue;
@@ -127,6 +154,8 @@ void ScopeManager::emitDestructorsFor(const std::vector<std::string> &names) {
 }
 
 void ScopeManager::emitDestructor(VarInfo &vi) {
+  if (blockHasTerminator(B_))
+    return;
   Type *ty = vi.type;
   if (!ty)
     return;

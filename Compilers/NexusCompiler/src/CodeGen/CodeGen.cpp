@@ -15,6 +15,22 @@
 using namespace llvm;
 
 /*---------------------------------------*/
+/*   Safe terminator check               */
+/*---------------------------------------*/
+
+// BasicBlock::getTerminator() asserts in newer LLVM builds when the block has
+// no terminator yet ("cannot get terminator of non-well-formed block").
+// This helper avoids that by checking the instruction list directly:
+// Instruction::isTerminator() is a plain opcode-category test and never
+// asserts.
+static bool blockHasTerminator(llvm::IRBuilder<> &B) {
+  llvm::BasicBlock *bb = B.GetInsertBlock();
+  if (!bb || bb->empty())
+    return false;
+  return bb->back().isTerminator();
+}
+
+/*---------------------------------------*/
 /*             Utilities                 */
 /*---------------------------------------*/
 
@@ -2072,8 +2088,11 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
 Value *CodeGenerator::visitBlock(const Block &b) {
   scopeMgr.pushScope();
   Value *last = nullptr;
-  for (const auto &stmt : b.statements)
+  for (const auto &stmt : b.statements) {
     last = codegen(*stmt);
+    if (blockHasTerminator(builder))
+      break;
+  }
   scopeMgr.popScope();
   return last;
 }
@@ -2109,7 +2128,7 @@ Value *CodeGenerator::visitIfStmt(const IfStmt &s) {
   // Emit the 'then' branch.
   builder.SetInsertPoint(thenBB);
   codegen(*s.thenBranch);
-  if (!builder.GetInsertBlock()->getTerminator())
+  if (!blockHasTerminator(builder))
     builder.CreateBr(mergeBB);
 
   // Emit the 'else' branch (may be empty).
@@ -2117,7 +2136,7 @@ Value *CodeGenerator::visitIfStmt(const IfStmt &s) {
   builder.SetInsertPoint(elseBB);
   if (s.elseBranch)
     codegen(*s.elseBranch);
-  if (!builder.GetInsertBlock()->getTerminator())
+  if (!blockHasTerminator(builder))
     builder.CreateBr(mergeBB);
 
   fn->insert(fn->end(), mergeBB);
@@ -2156,7 +2175,7 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
   loopStack.push_back({condBB, exitBB});
   codegen(*s.doBranch);
   loopStack.pop_back();
-  if (!builder.GetInsertBlock()->getTerminator())
+  if (!blockHasTerminator(builder))
     builder.CreateBr(condBB);
 
   fn->insert(fn->end(), exitBB);
@@ -2233,12 +2252,11 @@ Value *CodeGenerator::visitForRange(const ForRangeStmt &s) {
   // Body block.
   fn->insert(fn->end(), bodyBB);
   builder.SetInsertPoint(bodyBB);
-  scopeMgr.pushScope();
   loopStack.push_back({stepBB, exitBB});
   codegen(*s.body);
   loopStack.pop_back();
-  scopeMgr.popScope();
-  if (!builder.GetInsertBlock()->getTerminator())
+  bool needsBr = !blockHasTerminator(builder);
+  if (needsBr)
     builder.CreateBr(stepBB);
 
   // Step block: increment the loop variable and branch back to the condition.
@@ -2311,7 +2329,7 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
   llvm::BasicBlock *dead = llvm::BasicBlock::Create(context, "ret.dead", fn);
   builder.SetInsertPoint(dead);
-  builder.CreateUnreachable(); // ← ADD THIS LINE
+  builder.CreateUnreachable();
 
   return nullptr;
 }
@@ -2447,7 +2465,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   codegen(*func.body);
 
   // Emit a fallthrough return if the last block has no terminator.
-  if (!builder.GetInsertBlock()->getTerminator()) {
+  if (!blockHasTerminator(builder)) {
     scopeMgr.popAll();
     if (retTy->isVoidTy())
       builder.CreateRetVoid();
