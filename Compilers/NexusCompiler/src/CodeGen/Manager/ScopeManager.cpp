@@ -7,10 +7,6 @@
 
 using namespace llvm;
 
-// BasicBlock::getTerminator() asserts in newer LLVM builds when the block has
-// no terminator ("cannot get terminator of non-well-formed block").
-// Use Instruction::isTerminator() on the last instruction instead — it is a
-// plain opcode-category predicate and never asserts.
 static bool blockHasTerminator(llvm::IRBuilder<> &B) {
   llvm::BasicBlock *bb = B.GetInsertBlock();
   if (!bb || bb->empty())
@@ -145,10 +141,6 @@ void ScopeManager::emitDestructorsFor(const std::vector<std::string> &names) {
     if (vi.isMoved || vi.isBorrowed || vi.isReference)
       continue;
 
-    if (vi.type && vi.type->isStructTy() && !TypeResolver::isString(vi.type) &&
-        !TypeResolver::isArray(vi.type))
-      continue;
-
     emitDestructor(vi);
   }
 }
@@ -170,10 +162,6 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
 
       Value *fieldPtr = B_.CreateStructGEP(st, vi.allocaInst, i,
                                            "field.dtor." + std::to_string(i));
-
-      VarInfo fieldVi(cast<AllocaInst>(fieldPtr), fieldTy, false, false, false,
-                      false);
-      fieldVi.ownsHeap = true;
 
       if (TypeResolver::isString(fieldTy)) {
         Value *load = B_.CreateLoad(cast<StructType>(fieldTy), fieldPtr);

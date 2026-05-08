@@ -8,3 +8,5 @@ CMakeCache.txt
 CMakeFiles/
 compile_commands.json
 *.x
+LSP/*.json 
+LSP/node_modules
