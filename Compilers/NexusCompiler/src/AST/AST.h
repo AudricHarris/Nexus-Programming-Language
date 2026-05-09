@@ -82,6 +82,7 @@ struct TypeDesc {
   int dimensions = 0;
   bool isConst = false;
   bool isPtr = false;
+  std::vector<TypeDesc> typeArgs;
 
   explicit TypeDesc(const Identifier &b, int dims = 0, bool c = false,
                     bool ptr = false)
@@ -99,6 +100,15 @@ struct TypeDesc {
     if (isPtr)
       return "ptr";
     std::string name = base.token.getWord();
+    if (!typeArgs.empty()) {
+      name += "<";
+      for (size_t i = 0; i < typeArgs.size(); ++i) {
+        if (i)
+          name += ", ";
+        name += typeArgs[i].fullName();
+      }
+      name += ">";
+    }
     for (int i = 0; i < dimensions; ++i)
       name = "array." + name;
     return name;
@@ -416,6 +426,38 @@ struct CallExpr : Expression {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"CallExpr\",\"callee\":"
        << json_utils::escape(callee.token.getWord()) << ",\"args\":[";
+    for (size_t i = 0; i < arguments.size(); ++i) {
+      if (i)
+        os << ",";
+      arguments[i]->toJson(os, indent + 2);
+    }
+    os << "]}";
+  }
+};
+
+struct GenericCallExpr : Expression {
+  Identifier callee;
+  std::vector<TypeDesc> typeArgs;
+  std::vector<ExprPtr> arguments;
+
+  GenericCallExpr(const Identifier &c, std::vector<TypeDesc> targs,
+                  std::vector<ExprPtr> args)
+      : callee(c), typeArgs(std::move(targs)), arguments(std::move(args)) {}
+
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitGenericCall(*this);
+  }
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"GenericCallExpr\",\"callee\":"
+       << json_utils::escape(callee.token.getWord()) << ",\"typeArgs\":[";
+    for (size_t i = 0; i < typeArgs.size(); ++i) {
+      if (i)
+        os << ",";
+      os << json_utils::escape(typeArgs[i].fullName());
+    }
+    os << "],\"args\":[";
     for (size_t i = 0; i < arguments.size(); ++i) {
       if (i)
         os << ",";
@@ -842,6 +884,7 @@ struct ExprStmt : Statement {
 // ------------------ //
 struct Function {
   Identifier name;
+  std::vector<std::string> typeParams;
   std::vector<Parameter> params;
   std::unique_ptr<Block> body;
   TypeDesc returnType;
@@ -916,6 +959,7 @@ struct StructField {
 
 struct StructDecl {
   std::string name;
+  std::vector<std::string> typeParams;
   std::vector<StructField> fields;
   bool isPublic = false;
 

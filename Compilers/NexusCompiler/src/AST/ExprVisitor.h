@@ -2,6 +2,7 @@
 #define EXPR_VISITOR_H
 
 // Forward-declare every concrete Expression node so this header stays lean.
+#include "AST.h"
 struct IntLitExpr;
 struct FloatLitExpr;
 struct StrLitExpr;
@@ -51,6 +52,7 @@ struct ExprVisitor {
   virtual llvm::Value *visitUnary(const UnaryExpr &) = 0;
   virtual llvm::Value *visitCast(const CastExpr &) = 0;
   virtual llvm::Value *visitCall(const CallExpr &) = 0;
+  virtual llvm::Value *visitGenericCall(const GenericCallExpr &) = 0;
   virtual llvm::Value *visitAssign(const AssignExpr &) = 0;
   virtual llvm::Value *visitIncrement(const Increment &) = 0;
   virtual llvm::Value *visitDecrement(const Decrement &) = 0;
