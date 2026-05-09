@@ -1674,6 +1674,66 @@ llvm::Function *CodeGenerator::emitGenericSpecialization(
   return f;
 }
 
+llvm::StructType *CodeGenerator::instantiateGenericStruct(const TypeDesc &td) {
+  const std::string &baseName = td.base.token.getWord();
+
+  const StructDecl *tmpl = nullptr;
+  for (const auto &s : currentProgram->structs) {
+    if (s->name == baseName && !s->typeParams.empty()) {
+      tmpl = s.get();
+      break;
+    }
+  }
+  if (!tmpl)
+    return nullptr;
+
+  std::string mangledName = baseName;
+  std::vector<llvm::Type *> concreteArgs;
+  for (const auto &arg : td.typeArgs) {
+    llvm::Type *t = TypeResolver::fromTypeDesc(context, arg);
+    if (!t)
+      t = llvm::StructType::getTypeByName(context, arg.base.token.getWord());
+    if (!t)
+      return nullptr;
+    mangledName += "$" + arg.base.token.getWord();
+    concreteArgs.push_back(t);
+  }
+
+  if (auto *existing = llvm::StructType::getTypeByName(context, mangledName))
+    return existing;
+
+  std::unordered_map<std::string, llvm::Type *> subst;
+  for (size_t i = 0; i < tmpl->typeParams.size(); ++i)
+    subst[tmpl->typeParams[i]] = concreteArgs[i];
+
+  auto *st = llvm::StructType::create(context, mangledName);
+  std::vector<llvm::Type *> fieldTypes;
+  for (const auto &f : tmpl->fields) {
+    const std::string &fn = f.type.base.token.getWord();
+    llvm::Type *ft = nullptr;
+    auto it = subst.find(fn);
+    if (it != subst.end()) {
+      ft = it->second;
+      for (int d = 0; d < f.type.dimensions; ++d)
+        ft = TypeResolver::getOrCreateArrayStruct(context, ft);
+    } else {
+      ft = TypeResolver::fromTypeDesc(context, f.type);
+      if (!ft)
+        ft = llvm::StructType::getTypeByName(context, fn);
+    }
+    if (!ft)
+      return nullptr;
+    fieldTypes.push_back(ft);
+  }
+  st->setBody(fieldTypes);
+
+  concreteStructFields[mangledName] = tmpl;
+  auto synth = std::make_unique<StructDecl>(mangledName, tmpl->fields);
+  structDefs.push_back(synth.get());
+  synthStructDecls.push_back(std::move(synth));
+  return st;
+}
+
 /**
  * BorrowArg is only valid as a call argument; if it appears elsewhere the
  * caller made an error.
@@ -1787,13 +1847,8 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
 
   // Array-indexed expression: navigate to the element, then cast to struct.
   if (auto *ai = dynamic_cast<const ArrayIndexExpr *>(&expr)) {
-    const std::string &name = ai->array.token.getWord();
-    auto it = namedValues.find(name);
-    if (it == namedValues.end())
-      return {nullptr, nullptr};
-
-    Value *ptr = it->second.allocaInst;
-    Type *ty = it->second.type;
+    Value *ptr = nullptr;
+    Type *ty = nullptr;
 
     // Ensures the type has the required number of array-wrapping dimensions.
     auto ensureArrayDepth = [&](Type *t, size_t depth) -> Type * {
@@ -1808,10 +1863,32 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
       return t;
     };
 
-    if (it->second.isReference) {
-      ptr = builder.CreateLoad(PointerType::get(context, 0), ptr);
-      if (it->second.pointeeType)
-        ty = it->second.pointeeType;
+    if (ai->object) {
+      // Expression base: e.g. list.elt[cpt] where base is a FieldAccessExpr.
+      // codegen() on an array field returns a GEP pointer to the array struct.
+      ptr = codegen(*ai->object);
+      if (!ptr)
+        return {nullptr, nullptr};
+      if (auto *gepInst = llvm::dyn_cast<llvm::GetElementPtrInst>(ptr))
+        ty = gepInst->getResultElementType();
+      else if (auto *allocaInst = llvm::dyn_cast<llvm::AllocaInst>(ptr))
+        ty = allocaInst->getAllocatedType();
+      else
+        return {nullptr, nullptr};
+    } else {
+      const std::string &name = ai->array.token.getWord();
+      auto it = namedValues.find(name);
+      if (it == namedValues.end())
+        return {nullptr, nullptr};
+
+      ptr = it->second.allocaInst;
+      ty = it->second.type;
+
+      if (it->second.isReference) {
+        ptr = builder.CreateLoad(PointerType::get(context, 0), ptr);
+        if (it->second.pointeeType)
+          ty = it->second.pointeeType;
+      }
     }
     ty = ensureArrayDepth(ty, ai->indices.size());
     if (!ty)
@@ -1917,8 +1994,21 @@ Value *CodeGenerator::visitStructLit(const StructLitExpr &e) {
             dataGep);
       }
     } else if (TypeResolver::isArray(fieldTy)) {
-      if (auto *ai = dyn_cast<AllocaInst>(val))
+      if (auto *ai = dyn_cast<AllocaInst>(val)) {
         val = builder.CreateLoad(fieldTy, ai, "field.load");
+        // Null the source's data pointer so the original variable no longer
+        // owns the heap buffer — ownership is transferred into this struct
+        // field.  Without this, both the source variable and the struct field
+        // share the same pointer and it gets freed twice at scope exit.
+        auto *arrSt = llvm::dyn_cast<llvm::StructType>(fieldTy);
+        if (arrSt) {
+          Value *srcDataGep =
+              builder.CreateStructGEP(arrSt, ai, 1, "src.arr.data.ptr");
+          builder.CreateStore(llvm::ConstantPointerNull::get(
+                                  llvm::PointerType::get(context, 0)),
+                              srcDataGep);
+        }
+      }
     } else {
       val = TypeResolver::coerce(builder, val, fieldTy);
     }
@@ -2153,9 +2243,18 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
     return alloca;
   }
 
-  Type *ty = TypeResolver::fromTypeDesc(context, d.type);
-  if (!ty)
-    ty = llvm::StructType::getTypeByName(context, typeName);
+  // When type arguments are present (e.g. Array<Test>), go straight to
+  // instantiateGenericStruct.  Calling fromTypeDesc or getTypeByName first
+  // would find the opaque template skeleton (%Array) and return it as-is,
+  // bypassing instantiation and producing an unsized alloca.
+  Type *ty = nullptr;
+  if (!d.type.typeArgs.empty()) {
+    ty = instantiateGenericStruct(d.type);
+  } else {
+    ty = TypeResolver::fromTypeDesc(context, d.type);
+    if (!ty)
+      ty = llvm::StructType::getTypeByName(context, typeName);
+  }
   if (!ty)
     return logError(("Unknown type: " + typeName).c_str());
 
@@ -2172,6 +2271,14 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
   if (auto *id = dynamic_cast<IdentExpr *>(d.initializer.get()))
     srcName = id->name.token.getWord();
 
+  if (auto *slit = dynamic_cast<StructLitExpr *>(d.initializer.get())) {
+    if (!d.type.typeArgs.empty()) {
+      auto *concreteSt = llvm::dyn_cast<llvm::StructType>(ty);
+      if (concreteSt)
+        slit->typeName = concreteSt->getName().str();
+    }
+  }
+
   Value *init = codegen(*d.initializer);
   if (!init)
     return nullptr;
@@ -2186,10 +2293,8 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
         src = tmp;
       }
       Value *fresh = StringOps::clone(builder, context, module.get(), src);
-
       Value *freshVal = builder.CreateLoad(ty, fresh, name + ".fresh");
       builder.CreateStore(freshVal, alloca);
-
       if (auto *ai = dyn_cast<AllocaInst>(fresh)) {
         llvm::StructType *st = TypeResolver::getStringType(context);
         Value *dataPtr = builder.CreateStructGEP(st, ai, 0, "tmp.data");
@@ -2226,15 +2331,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
                              : init;
       builder.CreateStore(structVal, alloca);
       vi.ownsHeap = false;
-
-      // Mark the struct as owning heap if it has string/array fields.
-      // This must apply to ALL struct initialisers — not just StructLitExpr —
-      // because a function returning a struct by value (e.g. CreateAnimal)
-      // transfers ownership of its cloned string buffers to the caller's local
-      // variable.  Limiting the check to StructLitExpr caused the destructor
-      // to skip call-initialised locals, leaking every string field they held.
-      // emitDestructor() walks struct fields directly, so per-field shadow
-      // copies in tmpStack_ are not needed and cause use-after-free on return.
       if (auto *st = llvm::dyn_cast<llvm::StructType>(ty)) {
         for (unsigned i = 0; i < st->getNumElements(); ++i) {
           if (TypeResolver::isString(st->getElementType(i)) ||
@@ -2244,7 +2340,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
           }
         }
       }
-
     } else {
       builder.CreateStore(TypeResolver::coerce(builder, init, ty), alloca);
     }
@@ -2255,7 +2350,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
     if (srcName.empty())
       return logError("Move requires identifier");
     auto &srcInfo = namedValues[srcName];
-    // For aggregates, load the entire struct/array value before storing.
     if (TypeResolver::isString(ty) || TypeResolver::isArray(ty)) {
       Value *val =
           builder.CreateLoad(ty, srcInfo.allocaInst, srcName + ".move");
@@ -2271,10 +2365,8 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
 
   case AssignKind::Borrow: {
     Value *src = init;
-
     llvm::Value *srcAlloca = nullptr;
     llvm::Type *srcTy = ty;
-
     if (dyn_cast<AllocaInst>(src) || src->getType()->isPointerTy()) {
       srcAlloca = src;
     } else if (!srcName.empty()) {
@@ -2284,17 +2376,12 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
         srcTy = it->second.type;
       }
     }
-
     if (!srcAlloca)
       return logError("Borrow requires an addressable expression");
-
     vi = {srcAlloca, srcTy, true, false};
     vi.ownsHeap = false;
-
-    // Only mark isBorrowed on plain named variables
     if (!srcName.empty() && namedValues.count(srcName))
       namedValues[srcName].isBorrowed = true;
-
     break;
   }
   }
@@ -2822,6 +2909,8 @@ bool CodeGenerator::generate(const Program &program,
 
   // Fill in struct bodies now that all names are visible.
   for (const auto &s : program.structs) {
+    if (!s->typeParams.empty())
+      continue;
     llvm::StructType *st = llvm::StructType::getTypeByName(context, s->name);
     if (!st || !st->isOpaque())
       continue;

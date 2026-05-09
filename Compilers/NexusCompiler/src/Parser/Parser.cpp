@@ -519,6 +519,29 @@ std::unique_ptr<Statement> Parser::parseStatement() {
 
   if (looksLikeType(peekAt(0))) {
     size_t offset = 1;
+
+    // Skip over generic type args: Array<Test>, Map<str, i32>, etc.
+    // We look for the matching '>' using a depth counter, accepting only
+    // IDENTIFIER, ',', '<', '>' and '[]' tokens inside the angle brackets.
+    if (peekAt(offset).getKind() == TokenKind::LT) {
+      size_t depth = 1;
+      size_t j = offset + 1;
+      while (depth > 0 && peekAt(j).getKind() != TokenKind::END_OF_FILE) {
+        TokenKind k = peekAt(j).getKind();
+        if (k == TokenKind::LT)
+          ++depth;
+        else if (k == TokenKind::GT)
+          --depth;
+        else if (k != TokenKind::IDENTIFIER && k != TokenKind::COMMA &&
+                 k != TokenKind::LBRACKET && k != TokenKind::RBRACKET)
+          break; // not a valid type arg list, stop scanning
+        ++j;
+      }
+      if (depth == 0)
+        offset = j; // successfully skipped past '>'
+    }
+
+    // Skip over array dimension brackets: Type[][]
     while (peekAt(offset).getKind() == TokenKind::LBRACKET &&
            peekAt(offset + 1).getKind() == TokenKind::RBRACKET) {
       offset += 2;
@@ -685,7 +708,7 @@ std::unique_ptr<ForRangeStmt> Parser::parseForLoop() {
                      "range() takes 1, 2 or 3 arguments");
   }
 
-  auto body = parseBlock();
+  auto body = parseBlock(true);
 
   TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
                                typeTok.getLine(), typeTok.getColumn()}},
@@ -694,7 +717,6 @@ std::unique_ptr<ForRangeStmt> Parser::parseForLoop() {
       std::move(td), Identifier{nameTok}, std::move(startExpr),
       std::move(endExpr), std::move(stepExpr), std::move(body));
 }
-
 std::unique_ptr<Return> Parser::parseReturnStatement() {
   auto ret = std::make_unique<Return>();
   if (match(TokenKind::SEMI))
@@ -726,6 +748,13 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
 
   Token typeTok = consume();
   const bool isInferred = (typeTok.getWord() == "let");
+
+  // Parse optional generic type arguments: Array<Test>, Map<str, i32>, etc.
+  std::vector<TypeDesc> typeArgs;
+  if (!isInferred && check(TokenKind::LT)) {
+    consume();                     // '<'
+    typeArgs = parseTypeArgList(); // consumes up to and including '>'
+  }
 
   int dims = 0;
   if (!isInferred) {
@@ -766,6 +795,7 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
   TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
                                typeTok.getLine(), typeTok.getColumn()}},
               dims, isConst);
+  td.typeArgs = std::move(typeArgs);
   return std::make_unique<VarDecl>(std::move(td), Identifier{nameTok},
                                    std::move(init), kind, isConst);
 }

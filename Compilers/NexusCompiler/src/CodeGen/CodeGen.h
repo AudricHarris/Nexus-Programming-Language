@@ -91,6 +91,9 @@ private:
   const Program *currentProgram = nullptr;
 
   // Struct definitions (populated at start of generate())
+  //
+  std::unordered_map<std::string, const StructDecl *> concreteStructFields;
+  std::vector<std::unique_ptr<StructDecl>> synthStructDecls;
   std::vector<StructDecl *> structDefs;
 
   // Field accessing
@@ -113,6 +116,7 @@ private:
   emitGenericSpecialization(const Function &astFn,
                             const std::string &mangledName,
                             const std::vector<llvm::Type *> &typeArgs);
+  llvm::StructType *instantiateGenericStruct(const TypeDesc &td);
 
   // Helpers
   llvm::AllocaInst *createEntryAlloca(llvm::Type *ty, const std::string &name);
