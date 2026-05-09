@@ -2,7 +2,6 @@
 #define EXPR_VISITOR_H
 
 // Forward-declare every concrete Expression node so this header stays lean.
-#include "AST.h"
 struct IntLitExpr;
 struct FloatLitExpr;
 struct StrLitExpr;
@@ -16,6 +15,7 @@ struct BinaryExpr;
 struct UnaryExpr;
 struct CastExpr;
 struct CallExpr;
+struct GenericCallExpr;
 struct AssignExpr;
 struct Increment;
 struct Decrement;
