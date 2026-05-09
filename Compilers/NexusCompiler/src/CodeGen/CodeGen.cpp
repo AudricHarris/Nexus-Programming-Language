@@ -8,6 +8,8 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/Type.h>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -1480,7 +1482,196 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
 }
 
 Value *CodeGenerator::visitGenericCall(const GenericCallExpr &e) {
-  return nullptr;
+  const std::string rawName = e.callee.token.getWord();
+
+  std::vector<llvm::Type *> resolvedTypeArgs;
+  for (const auto &td : e.typeArgs) {
+    llvm::Type *t = TypeResolver::fromTypeDesc(context, td);
+    if (!t)
+      t = llvm::StructType::getTypeByName(context, td.base.token.getWord());
+    if (!t)
+      return logError(
+          ("Unknown type argument: " + td.base.token.getWord()).c_str());
+    resolvedTypeArgs.push_back(t);
+  }
+
+  std::string mangledName = rawName;
+  for (llvm::Type *t : resolvedTypeArgs) {
+    std::string typeName;
+    llvm::raw_string_ostream rso(typeName);
+    t->print(rso);
+    mangledName += "$" + rso.str();
+  }
+  mangledName += "$" + std::to_string(e.arguments.size());
+
+  auto cacheIt = genericCache.find(mangledName);
+  llvm::Function *callee = nullptr;
+  if (cacheIt != genericCache.end()) {
+    callee = cacheIt->second;
+  } else {
+    if (!currentProgram)
+      return logError("No program context for generic call");
+
+    const AST_H::Function *astFn = nullptr;
+    for (const auto &fn : currentProgram->functions) {
+      if (fn->name.token.getWord() == rawName && !fn->typeParams.empty()) {
+        astFn = fn.get();
+        break;
+      }
+    }
+    if (!astFn)
+      return logError(("No generic function found: " + rawName).c_str());
+
+    if (astFn->typeParams.size() != resolvedTypeArgs.size())
+      return logError(
+          ("Wrong number of type arguments for: " + rawName).c_str());
+
+    callee = emitGenericSpecialization(*astFn, mangledName, resolvedTypeArgs);
+    if (!callee)
+      return nullptr;
+    genericCache[mangledName] = callee;
+  }
+
+  std::vector<Value *> args;
+  for (size_t i = 0; i < e.arguments.size(); ++i) {
+    Value *v = codegen(*e.arguments[i]);
+    if (!v)
+      return nullptr;
+
+    if (i < callee->arg_size()) {
+      Type *expectedTy = callee->getFunctionType()->getParamType(i);
+      Type *vTy = v->getType();
+
+      if (vTy->isPointerTy() && (TypeResolver::isString(expectedTy) ||
+                                 TypeResolver::isArray(expectedTy)))
+        v = builder.CreateLoad(expectedTy, v, "deref.arg");
+      else if (vTy->isStructTy() && expectedTy->isPointerTy()) {
+        AllocaInst *tmp = createEntryAlloca(vTy, "struct.arg.tmp");
+        builder.CreateStore(v, tmp);
+        v = tmp;
+      } else {
+        v = TypeResolver::coerce(builder, v, expectedTy);
+      }
+    }
+    args.push_back(v);
+  }
+
+  bool isVoid = callee->getReturnType()->isVoidTy();
+  return builder.CreateCall(callee, args, isVoid ? "" : "gcall");
+}
+
+llvm::Function *CodeGenerator::emitGenericSpecialization(
+    const AST_H::Function &astFn, const std::string &mangledName,
+    const std::vector<llvm::Type *> &typeArgs) {
+
+  std::unordered_map<std::string, llvm::Type *> typeSubst;
+  for (size_t i = 0; i < astFn.typeParams.size(); ++i)
+    typeSubst[astFn.typeParams[i]] = typeArgs[i];
+
+  auto resolveType = [&](const TypeDesc &td) -> llvm::Type * {
+    const std::string &baseName = td.base.token.getWord();
+    llvm::Type *base = nullptr;
+    auto subIt = typeSubst.find(baseName);
+    if (subIt != typeSubst.end())
+      base = subIt->second;
+    else {
+      base = TypeResolver::fromTypeDesc(context, td);
+      if (!base)
+        base = llvm::StructType::getTypeByName(context, baseName);
+    }
+    if (!base)
+      return nullptr;
+    for (int d = 0; d < td.dimensions; ++d)
+      base = TypeResolver::getOrCreateArrayStruct(context, base);
+    return base;
+  };
+
+  std::vector<llvm::Type *> paramTypes;
+  for (const auto &p : astFn.params) {
+    llvm::Type *pt = resolveType(p.type);
+    if (!pt)
+      return nullptr;
+    paramTypes.push_back(p.isBorrowRef || passAsPointer(pt)
+                             ? llvm::PointerType::get(context, 0)
+                             : pt);
+  }
+
+  llvm::Type *retTy = resolveType(astFn.returnType);
+  if (!retTy)
+    retTy = llvm::Type::getVoidTy(context);
+
+  auto *ft = llvm::FunctionType::get(retTy, paramTypes, false);
+  llvm::Function *f = llvm::Function::Create(
+      ft, llvm::Function::ExternalLinkage, mangledName, *module);
+  f->addFnAttr("stackrealignment");
+
+  std::vector<bool> paramIsRef, paramIsMut;
+  for (const auto &p : astFn.params) {
+    paramIsRef.push_back(p.isBorrowRef);
+    paramIsMut.push_back(p.isBorrowRef && p.isMut);
+  }
+  borrowRefParams[mangledName] = paramIsRef;
+  borrowMutParams[mangledName] = paramIsMut;
+
+  auto savedNamedValues = namedValues;
+  auto *savedBB = builder.GetInsertBlock();
+  auto savedIP = builder.GetInsertPoint();
+
+  llvm::BasicBlock *entry = llvm::BasicBlock::Create(context, "entry", f);
+  builder.SetInsertPoint(entry);
+
+  namedValues = globalValues;
+  scopeMgr.reset();
+  scopeMgr.pushScope();
+
+  size_t idx = 0;
+  for (auto &arg : f->args()) {
+    const auto &param = astFn.params[idx++];
+    const std::string pname = param.name.token.getWord();
+    llvm::Type *declaredTy = resolveType(param.type);
+    if (!declaredTy)
+      declaredTy = arg.getType();
+
+    llvm::AllocaInst *a = createEntryAlloca(declaredTy, pname);
+    if (TypeResolver::isString(declaredTy) ||
+        TypeResolver::isArray(declaredTy) || declaredTy->isStructTy()) {
+      Value *val = builder.CreateLoad(declaredTy, &arg, pname + ".param");
+      builder.CreateStore(val, a);
+      VarInfo vi(a, declaredTy, false, false, false, param.isConst);
+      vi.ownsHeap = false;
+      namedValues[pname] = vi;
+    } else {
+      builder.CreateStore(&arg, a);
+      namedValues[pname] =
+          VarInfo(a, declaredTy, false, false, false, param.isConst);
+    }
+    scopeMgr.declare(pname);
+  }
+
+  codegen(*astFn.body);
+
+  if (!blockHasTerminator(builder)) {
+    scopeMgr.popAll();
+    if (retTy->isVoidTy())
+      builder.CreateRetVoid();
+    else if (retTy->isFloatingPointTy())
+      builder.CreateRet(llvm::ConstantFP::get(retTy, 0.0));
+    else
+      builder.CreateRet(llvm::ConstantInt::get(retTy, 0));
+  }
+
+  namedValues = savedNamedValues;
+  if (savedBB)
+    builder.SetInsertPoint(savedBB, savedIP);
+
+  if (llvm::verifyFunction(*f, &llvm::errs())) {
+    llvm::errs() << "verifyFunction failed for generic specialization: "
+                 << mangledName << "\n";
+    f->eraseFromParent();
+    return nullptr;
+  }
+
+  return f;
 }
 
 /**
@@ -2605,6 +2796,7 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
  */
 bool CodeGenerator::generate(const Program &program,
                              const std::string &outputFilename) {
+  currentProgram = &program;
   namedValues.clear();
   structDefs.clear();
   for (const auto &s : program.structs)

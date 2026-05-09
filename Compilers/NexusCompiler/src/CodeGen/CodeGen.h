@@ -13,10 +13,13 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Type.h>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 struct LoopContext {
@@ -83,6 +86,9 @@ private:
   std::map<std::string, VarInfo> globalValues;
   std::unordered_map<std::string, std::vector<bool>> borrowRefParams;
   std::unordered_map<std::string, std::vector<bool>> borrowMutParams;
+  std::unordered_map<std::string, llvm::Function *> genericCache;
+
+  const Program *currentProgram = nullptr;
 
   // Struct definitions (populated at start of generate())
   std::vector<StructDecl *> structDefs;
@@ -103,6 +109,10 @@ private:
   llvm::Value *codegen(const Statement &stmt);
   llvm::Value *codegen(const Block &block);
   llvm::Function *codegen(const AST_H::Function &func);
+  llvm::Function *
+  emitGenericSpecialization(const Function &astFn,
+                            const std::string &mangledName,
+                            const std::vector<llvm::Type *> &typeArgs);
 
   // Helpers
   llvm::AllocaInst *createEntryAlloca(llvm::Type *ty, const std::string &name);
