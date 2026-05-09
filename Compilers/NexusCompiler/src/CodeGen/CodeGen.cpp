@@ -1479,6 +1479,10 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
   return builder.CreateCall(callee, args, isVoid ? "" : "call");
 }
 
+Value *CodeGenerator::visitGenericCall(const GenericCallExpr &e) {
+  return nullptr;
+}
+
 /**
  * BorrowArg is only valid as a call argument; if it appears elsewhere the
  * caller made an error.

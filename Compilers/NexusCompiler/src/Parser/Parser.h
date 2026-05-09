@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -34,6 +35,10 @@ public:
   ExternBlock parseExternBlock();
   std::unique_ptr<StructDecl> parseStructDecl();
   std::unique_ptr<VarDecl> parseVarDeclNoInit();
+  std::vector<std::string> parseTypeParamList();
+  std::vector<TypeDesc> parseTypeArgList();
+  TypeDesc parseTypeDesc();
+  bool isGenericCallAhead() const;
   std::unique_ptr<Function> parseFunctionDecl();
   std::unique_ptr<Block> parseBlock(bool uni = false);
   std::unique_ptr<Statement> parseStatement();

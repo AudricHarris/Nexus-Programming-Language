@@ -1,6 +1,7 @@
 #include "Parser.h"
 #include "../Token/TokenType.h"
 #include "ParserError.h"
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -245,6 +246,13 @@ ExternBlock Parser::parseExternBlock() {
 std::unique_ptr<StructDecl> Parser::parseStructDecl() {
   consume();
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected struct name");
+
+  std::vector<std::string> typeParams;
+  if (this->check(TokenKind::LT)) {
+    this->consume();
+    typeParams = this->parseTypeParamList();
+  }
+
   expect(TokenKind::LBRACE, "Expected '{'");
 
   auto decl = std::make_unique<StructDecl>();
@@ -268,7 +276,47 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
   }
 
   expect(TokenKind::RBRACE, "Expected '}'");
+  decl->typeParams = std::move(typeParams);
   return decl;
+}
+
+// Parses <T, U, ...> returns names
+std::vector<std::string> Parser::parseTypeParamList() {
+  std::vector<std::string> params;
+  do {
+    Token t = expect(TokenKind::IDENTIFIER, "Expected type parameter name");
+    params.push_back(t.getWord());
+  } while (match(TokenKind::COMMA));
+  expect(TokenKind::GT, "Expected '>' to close type parameter list");
+  return params;
+}
+
+std::vector<TypeDesc> Parser::parseTypeArgList() {
+  std::vector<TypeDesc> args;
+  do {
+    args.push_back(parseTypeDesc());
+  } while (match(TokenKind::COMMA));
+  expect(TokenKind::GT, "Expected '>' to close type argument list");
+  return args;
+}
+
+TypeDesc Parser::parseTypeDesc() {
+  Token typeTok = expect(TokenKind::IDENTIFIER, "Expected type name");
+  int dims = 0;
+  while (peek().getKind() == TokenKind::LBRACKET &&
+         peekAt(1).getKind() == TokenKind::RBRACKET) {
+    consume();
+    consume();
+    ++dims;
+  }
+  std::vector<TypeDesc> typeArgs;
+  if (check(TokenKind::LT)) {
+    consume();
+    typeArgs = parseTypeArgList();
+  }
+  TypeDesc td(Identifier{typeTok}, dims);
+  td.typeArgs = std::move(typeArgs);
+  return td;
 }
 
 // ------------------- //
@@ -350,6 +398,12 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
   Token nameToken = expect(TokenKind::IDENTIFIER, "Expected function name");
   expect(TokenKind::LPAREN, "Expected '(' after function name");
 
+  std::vector<std::string> typeParams;
+  if (this->check(TokenKind::LT)) {
+    this->consume();
+    typeParams = this->parseTypeParamList();
+  }
+
   std::vector<Parameter> params;
   if (!match(TokenKind::RPAREN)) {
     do {
@@ -403,9 +457,11 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
 
   Token voidTok{TokenKind::IDENTIFIER, "void", nameToken.getLine(), 0};
   auto body = parseBlock();
-  return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
-                                    std::move(body),
-                                    TypeDesc(Identifier{voidTok}));
+  auto fn = std::make_unique<Function>(Identifier{nameToken}, std::move(params),
+                                       std::move(body),
+                                       TypeDesc(Identifier{voidTok}));
+  fn->typeParams = std::move(typeParams);
+  return fn;
 }
 
 // ------- //
@@ -983,6 +1039,22 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
   return expr;
 }
 
+bool Parser::isGenericCallAhead() const {
+  size_t i = 1;
+  int depth = 1;
+  while (depth > 0 && currentIndex + i < tokens.size()) {
+    TokenKind k = this->peekAt(i).getKind();
+    if (k == TokenKind::LT)
+      ++depth;
+    else if (k == TokenKind::GT)
+      --depth;
+    else if (k == TokenKind::SEMI || k == TokenKind::END_OF_FILE)
+      return false;
+    ++i;
+  }
+  return depth == 0 && this->peekAt(i).getKind() == TokenKind::LPAREN;
+}
+
 std::unique_ptr<Expression> Parser::parsePrimary() {
   if (isIdentWord("null")) {
     consume();
@@ -1018,6 +1090,20 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
   }
   case TokenKind::IDENTIFIER: {
     Identifier id{tok};
+
+    if (this->check(TokenKind::LT) && this->isGenericCallAhead()) {
+      this->consume();
+      auto typeArgs = this->parseTypeArgList();
+      this->expect(TokenKind::LPAREN, "Expected '(' after type arguments");
+      std::vector<ExprPtr> args;
+      if (!this->match(TokenKind::RPAREN)) {
+        do {
+          args.push_back(this->parseExpression());
+        } while (this->match(TokenKind::COMMA));
+        this->expect(TokenKind::RPAREN, "Expected ')'");
+      }
+    }
+
     if (match(TokenKind::LPAREN)) {
       std::vector<ExprPtr> args;
       if (!match(TokenKind::RPAREN)) {
