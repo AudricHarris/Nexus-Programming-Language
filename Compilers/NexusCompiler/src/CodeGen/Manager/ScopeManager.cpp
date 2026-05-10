@@ -229,14 +229,22 @@ void ScopeManager::emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt,
   Value *dataPtr = B_.CreateExtractValue(loaded, {1}, "data");
   Value *len = B_.CreateExtractValue(loaded, {0}, "len");
 
-  if (!isValidPointer(dataPtr))
-    return;
+  std::string sfx = std::to_string(depth);
+  BasicBlock *nullCheckPassBB =
+      BasicBlock::Create(ctx_, "arr.notnull" + sfx, fn);
+  BasicBlock *nullCheckDoneBB =
+      BasicBlock::Create(ctx_, "arr.nulldone" + sfx, fn);
+
+  Value *isNull = B_.CreateICmpEQ(
+      dataPtr, ConstantPointerNull::get(PointerType::get(ctx_, 0)),
+      "arr.isnull");
+  B_.CreateCondBr(isNull, nullCheckDoneBB, nullCheckPassBB);
+  B_.SetInsertPoint(nullCheckPassBB);
 
   Type *elemTy = TypeResolver::elemType(ctx_, arrSt);
 
   if (elemTy && TypeResolver::isArray(elemTy)) {
     StructType *elemSt = cast<StructType>(elemTy);
-    std::string sfx = std::to_string(depth);
 
     BasicBlock *loopBB = BasicBlock::Create(ctx_, "free.loop" + sfx, fn);
     BasicBlock *bodyBB = BasicBlock::Create(ctx_, "free.body" + sfx, fn);
@@ -259,9 +267,75 @@ void ScopeManager::emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt,
     B_.CreateBr(loopBB);
 
     B_.SetInsertPoint(afterBB);
+
+  } else if (elemTy && elemTy->isStructTy() &&
+             !TypeResolver::isString(elemTy)) {
+    StructType *elemSt = cast<StructType>(elemTy);
+
+    bool elemHasHeap = false;
+    for (unsigned i = 0; i < elemSt->getNumElements(); ++i) {
+      Type *ft = elemSt->getElementType(i);
+      if (TypeResolver::isString(ft) || TypeResolver::isArray(ft)) {
+        elemHasHeap = true;
+        break;
+      }
+    }
+
+    if (elemHasHeap) {
+      BasicBlock *loopBB = BasicBlock::Create(ctx_, "sfree.loop" + sfx, fn);
+      BasicBlock *bodyBB = BasicBlock::Create(ctx_, "sfree.body" + sfx, fn);
+      BasicBlock *afterBB = BasicBlock::Create(ctx_, "sfree.after" + sfx, fn);
+
+      AllocaInst *idx = B_.CreateAlloca(i64, nullptr, "sfi" + sfx);
+      B_.CreateStore(ConstantInt::get(i64, 0), idx);
+      B_.CreateBr(loopBB);
+
+      B_.SetInsertPoint(loopBB);
+      Value *cur = B_.CreateLoad(i64, idx);
+      Value *cond = B_.CreateICmpULT(cur, len);
+      B_.CreateCondBr(cond, bodyBB, afterBB);
+
+      B_.SetInsertPoint(bodyBB);
+      Value *elemPtr = B_.CreateGEP(elemSt, dataPtr, cur, "sslot" + sfx);
+
+      for (unsigned i = 0; i < elemSt->getNumElements(); ++i) {
+        Type *fieldTy = elemSt->getElementType(i);
+        Value *fieldPtr =
+            B_.CreateStructGEP(elemSt, elemPtr, i, "sf." + std::to_string(i));
+
+        if (TypeResolver::isString(fieldTy)) {
+          StructType *strSt = cast<StructType>(fieldTy);
+          Value *strVal = B_.CreateLoad(strSt, fieldPtr);
+          Value *data = B_.CreateExtractValue(strVal, {0}, "str.data");
+
+          BasicBlock *freeBB = BasicBlock::Create(ctx_, "sf.sfree" + sfx, fn);
+          BasicBlock *skipBB = BasicBlock::Create(ctx_, "sf.sskip" + sfx, fn);
+          Value *isNull = B_.CreateICmpEQ(
+              data, ConstantPointerNull::get(PointerType::get(ctx_, 0)),
+              "sf.null");
+          B_.CreateCondBr(isNull, skipBB, freeBB);
+          B_.SetInsertPoint(freeBB);
+          B_.CreateCall(getFree(), {data});
+          B_.CreateBr(skipBB);
+          B_.SetInsertPoint(skipBB);
+
+        } else if (TypeResolver::isArray(fieldTy)) {
+          emitArrayFree(fieldPtr, cast<StructType>(fieldTy), depth + 1);
+        }
+      }
+
+      Value *next = B_.CreateAdd(cur, ConstantInt::get(i64, 1));
+      B_.CreateStore(next, idx);
+      B_.CreateBr(loopBB);
+
+      B_.SetInsertPoint(afterBB);
+    }
   }
 
   B_.CreateCall(getFree(), {dataPtr});
+
+  B_.CreateBr(nullCheckDoneBB);
+  B_.SetInsertPoint(nullCheckDoneBB);
 }
 
 bool ScopeManager::isValidPointer(llvm::Value *ptr) {
