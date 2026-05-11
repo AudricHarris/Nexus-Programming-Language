@@ -2627,28 +2627,10 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   if (s.value)
     retVal = codegen(**s.value);
 
-  // Prevent double-free for the returned value.
-  //
-  // Strategy A (struct): walk the struct's string/array fields and null their
-  // data pointers directly in the alloca.  The destructor's null-guard then
-  // skips those frees, while the caller receives the struct with valid
-  // (non-null) pointers via the by-value return.  This is robust even when
-  // the variable lives in an inner scope whose popScope() fires after this
-  // visitReturn (e.g. a return inside an if-block).
-  //
-  // Strategy B (string / array): mark the variable as moved in namedValues so
-  // emitAllDestructors() skips it.  This covers the cases where the alloca IS
-  // the return value and can be matched directly.
   if (auto *ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(retVal)) {
     llvm::Type *allocTy = ai->getAllocatedType();
 
     if (auto *st = llvm::dyn_cast<llvm::StructType>(allocTy)) {
-      // Load the struct value FIRST so the return value captures the real
-      // (non-null) pointers.  Only after the load do we null the fields in the
-      // alloca so that emitAllDestructors() skips freeing them (preventing a
-      // double-free in the caller).  Nulling before the load was the bug: the
-      // loaded value carried null data pointers into the caller, causing memcpy
-      // to read from address 0 in any function that cloned a string field.
       llvm::Function *fn = builder.GetInsertBlock()->getParent();
       Type *retTy = fn->getReturnType();
       retVal = builder.CreateLoad(retTy, ai, "ret.load");
@@ -2663,8 +2645,11 @@ Value *CodeGenerator::visitReturn(const Return &s) {
           if (innerSt) {
             Value *fieldGep = builder.CreateStructGEP(
                 st, ai, i, "ret.field." + std::to_string(i));
-            Value *dataGep =
-                builder.CreateStructGEP(innerSt, fieldGep, 0, "ret.null.data");
+
+            unsigned dataMemberIdx = TypeResolver::isString(elemTy) ? 0 : 1;
+
+            Value *dataGep = builder.CreateStructGEP(
+                innerSt, fieldGep, dataMemberIdx, "ret.null.data");
             builder.CreateStore(llvm::ConstantPointerNull::get(
                                     llvm::PointerType::get(context, 0)),
                                 dataGep);
@@ -2672,8 +2657,6 @@ Value *CodeGenerator::visitReturn(const Return &s) {
         }
       }
     } else {
-      // For a top-level string or array alloca, mark as moved so
-      // emitAllDestructors() skips it.
       for (auto &kv : namedValues) {
         if (kv.second.allocaInst == ai) {
           kv.second.isMoved = true;
