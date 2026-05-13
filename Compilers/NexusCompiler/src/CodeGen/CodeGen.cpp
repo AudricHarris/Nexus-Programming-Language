@@ -1327,7 +1327,13 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (sit == namedValues.end())
         return logError(
             ("Unknown variable: " + ba->name.token.getWord()).c_str());
-      v = sit->second.allocaInst;
+      if (sit->second.isReference) {
+        v = builder.CreateLoad(PointerType::get(context, 0),
+                               sit->second.allocaInst,
+                               ba->name.token.getWord() + ".deref");
+      } else {
+        v = sit->second.allocaInst;
+      }
     } else if (auto *bm = dynamic_cast<const BorrowMutArgExpr *>(
                    e.arguments[i].get())) {
       if (!paramIsRef && !paramIsMut) {
@@ -1340,7 +1346,13 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (sit == namedValues.end())
         return logError(
             ("Unknown variable: " + bm->name.token.getWord()).c_str());
-      v = sit->second.allocaInst;
+      if (sit->second.isReference) {
+        v = builder.CreateLoad(PointerType::get(context, 0),
+                               sit->second.allocaInst,
+                               bm->name.token.getWord() + ".deref");
+      } else {
+        v = sit->second.allocaInst;
+      }
     } else if (paramIsRef || paramIsMut) {
       bool isBorrowMut = dynamic_cast<const BorrowMutArgExpr *>(
                              e.arguments[i].get()) != nullptr;
