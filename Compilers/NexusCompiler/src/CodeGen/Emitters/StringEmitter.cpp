@@ -167,3 +167,16 @@ llvm::Value *StringOps::boolToStr(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
   llvm::Value *falseStr = fromLiteral(B, ctx, M, "false");
   return B.CreateSelect(v, trueStr, falseStr, "bool.str");
 }
+
+// StringEmitter.cpp
+llvm::Value *StringOps::fromRawParts(llvm::IRBuilder<> &B,
+                                     llvm::LLVMContext &ctx, llvm::Module *M,
+                                     llvm::Value *data, llvm::Value *len,
+                                     llvm::Value *cap) {
+  llvm::StructType *strTy = TypeResolver::getStringType(ctx);
+  llvm::AllocaInst *s = B.CreateAlloca(strTy, nullptr);
+  B.CreateStore(data, B.CreateStructGEP(strTy, s, 0));
+  B.CreateStore(len, B.CreateStructGEP(strTy, s, 1));
+  B.CreateStore(cap, B.CreateStructGEP(strTy, s, 2));
+  return s;
+}

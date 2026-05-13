@@ -2304,14 +2304,40 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
         builder.CreateStore(src, tmp);
         src = tmp;
       }
-      Value *fresh = StringOps::clone(builder, context, module.get(), src);
-      Value *freshVal = builder.CreateLoad(ty, fresh, name + ".fresh");
-      builder.CreateStore(freshVal, alloca);
-      if (auto *ai = dyn_cast<AllocaInst>(fresh)) {
+
+      // Determine whether `src` is a temporary (freshly produced by a call,
+      // not a named user variable).  If it is, we *move* ownership — store
+      // the struct value directly and null the source's data pointer — so no
+      // second heap allocation is made.  If it is a named variable the user
+      // can still read, we must clone to preserve the original.
+      auto *srcAI = dyn_cast<AllocaInst>(src);
+      bool isTmp = srcAI && [&]() {
+        for (auto &kv : namedValues)
+          if (kv.second.allocaInst == srcAI)
+            return false;
+        return true;
+      }();
+
+      if (isTmp) {
+        // Move: transfer the heap buffer directly, no new allocation.
+        Value *freshVal = builder.CreateLoad(ty, src, name + ".fresh");
+        builder.CreateStore(freshVal, alloca);
+        // Null the source so its scope-exit destructor doesn't double-free.
         llvm::StructType *st = TypeResolver::getStringType(context);
-        Value *dataPtr = builder.CreateStructGEP(st, ai, 0, "tmp.data");
+        Value *dataPtr = builder.CreateStructGEP(st, srcAI, 0, "tmp.data");
         builder.CreateStore(
             ConstantPointerNull::get(PointerType::get(context, 0)), dataPtr);
+      } else {
+        // Clone: source is a named variable that must remain intact.
+        Value *fresh = StringOps::clone(builder, context, module.get(), src);
+        Value *freshVal = builder.CreateLoad(ty, fresh, name + ".fresh");
+        builder.CreateStore(freshVal, alloca);
+        if (auto *ai = dyn_cast<AllocaInst>(fresh)) {
+          llvm::StructType *st = TypeResolver::getStringType(context);
+          Value *dataPtr = builder.CreateStructGEP(st, ai, 0, "tmp.data");
+          builder.CreateStore(
+              ConstantPointerNull::get(PointerType::get(context, 0)), dataPtr);
+        }
       }
       vi.ownsHeap = true;
 

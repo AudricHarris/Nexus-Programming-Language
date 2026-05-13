@@ -32,6 +32,10 @@ public:
                              llvm::Module *M, llvm::Value *lhs,
                              llvm::Value *rhs);
 
+  static llvm::Value *fromRawParts(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
+                                   llvm::Module *M, llvm::Value *data,
+                                   llvm::Value *len, llvm::Value *cap);
+
 private:
   static llvm::Value *intToStr(llvm::IRBuilder<> &B, llvm::LLVMContext &ctx,
                                llvm::Module *M, llvm::Value *v,

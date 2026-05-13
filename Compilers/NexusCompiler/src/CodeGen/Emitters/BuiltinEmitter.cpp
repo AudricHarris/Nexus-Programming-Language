@@ -49,9 +49,11 @@ Value *BuiltinEmitter::handleRead(IRBuilder<> &B, LLVMContext &ctx, Module *M) {
   Type *i64Ty = Type::getInt64Ty(ctx);
   Type *ptrTy = PointerType::getUnqual(ctx);
 
-  // Heap-allocate the buffer so the .data pointer is always valid heap memory
-  Value *buf = B.CreateCall(RTDecl::malloc_(M, ctx),
-                            {ConstantInt::get(i64Ty, BUF_SIZE)}, "read.buf");
+  llvm::Function *currentFn = B.GetInsertBlock()->getParent();
+  llvm::IRBuilder<> allocaBuilder(&currentFn->getEntryBlock(),
+                                  currentFn->getEntryBlock().begin());
+  Value *buf = allocaBuilder.CreateAlloca(
+      i8Ty, ConstantInt::get(i32Ty, BUF_SIZE), "read.buf");
 
   llvm::Function *fgetsF = M->getFunction("fgets");
   if (!fgetsF) {
@@ -71,19 +73,15 @@ Value *BuiltinEmitter::handleRead(IRBuilder<> &B, LLVMContext &ctx, Module *M) {
   B.CreateCall(fgetsF, {buf, ConstantInt::get(i32Ty, BUF_SIZE), stdinVal});
 
   Value *len = B.CreateCall(RTDecl::strlen_(M, ctx), {buf}, "read.len");
-
-  Value *len64 = B.CreateZExt(len, i64Ty);
-  Value *lastIdx = B.CreateSub(len64, ConstantInt::get(i64Ty, 1), "last.idx");
+  Value *lastIdx = B.CreateSub(len, ConstantInt::get(i64Ty, 1), "last.idx");
   Value *lastPtr = B.CreateGEP(i8Ty, buf, lastIdx, "last.ptr");
   Value *lastCh = B.CreateLoad(i8Ty, lastPtr, "last.ch");
   Value *isNewline = B.CreateICmpEQ(lastCh, ConstantInt::get(i8Ty, '\n'));
-  Value *nullCh = ConstantInt::get(i8Ty, 0);
-  B.CreateStore(B.CreateSelect(isNewline, nullCh, lastCh), lastPtr);
+  B.CreateStore(B.CreateSelect(isNewline, ConstantInt::get(i8Ty, 0), lastCh),
+                lastPtr);
   Value *trimmed =
-      B.CreateSelect(isNewline, B.CreateSub(len64, ConstantInt::get(i64Ty, 1)),
-                     len64, "trimmed.len");
+      B.CreateSelect(isNewline, B.CreateSub(len, ConstantInt::get(i64Ty, 1)),
+                     len, "trimmed.len");
 
-  Value *strVal = StringOps::fromParts(B, ctx, M, buf, trimmed);
-  B.CreateCall(RTDecl::free_(M, ctx), {buf});
-  return strVal;
+  return StringOps::fromParts(B, ctx, M, buf, trimmed);
 }
