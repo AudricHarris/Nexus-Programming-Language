@@ -64,6 +64,10 @@ std::string Token::toString() {
     return "CONTINUE  ";
   case TokenKind::BREAK:
     return "BREAK  ";
+  case TokenKind::ENUM:
+    return "ENUM  ";
+  case TokenKind::MATCH:
+    return "MATCH  ";
   case TokenKind::LIT_INT:
     return "LIT_INT  ";
   case TokenKind::LIT_FLOAT:
