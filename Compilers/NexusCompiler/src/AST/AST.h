@@ -945,7 +945,7 @@ struct MatchArm {
   bool isWildcard = false;
   std::string enumName;
   std::string variantName;
-  std::string binding;
+  std::vector<std::string> bindings;
   std::unique_ptr<Block> body;
 
   MatchArm() = default;
@@ -1007,14 +1007,17 @@ struct StructDecl {
   }
 };
 
+struct EnumVariantField {
+  std::string typeName; // raw type name (may be a type-param like "T")
+  std::string bindName; // binding identifier used in match
+};
+
 struct EnumVariant {
   std::string name;
-  std::optional<std::pair<std::string, std::string>> payload;
+  std::vector<EnumVariantField> fields; // empty = unit variant
 
-  EnumVariant(
-      std::string n,
-      std::optional<std::pair<std::string, std::string>> p = std::nullopt)
-      : name(std::move(n)), payload(std::move(p)) {}
+  EnumVariant(std::string n, std::vector<EnumVariantField> f = {})
+      : name(std::move(n)), fields(std::move(f)) {}
 };
 
 struct EnumDecl {
