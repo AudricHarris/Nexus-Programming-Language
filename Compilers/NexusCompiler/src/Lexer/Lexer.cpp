@@ -587,7 +587,7 @@ std::vector<Token> Lexer::Tokenize() {
 
       if (first == State::S2 && spelling == "->")
         kind = TokenKind::RETURN_TYPE;
-      if (first == State::S8 && spelling == "=>")
+      else if (first == State::S8 && spelling == "=>")
         kind = TokenKind::FAT_ARROW;
       else if (first == State::S9 && spelling == "<-")
         kind = TokenKind::MOVE;

@@ -304,17 +304,25 @@ std::unique_ptr<EnumDecl> Parser::parseEnumDecl() {
 
   std::vector<EnumVariant> variants;
   while (!check(TokenKind::RBRACE) && !isAtEnd()) {
-    Token varTok = expect(TokenKind::IDENTIFIER, "Expected variant name");
+    // Variant names may coincide with keywords in some lexers, so we consume
+    // whatever token is present and validate that it has a non-empty word.
+    if (!check(TokenKind::IDENTIFIER) && peek().getWord().empty()) {
+      throw ParseError(peek().getLine(), peek().getColumn(),
+                       "Expected variant name");
+    }
+    Token varTok = consume(); // accept identifier or keyword-spelled name
 
-    std::optional<std::pair<std::string, std::string>> payload;
+    std::vector<EnumVariantField> fields;
     if (match(TokenKind::LPAREN)) {
-      Token typeTok = expect(TokenKind::IDENTIFIER, "Expected payload type");
-      Token bindTok = expect(TokenKind::IDENTIFIER, "Expected payload name");
+      do {
+        Token typeTok = expect(TokenKind::IDENTIFIER, "Expected payload type");
+        Token bindTok = expect(TokenKind::IDENTIFIER, "Expected payload name");
+        fields.push_back({typeTok.getWord(), bindTok.getWord()});
+      } while (match(TokenKind::COMMA));
       expect(TokenKind::RPAREN, "Expected ')'");
-      payload = {typeTok.getWord(), bindTok.getWord()};
     }
 
-    variants.emplace_back(varTok.getWord(), std::move(payload));
+    variants.emplace_back(varTok.getWord(), std::move(fields));
 
     match(TokenKind::COMMA);
   }
@@ -482,7 +490,7 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
 
     expect(TokenKind::RPAREN, "Expected ')'");
   }
-
+  std::cout << Token(peek().getKind(), "", 0, 0).toString();
   if (match(TokenKind::RETURN_TYPE)) {
     Token retTok = expect(TokenKind::IDENTIFIER, "Expected return type");
 
@@ -717,10 +725,12 @@ MatchArm Parser::parseMatchArm() {
     arm.variantName = varTok.getWord();
 
     if (match(TokenKind::LPAREN)) {
-      Token bindTok =
-          expect(TokenKind::IDENTIFIER, "Expected binding name in match arm");
+      do {
+        Token bindTok =
+            expect(TokenKind::IDENTIFIER, "Expected binding name in match arm");
+        arm.bindings.push_back(bindTok.getWord());
+      } while (match(TokenKind::COMMA));
       expect(TokenKind::RPAREN, "Expected ')'");
-      arm.binding = bindTok.getWord();
     }
   }
 

@@ -2549,7 +2549,116 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
  * @param s the Match statement AST node
  * @return always nullptr
  */
-Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) { return nullptr; }
+Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
+  // Evaluate the subject — expects an alloca (struct pointer).
+  Value *subjectPtr = codegen(*s.subject);
+  if (!subjectPtr)
+    return nullptr;
+
+  llvm::Type *i32 = Type::getInt32Ty(context);
+  llvm::Function *fn = builder.GetInsertBlock()->getParent();
+  llvm::BasicBlock *exitBB =
+      llvm::BasicBlock::Create(context, "match.exit");
+
+  // ------------------------------------------------------------------
+  // Build one basic block per arm. Collect (tagValue, BB) pairs for the
+  // switch instruction and note the wildcard/default arm if present.
+  // ------------------------------------------------------------------
+  llvm::BasicBlock *defaultBB = exitBB; // fall-through when no wildcard
+  std::vector<std::pair<llvm::ConstantInt *, llvm::BasicBlock *>> cases;
+  std::vector<std::pair<const MatchArm *, llvm::BasicBlock *>> armBlocks;
+
+  for (const auto &arm : s.arms) {
+    std::string label =
+        arm.isWildcard ? "match.wildcard" : "match.arm." + arm.variantName;
+    auto *bb = llvm::BasicBlock::Create(context, label, fn);
+    armBlocks.push_back({&arm, bb});
+
+    if (arm.isWildcard) {
+      defaultBB = bb;
+    } else {
+      // Resolve the variant's tag index by scanning all enum declarations.
+      int tagVal = -1;
+      for (const auto &ed : currentProgram->enums) {
+        for (size_t vi = 0; vi < ed->variants.size(); ++vi) {
+          if (ed->variants[vi].name == arm.variantName) {
+            tagVal = static_cast<int>(vi);
+            break;
+          }
+        }
+        if (tagVal >= 0)
+          break;
+      }
+      if (tagVal < 0) {
+        logError(("match: unknown variant '" + arm.variantName + "'").c_str());
+        return nullptr;
+      }
+      cases.push_back(std::make_pair(
+          llvm::cast<llvm::ConstantInt>(llvm::ConstantInt::get(i32, tagVal)), bb));
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Load the tag (field 0 of every variant struct) and dispatch.
+  // We use a minimal {i32} view just to GEP to field 0.
+  // ------------------------------------------------------------------
+  llvm::StructType *tagView =
+      llvm::StructType::get(context, {i32}, /*isPacked=*/false);
+  Value *tagPtr =
+      builder.CreateStructGEP(tagView, subjectPtr, 0, "match.tag.ptr");
+  Value *tag = builder.CreateLoad(i32, tagPtr, "match.tag");
+
+  auto *sw = builder.CreateSwitch(tag, defaultBB,
+                                  static_cast<unsigned>(cases.size()));
+  for (auto &[val, bb] : cases)
+    sw->addCase(val, bb);
+
+  // ------------------------------------------------------------------
+  // Emit each arm body.
+  // ------------------------------------------------------------------
+  for (auto &[arm, bb] : armBlocks) {
+    fn->insert(fn->end(), bb);
+    builder.SetInsertPoint(bb);
+
+    // Bind payload fields into namedValues so the arm body can use them.
+    if (!arm->isWildcard && !arm->bindings.empty()) {
+      std::string structName = arm->enumName + "_" + arm->variantName;
+      llvm::StructType *variantSt =
+          llvm::StructType::getTypeByName(context, structName);
+      if (variantSt) {
+        for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
+          // Field 0 is the tag; payload starts at index 1.
+          unsigned fieldIdx = static_cast<unsigned>(fi) + 1;
+          if (fieldIdx >= variantSt->getNumElements())
+            break;
+          llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
+          Value *fieldPtr = builder.CreateStructGEP(
+              variantSt, subjectPtr, fieldIdx,
+              arm->bindings[fi] + ".fptr");
+          AllocaInst *alloca =
+              createEntryAlloca(fieldTy, arm->bindings[fi]);
+          Value *loaded =
+              builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
+          builder.CreateStore(loaded, alloca);
+          namedValues[arm->bindings[fi]] =
+              VarInfo(alloca, fieldTy, false, false, false, false);
+        }
+      }
+    }
+
+    // Codegen the arm body statements.
+    for (const auto &stmt : arm->body->statements)
+      stmt->accept(*this);
+
+    // Branch to exit if the arm didn't already terminate.
+    if (!builder.GetInsertBlock()->getTerminator())
+      builder.CreateBr(exitBB);
+  }
+
+  fn->insert(fn->end(), exitBB);
+  builder.SetInsertPoint(exitBB);
+  return nullptr;
+}
 
 /**
  * Generates IR for a for-range loop (for i in start..end [step s]).
@@ -2940,6 +3049,39 @@ bool CodeGenerator::generate(const Program &program,
   for (const auto &s : program.structs)
     if (!llvm::StructType::getTypeByName(context, s->name))
       llvm::StructType::create(context, s->name);
+
+  // Forward-declare and define LLVM struct types for every enum variant.
+  // Each non-generic variant is lowered to its own named struct:
+  //   EnumName_VariantName  →  { i32 tag [, fieldType...] }
+  // The tag encodes the variant index (0-based) within its enum.
+  for (const auto &e : program.enums) {
+    if (!e->typeParams.empty())
+      continue; // generic enums are instantiated on demand
+    for (size_t vi = 0; vi < e->variants.size(); ++vi) {
+      const auto &v = e->variants[vi];
+      std::string sname = e->name + "_" + v.name;
+      if (llvm::StructType::getTypeByName(context, sname))
+        continue; // already declared (e.g. from a previous module pass)
+      std::vector<llvm::Type *> fields;
+      fields.push_back(Type::getInt32Ty(context)); // field 0: tag
+      for (const auto &f : v.fields) {
+        llvm::Type *ft = TypeResolver::fromName(context, f.typeName);
+        if (!ft) {
+          // Might be a named struct type (e.g. Animal).
+          ft = llvm::StructType::getTypeByName(context, f.typeName);
+        }
+        if (!ft) {
+          errs() << "CodeGen warning: cannot resolve type '" << f.typeName
+                 << "' for enum '" << e->name << "::" << v.name
+                 << "' — defaulting to i32\n";
+          ft = Type::getInt32Ty(context);
+        }
+        fields.push_back(ft);
+      }
+      auto *st = llvm::StructType::create(context, sname);
+      st->setBody(fields);
+    }
+  }
 
   // Fill in struct bodies now that all names are visible.
   for (const auto &s : program.structs) {
