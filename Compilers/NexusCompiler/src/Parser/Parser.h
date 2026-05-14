@@ -33,6 +33,9 @@ public:
   std::unique_ptr<GlobalVarDecl> parseGlobalVarDecl();
   bool isIdentWord(std::string_view word) const;
   ExternBlock parseExternBlock();
+  std::unique_ptr<EnumDecl> parseEnumDecl();
+  std::unique_ptr<MatchStmt> parseMatchStmt();
+  MatchArm parseMatchArm();
   std::unique_ptr<StructDecl> parseStructDecl();
   std::unique_ptr<VarDecl> parseVarDeclNoInit();
   std::vector<std::string> parseTypeParamList();

@@ -154,6 +154,13 @@ std::unique_ptr<Program> Parser::parse() {
         }
       }
 
+      if (check(TokenKind::ENUM)) {
+        auto fn = parseEnumDecl();
+        fn->isPublic = isPublic;
+        prog->enums.push_back(std::move(fn));
+        continue;
+      }
+
       if (check(TokenKind::FN)) {
         auto fn = parseFunctionDecl();
         fn->isPublic = isPublic;
@@ -278,6 +285,44 @@ std::unique_ptr<StructDecl> Parser::parseStructDecl() {
   expect(TokenKind::RBRACE, "Expected '}'");
   decl->typeParams = std::move(typeParams);
   return decl;
+}
+
+// ------------------- //
+// Enum declaration    //
+// ------------------- //
+std::unique_ptr<EnumDecl> Parser::parseEnumDecl() {
+  expect(TokenKind::ENUM, "Expected 'enum'");
+  Token nameTok = expect(TokenKind::IDENTIFIER, "Expected enum name");
+
+  std::vector<std::string> typeParams;
+  if (check(TokenKind::LT)) {
+    consume();
+    typeParams = parseTypeParamList();
+  }
+
+  expect(TokenKind::LBRACE, "Expected '{'");
+
+  std::vector<EnumVariant> variants;
+  while (!check(TokenKind::RBRACE) && !isAtEnd()) {
+    Token varTok = expect(TokenKind::IDENTIFIER, "Expected variant name");
+
+    std::optional<std::pair<std::string, std::string>> payload;
+    if (match(TokenKind::LPAREN)) {
+      Token typeTok = expect(TokenKind::IDENTIFIER, "Expected payload type");
+      Token bindTok = expect(TokenKind::IDENTIFIER, "Expected payload name");
+      expect(TokenKind::RPAREN, "Expected ')'");
+      payload = {typeTok.getWord(), bindTok.getWord()};
+    }
+
+    variants.emplace_back(varTok.getWord(), std::move(payload));
+
+    match(TokenKind::COMMA);
+  }
+
+  expect(TokenKind::RBRACE, "Expected '}'");
+
+  return std::make_unique<EnumDecl>(nameTok.getWord(), std::move(typeParams),
+                                    std::move(variants));
 }
 
 // Parses <T, U, ...> returns names
@@ -505,6 +550,8 @@ std::unique_ptr<Statement> Parser::parseStatement() {
     return parseIfStatement();
   if (match(TokenKind::WHILE))
     return parseWhileLoop();
+  if (match(TokenKind::MATCH))
+    return parseMatchStmt();
   if (match(TokenKind::LOOP))
     return parseLoop();
   if (match(TokenKind::FOR))
@@ -639,6 +686,49 @@ std::unique_ptr<WhileStmt> Parser::parseWhileLoop() {
   expect(TokenKind::RPAREN, "Expected ')'");
   auto body = parseBlock();
   return std::make_unique<WhileStmt>(std::move(cond), std::move(body));
+}
+
+std::unique_ptr<MatchStmt> Parser::parseMatchStmt() {
+  expect(TokenKind::LPAREN, "Expected '(' after 'match'");
+  auto subject = parseExpression();
+  expect(TokenKind::RPAREN, "Expected ')'");
+  expect(TokenKind::LBRACE, "Expected '{'");
+
+  std::vector<MatchArm> arms;
+  while (!check(TokenKind::RBRACE) && !isAtEnd()) {
+    arms.push_back(parseMatchArm());
+  }
+
+  expect(TokenKind::RBRACE, "Expected '}'");
+  return std::make_unique<MatchStmt>(std::move(subject), std::move(arms));
+}
+
+MatchArm Parser::parseMatchArm() {
+  MatchArm arm;
+
+  if (peek().getKind() == TokenKind::IDENTIFIER && peek().getWord() == "_") {
+    consume();
+    arm.isWildcard = true;
+  } else {
+    Token enumTok = expect(TokenKind::IDENTIFIER, "Expected enum name");
+    arm.enumName = enumTok.getWord();
+    expect(TokenKind::DOT, "Expected '.' after enum name");
+    Token varTok = expect(TokenKind::IDENTIFIER, "Expected variant name");
+    arm.variantName = varTok.getWord();
+
+    if (match(TokenKind::LPAREN)) {
+      Token bindTok =
+          expect(TokenKind::IDENTIFIER, "Expected binding name in match arm");
+      expect(TokenKind::RPAREN, "Expected ')'");
+      arm.binding = bindTok.getWord();
+    }
+  }
+
+  expect(TokenKind::FAT_ARROW, "Expected '=>'");
+  arm.body = parseBlock(true);
+
+  match(TokenKind::SEMI);
+  return arm;
 }
 
 std::unique_ptr<WhileStmt> Parser::parseLoop() {
