@@ -55,6 +55,7 @@ public:
   llvm::Value *visitDecrement(const Decrement &e) override;
   llvm::Value *visitCompoundAssign(const CompoundAssignExpr &e) override;
   llvm::Value *visitNewArray(const NewArrayExpr &e) override;
+  llvm::Value *visitEnumVariant(const EnumVariantExpr &e) override;
   llvm::Value *visitArrayIndex(const ArrayIndexExpr &e) override;
   llvm::Value *visitArrayIndexAssign(const ArrayIndexAssignExpr &e) override;
   llvm::Value *visitLengthProperty(const LengthPropertyExpr &e) override;

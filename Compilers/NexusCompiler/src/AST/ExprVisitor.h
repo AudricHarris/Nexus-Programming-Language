@@ -27,6 +27,7 @@ struct IndexedLengthExpr;
 struct FieldAccessExpr;
 struct FieldAssignExpr;
 struct StructLitExpr;
+struct EnumVariantExpr;
 struct CompoundAssignExpr;
 struct ChainedCmpExpr;
 
@@ -64,6 +65,7 @@ struct ExprVisitor {
   virtual llvm::Value *visitFieldAccess(const FieldAccessExpr &) = 0;
   virtual llvm::Value *visitFieldAssign(const FieldAssignExpr &) = 0;
   virtual llvm::Value *visitStructLit(const StructLitExpr &) = 0;
+  virtual llvm::Value *visitEnumVariant(const EnumVariantExpr &) = 0;
   virtual llvm::Value *visitCompoundAssign(const CompoundAssignExpr &) = 0;
   virtual llvm::Value *visitChainedCmp(const ChainedCmpExpr &) = 0;
 };

@@ -490,20 +490,11 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
 
     expect(TokenKind::RPAREN, "Expected ')'");
   }
-  std::cout << Token(peek().getKind(), "", 0, 0).toString();
-  if (match(TokenKind::RETURN_TYPE)) {
-    Token retTok = expect(TokenKind::IDENTIFIER, "Expected return type");
 
-    int retDims = 0;
-    while (peek().getKind() == TokenKind::LBRACKET &&
-           peekAt(1).getKind() == TokenKind::RBRACKET) {
-      consume();
-      consume();
-      ++retDims;
-    }
+  if (match(TokenKind::RETURN_TYPE)) {
+    TypeDesc retTd = parseTypeDesc(); // handles Option<Animal>, i32[], etc.
 
     auto body = parseBlock();
-    TypeDesc retTd(Identifier{retTok}, retDims, false);
     return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
                                       std::move(body), std::move(retTd));
   }
@@ -725,16 +716,28 @@ MatchArm Parser::parseMatchArm() {
     arm.variantName = varTok.getWord();
 
     if (match(TokenKind::LPAREN)) {
-      do {
+      // Parse zero or more bindings: Some(a), Pair(a, b), None()
+      while (!check(TokenKind::RPAREN) && !isAtEnd()) {
         Token bindTok =
             expect(TokenKind::IDENTIFIER, "Expected binding name in match arm");
         arm.bindings.push_back(bindTok.getWord());
-      } while (match(TokenKind::COMMA));
+        if (!match(TokenKind::COMMA))
+          break;
+      }
       expect(TokenKind::RPAREN, "Expected ')'");
     }
   }
 
-  expect(TokenKind::FAT_ARROW, "Expected '=>'");
+  // Accept both a dedicated FAT_ARROW token and the two-token sequence = >
+  // (some lexers emit ASSIGN + GT instead of a single FAT_ARROW).
+  if (!match(TokenKind::FAT_ARROW)) {
+    if (check(TokenKind::ASSIGN) && peekAt(1).getKind() == TokenKind::GT) {
+      consume(); // =
+      consume(); // >
+    } else {
+      expect(TokenKind::FAT_ARROW, "Expected '=>'");
+    }
+  }
   arm.body = parseBlock(true);
 
   match(TokenKind::SEMI);
@@ -1138,6 +1141,47 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
                                                      std::move(arr->indices));
         throw ParseError(prop.getLine(), prop.getColumn(),
                          "'.length' requires an array identifier");
+      }
+
+      // Enum variant construction: EnumName.VariantName  or
+      //                            EnumName.VariantName(arg, ...)
+      // Only triggered when the LHS identifier starts with an uppercase letter
+      // (enum names are capitalised; variables/parameters are lowercase).
+      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+        const std::string &lhsName = id->name.token.getWord();
+        if (!lhsName.empty() &&
+            std::isupper(static_cast<unsigned char>(lhsName[0]))) {
+          std::string enumName = lhsName;
+          std::string variantName = prop.getWord();
+          std::vector<ExprPtr> args;
+          if (match(TokenKind::LPAREN)) {
+            // Unit variant written as None() — empty parens are fine.
+            if (!check(TokenKind::RPAREN)) {
+              do {
+                if (check(TokenKind::AND)) {
+                  consume();
+                  if (check(TokenKind::MUT)) {
+                    consume();
+                    Token nt = expect(TokenKind::IDENTIFIER,
+                                      "Expected name after '&mut'");
+                    args.push_back(
+                        std::make_unique<BorrowMutArgExpr>(Identifier{nt}));
+                  } else {
+                    Token nt = expect(TokenKind::IDENTIFIER,
+                                      "Expected name after '&'");
+                    args.push_back(
+                        std::make_unique<BorrowArgExpr>(Identifier{nt}));
+                  }
+                } else {
+                  args.push_back(parseExpression());
+                }
+              } while (match(TokenKind::COMMA));
+            }
+            expect(TokenKind::RPAREN, "Expected ')'");
+          }
+          return std::make_unique<EnumVariantExpr>(enumName, variantName,
+                                                   std::move(args));
+        }
       }
 
       expr = std::make_unique<FieldAccessExpr>(std::move(expr), prop.getWord());

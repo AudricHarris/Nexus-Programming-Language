@@ -692,6 +692,37 @@ struct StructLitExpr : Expression {
   }
 };
 
+// ------------------------------------------------- //
+// Enum variant construction:  EnumName.Variant(...)  //
+//   or unit variant:          EnumName.Variant        //
+// ------------------------------------------------- //
+struct EnumVariantExpr : Expression {
+  std::string enumName;
+  std::string variantName;
+  std::vector<ExprPtr> args; // empty for unit variants
+
+  EnumVariantExpr(std::string en, std::string vn, std::vector<ExprPtr> a = {})
+      : enumName(std::move(en)), variantName(std::move(vn)),
+        args(std::move(a)) {}
+
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitEnumVariant(*this);
+  }
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"EnumVariantExpr\","
+       << "\"enum\":" << json_utils::escape(enumName) << ","
+       << "\"variant\":" << json_utils::escape(variantName) << ","
+       << "\"args\":[";
+    for (size_t i = 0; i < args.size(); ++i) {
+      if (i)
+        os << ",";
+      args[i]->toJson(os, indent + 2);
+    }
+    os << "]}";
+  }
+};
+
 // -------------- //
 // Statement base //
 // -------------- //
@@ -945,7 +976,7 @@ struct MatchArm {
   bool isWildcard = false;
   std::string enumName;
   std::string variantName;
-  std::vector<std::string> bindings;
+  std::vector<std::string> bindings; // one per payload field (may be empty)
   std::unique_ptr<Block> body;
 
   MatchArm() = default;
@@ -1008,15 +1039,15 @@ struct StructDecl {
 };
 
 struct EnumVariantField {
-  std::string typeName; // raw type name (may be a type-param like "T")
-  std::string bindName; // binding identifier used in match
+  std::string typeName; // raw type name (may be a generic param like "T")
+  std::string bindName; // binding identifier used in match arm
 };
 
 struct EnumVariant {
   std::string name;
-  std::vector<EnumVariantField> fields; // empty = unit variant
+  std::vector<EnumVariantField> fields; // empty = unit variant (e.g. None)
 
-  EnumVariant(std::string n, std::vector<EnumVariantField> f = {})
+  explicit EnumVariant(std::string n, std::vector<EnumVariantField> f = {})
       : name(std::move(n)), fields(std::move(f)) {}
 };
 
@@ -1146,4 +1177,4 @@ namespace AST_H {
 using Function = ::Function;
 } // namespace AST_H
 
-#endif // AST_H
+#endif // AST_Hndif // AST_H

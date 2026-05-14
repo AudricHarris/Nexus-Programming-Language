@@ -2033,17 +2033,121 @@ Value *CodeGenerator::visitStructLit(const StructLitExpr &e) {
 }
 
 /**
- * Generates IR for a chained comparison such as  5 < x < 10.
+ * Generates IR for an enum variant construction: EnumName.Variant(args...)
  *
- * Each comparison shares its middle operand with the next, so the middle
- * expression is evaluated only once.  All partial results are ANDed together.
+ * Layout of EnumName_VariantName struct: { i32 tag, field0, field1, ... }
+ *   - tag   = variant index (0-based) within the enum declaration order
+ *   - fields = the payload arguments, in declaration order
  *
- *   5 < x < 10   →   (5 < x) && (x < 10)
- *   a <= b <= c  →   (a <= b) && (b <= c)
+ * The alloca is sized to the variant's own struct (not the largest variant).
+ * When the variable type is known at the call site (e.g. Option<Animal> bob),
+ * the caller's alloca is already the right size because generic instantiation
+ * picks the concrete struct. For non-generic enums this is exact.
  *
- * @param e the chained-comparison AST node
- * @return the LLVM i1 Value* of the combined condition, or nullptr on error
+ * The tag value is also directly usable as an i32 for comparisons:
+ *   bob == Option.None  →  load tag, compare to 0
  */
+Value *CodeGenerator::visitEnumVariant(const EnumVariantExpr &e) {
+  llvm::Type *i32 = Type::getInt32Ty(context);
+
+  // Find the variant's tag index and its declared field types.
+  int tagVal = -1;
+  const EnumDecl *foundEnum = nullptr;
+  const EnumVariant *foundVariant = nullptr;
+  if (currentProgram) {
+    for (const auto &ed : currentProgram->enums) {
+      for (size_t vi = 0; vi < ed->variants.size(); ++vi) {
+        if (ed->variants[vi].name == e.variantName &&
+            (e.enumName.empty() || ed->name == e.enumName)) {
+          tagVal = static_cast<int>(vi);
+          foundEnum = ed.get();
+          foundVariant = &ed->variants[vi];
+          break;
+        }
+      }
+      if (tagVal >= 0)
+        break;
+    }
+  }
+  if (tagVal < 0)
+    return logError(
+        ("Unknown enum variant: " + e.enumName + "." + e.variantName).c_str());
+
+  // Look up the LLVM struct for this variant.
+  std::string sname = foundEnum->name + "_" + e.variantName;
+  llvm::StructType *variantSt = llvm::StructType::getTypeByName(context, sname);
+  if (!variantSt)
+    return logError(("No LLVM type for enum variant: " + sname).c_str());
+
+  AllocaInst *alloca = createEntryAlloca(variantSt, sname + ".val");
+
+  // Store the tag (field 0).
+  Value *tagPtr = builder.CreateStructGEP(variantSt, alloca, 0, "tag.ptr");
+  builder.CreateStore(llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(i32),
+                                             static_cast<uint64_t>(tagVal)),
+                      tagPtr);
+
+  // Store each payload argument (fields 1, 2, ...).
+  for (size_t i = 0; i < e.args.size(); ++i) {
+    unsigned fieldIdx = static_cast<unsigned>(i) + 1;
+    if (fieldIdx >= variantSt->getNumElements())
+      return logError("Too many arguments for enum variant");
+
+    Value *val = codegen(*e.args[i]);
+    if (!val)
+      return nullptr;
+
+    llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
+    Value *fieldPtr = builder.CreateStructGEP(variantSt, alloca, fieldIdx,
+                                              "payload." + std::to_string(i));
+
+    // Re-use the same string/array/scalar handling as visitStructLit.
+    if (TypeResolver::isString(fieldTy)) {
+      if (auto *ai = dyn_cast<AllocaInst>(val)) {
+        Value *cloned = StringOps::clone(builder, context, module.get(), ai);
+        val = builder.CreateLoad(fieldTy, cloned, "field.load");
+        Value *dataGep = builder.CreateStructGEP(
+            TypeResolver::getStringType(context), cloned, 0, "src.data.ptr");
+        builder.CreateStore(
+            llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
+            dataGep);
+      }
+    } else if (TypeResolver::isArray(fieldTy)) {
+      if (auto *ai = dyn_cast<AllocaInst>(val)) {
+        val = builder.CreateLoad(fieldTy, ai, "field.load");
+        if (auto *arrSt = llvm::dyn_cast<llvm::StructType>(fieldTy)) {
+          Value *srcDataGep =
+              builder.CreateStructGEP(arrSt, ai, 1, "src.arr.data.ptr");
+          builder.CreateStore(llvm::ConstantPointerNull::get(
+                                  llvm::PointerType::get(context, 0)),
+                              srcDataGep);
+        }
+      }
+    } else if (llvm::isa<llvm::StructType>(fieldTy)) {
+      // Aggregate (struct) payload — store from the source alloca directly.
+      if (auto *ai = dyn_cast<AllocaInst>(val)) {
+        val = builder.CreateLoad(fieldTy, ai, "field.load");
+      }
+    } else {
+      val = TypeResolver::coerce(builder, val, fieldTy);
+    }
+
+    builder.CreateStore(val, fieldPtr);
+  }
+
+  return alloca;
+}
+
+/**Each comparison shares its middle operand with the next,
+    so the middle *expression is evaluated only once.All
+                    partial results are ANDed together.*
+                *5 <
+            x < 10   → (5 < x) &&
+        (x < 10) * a <= b <= c  → (a <= b) &&
+        (b <= c) * *@param e the chained
+            - comparison AST node *@ return the LLVM i1 Value
+                  * of the combined condition,
+    or nullptr on error */
 Value *CodeGenerator::visitChainedCmp(const ChainedCmpExpr &e) {
   // Evaluate the leftmost operand once.
   Value *prev = codegen(*e.lhs);
@@ -2557,15 +2661,14 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
 
   llvm::Type *i32 = Type::getInt32Ty(context);
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
-  llvm::BasicBlock *exitBB =
-      llvm::BasicBlock::Create(context, "match.exit");
+  llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "match.exit");
 
   // ------------------------------------------------------------------
   // Build one basic block per arm. Collect (tagValue, BB) pairs for the
   // switch instruction and note the wildcard/default arm if present.
   // ------------------------------------------------------------------
   llvm::BasicBlock *defaultBB = exitBB; // fall-through when no wildcard
-  std::vector<std::pair<llvm::ConstantInt *, llvm::BasicBlock *>> cases;
+  std::vector<std::pair<int, llvm::BasicBlock *>> cases; // (tag index, BB)
   std::vector<std::pair<const MatchArm *, llvm::BasicBlock *>> armBlocks;
 
   for (const auto &arm : s.arms) {
@@ -2593,8 +2696,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
         logError(("match: unknown variant '" + arm.variantName + "'").c_str());
         return nullptr;
       }
-      cases.push_back(std::make_pair(
-          llvm::cast<llvm::ConstantInt>(llvm::ConstantInt::get(i32, tagVal)), bb));
+      cases.push_back(std::make_pair(tagVal, bb));
     }
   }
 
@@ -2608,10 +2710,13 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
       builder.CreateStructGEP(tagView, subjectPtr, 0, "match.tag.ptr");
   Value *tag = builder.CreateLoad(i32, tagPtr, "match.tag");
 
-  auto *sw = builder.CreateSwitch(tag, defaultBB,
-                                  static_cast<unsigned>(cases.size()));
-  for (auto &[val, bb] : cases)
-    sw->addCase(val, bb);
+  auto *sw =
+      builder.CreateSwitch(tag, defaultBB, static_cast<unsigned>(cases.size()));
+  for (auto &[tagIdx, bb] : cases) {
+    auto *cv = llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(i32),
+                                      static_cast<uint64_t>(tagIdx));
+    sw->addCase(cv, bb);
+  }
 
   // ------------------------------------------------------------------
   // Emit each arm body.
@@ -2633,10 +2738,8 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
             break;
           llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
           Value *fieldPtr = builder.CreateStructGEP(
-              variantSt, subjectPtr, fieldIdx,
-              arm->bindings[fi] + ".fptr");
-          AllocaInst *alloca =
-              createEntryAlloca(fieldTy, arm->bindings[fi]);
+              variantSt, subjectPtr, fieldIdx, arm->bindings[fi] + ".fptr");
+          AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
           Value *loaded =
               builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
           builder.CreateStore(loaded, alloca);
