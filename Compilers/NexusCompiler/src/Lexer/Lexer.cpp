@@ -211,6 +211,8 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
       return TokenKind::LIT_BOOL;
     if (w == "loop")
       return TokenKind::LOOP;
+    if (w == "enum")
+      return TokenKind::ENUM;
     break;
   case 5:
     if (w == "while")
@@ -221,6 +223,8 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
       return TokenKind::CONST;
     if (w == "break")
       return TokenKind::BREAK;
+    if (w == "match")
+      return TokenKind::MATCH;
     break;
   case 6:
     if (w == "return")
@@ -583,6 +587,8 @@ std::vector<Token> Lexer::Tokenize() {
 
       if (first == State::S2 && spelling == "->")
         kind = TokenKind::RETURN_TYPE;
+      if (first == State::S8 && spelling == "=>")
+        kind = TokenKind::FAT_ARROW;
       else if (first == State::S9 && spelling == "<-")
         kind = TokenKind::MOVE;
       else if (first == State::S11 && spelling == "&=")
