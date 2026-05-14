@@ -941,6 +941,32 @@ struct ExternBlock {
   }
 };
 
+struct MatchArm {
+  bool isWildcard = false;
+  std::string enumName;
+  std::string variantName;
+  std::string binding;
+  std::unique_ptr<Block> body;
+
+  MatchArm() = default;
+};
+
+struct MatchStmt : Statement {
+  ExprPtr subject;
+  std::vector<MatchArm> arms;
+
+  MatchStmt(ExprPtr s, std::vector<MatchArm> a)
+      : subject(std::move(s)), arms(std::move(a)) {}
+
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitMatchStmt(*this);
+  }
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"MatchStmt\",\"arms\":" << arms.size() << "}";
+  }
+};
+
 // -------------------- //
 // Struct declarations  //
 // -------------------- //
@@ -978,6 +1004,35 @@ struct StructDecl {
       fields[i].toJson(os, indent + 2);
     }
     os << "]}";
+  }
+};
+
+struct EnumVariant {
+  std::string name;
+  std::optional<std::pair<std::string, std::string>> payload;
+
+  EnumVariant(
+      std::string n,
+      std::optional<std::pair<std::string, std::string>> p = std::nullopt)
+      : name(std::move(n)), payload(std::move(p)) {}
+};
+
+struct EnumDecl {
+  std::string name;
+  std::vector<std::string> typeParams;
+  std::vector<EnumVariant> variants;
+  bool isPublic = false;
+
+  EnumDecl() = default;
+  EnumDecl(std::string n, std::vector<std::string> tp,
+           std::vector<EnumVariant> vs, bool pub = false)
+      : name(std::move(n)), typeParams(std::move(tp)), variants(std::move(vs)),
+        isPublic(pub) {}
+
+  void toJson(std::ostream &os, int indent = 0) const {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"EnumDecl\",\"name\":" << json_utils::escape(name)
+       << "}";
   }
 };
 
@@ -1039,6 +1094,7 @@ struct Program {
   std::vector<std::unique_ptr<GlobalVarDecl>> globals;
   std::vector<std::unique_ptr<Function>> functions;
   std::vector<std::unique_ptr<StructDecl>> structs;
+  std::vector<std::unique_ptr<EnumDecl>> enums;
   std::vector<ExternBlock> externBlocks;
 
   Program() = default;

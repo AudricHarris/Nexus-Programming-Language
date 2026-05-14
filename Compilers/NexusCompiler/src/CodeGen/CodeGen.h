@@ -69,6 +69,7 @@ public:
   llvm::Value *visitExprStmt(const ExprStmt &s) override;
   llvm::Value *visitIfStmt(const IfStmt &s) override;
   llvm::Value *visitWhileStmt(const WhileStmt &s) override;
+  llvm::Value *visitMatchStmt(const MatchStmt &s) override;
   llvm::Value *visitForRange(const ForRangeStmt &s) override;
   llvm::Value *visitReturn(const Return &s) override;
   llvm::Value *visitBreak(const Break &) override;

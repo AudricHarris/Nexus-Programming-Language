@@ -73,6 +73,7 @@ struct VarDecl;
 struct ExprStmt;
 struct IfStmt;
 struct WhileStmt;
+struct MatchStmt;
 struct ForRangeStmt;
 struct Return;
 struct Break;
@@ -85,6 +86,7 @@ struct StmtVisitor {
   virtual llvm::Value *visitExprStmt(const ExprStmt &) = 0;
   virtual llvm::Value *visitIfStmt(const IfStmt &) = 0;
   virtual llvm::Value *visitWhileStmt(const WhileStmt &) = 0;
+  virtual llvm::Value *visitMatchStmt(const MatchStmt &) = 0;
   virtual llvm::Value *visitForRange(const ForRangeStmt &) = 0;
   virtual llvm::Value *visitReturn(const Return &) = 0;
   virtual llvm::Value *visitBreak(const Break &) = 0;

@@ -2539,6 +2539,19 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 }
 
 /**
+ * Generates IR for a Match statement.
+ * Structure: entry → cond → body → exit.
+ *
+ * The Match allocates a temporary variable for each parameter provided in the
+ * enum. It will only allocate if it enters that field if not it will just
+ * continue like the normal program you can write normal logic.
+ *
+ * @param s the Match statement AST node
+ * @return always nullptr
+ */
+Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) { return nullptr; }
+
+/**
  * Generates IR for a for-range loop (for i in start..end [step s]).
  * Structure: entry → cond → body → step → cond (back-edge) → exit.
  *
