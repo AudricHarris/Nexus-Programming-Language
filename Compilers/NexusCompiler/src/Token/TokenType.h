@@ -24,6 +24,8 @@ enum class TokenKind {
   PROTECTED,
   CONTINUE,
   BREAK,
+  ENUM,
+  MATCH,
 
   // Litterals
   LIT_INT,
@@ -37,6 +39,7 @@ enum class TokenKind {
   INCREMENT,
   DECREMENT,
   MOVE,
+  FAT_ARROW,
   BORROW,
   ADD,
   SUB,
