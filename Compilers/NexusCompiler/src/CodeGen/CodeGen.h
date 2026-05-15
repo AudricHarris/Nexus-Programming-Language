@@ -89,12 +89,15 @@ private:
   std::unordered_map<std::string, std::vector<bool>> borrowRefParams;
   std::unordered_map<std::string, std::vector<bool>> borrowMutParams;
   std::unordered_map<std::string, llvm::Function *> genericCache;
+  std::unordered_map<std::string, llvm::StructType *> genericEnumRepType;
 
   const Program *currentProgram = nullptr;
 
   // Struct definitions (populated at start of generate())
   //
   std::unordered_map<std::string, const StructDecl *> concreteStructFields;
+  std::unordered_map<std::string, std::string> genericEnumMangledNames;
+
   std::vector<std::unique_ptr<StructDecl>> synthStructDecls;
   std::vector<StructDecl *> structDefs;
 
@@ -118,7 +121,9 @@ private:
   emitGenericSpecialization(const Function &astFn,
                             const std::string &mangledName,
                             const std::vector<llvm::Type *> &typeArgs);
+
   llvm::StructType *instantiateGenericStruct(const TypeDesc &td);
+  llvm::StructType *instantiateGenericEnum(const TypeDesc &td);
 
   // Helpers
   llvm::AllocaInst *createEntryAlloca(llvm::Type *ty, const std::string &name);

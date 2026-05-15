@@ -1747,6 +1747,143 @@ llvm::StructType *CodeGenerator::instantiateGenericStruct(const TypeDesc &td) {
 }
 
 /**
+ * Instantiates a generic enum (e.g. Option<Animal>) on demand.
+ *
+ * For every variant of the enum, creates a named LLVM struct:
+ *   EnumBase$ConcreteArg_VariantName  →  { i32 tag [, concreteFieldType...] }
+ *
+ * Returns the struct for the variant with the most fields (the "largest"
+ * variant). Callers allocate storage for that type; the tag field at offset 0
+ * selects which variant is currently live, and visitMatchStmt GEPs into the
+ * correct variant struct by name.
+ *
+ * The mangled base name (e.g. "Option$Animal") is stored in
+ * genericEnumMangledNames so that visitMatchStmt can reconstruct per-variant
+ * struct names without re-scanning the enum table.
+ *
+ * @param td the TypeDesc for the generic enum instantiation (e.g.
+ * Option<Animal>)
+ * @return the representative (largest) variant StructType*, or nullptr on error
+ */
+llvm::StructType *CodeGenerator::instantiateGenericEnum(const TypeDesc &td) {
+  const std::string &baseName = td.base.token.getWord();
+
+  // Find the EnumDecl template.
+  const EnumDecl *tmpl = nullptr;
+  for (const auto &e : currentProgram->enums) {
+    if (e->name == baseName && !e->typeParams.empty()) {
+      tmpl = e.get();
+      break;
+    }
+  }
+  if (!tmpl)
+    return nullptr;
+
+  // Resolve concrete type arguments and build the mangled base name.
+  std::string mangledBase = baseName;
+  std::unordered_map<std::string, llvm::Type *> subst;
+  for (size_t i = 0; i < td.typeArgs.size(); ++i) {
+    const auto &arg = td.typeArgs[i];
+    llvm::Type *t = TypeResolver::fromTypeDesc(context, arg);
+    if (!t)
+      t = llvm::StructType::getTypeByName(context, arg.base.token.getWord());
+    if (!t)
+      return nullptr;
+    if (i < tmpl->typeParams.size())
+      subst[tmpl->typeParams[i]] = t;
+    mangledBase += "$" + arg.base.token.getWord();
+  }
+
+  // If already instantiated, return the cached representative struct.
+  auto cacheIt = genericEnumRepType.find(mangledBase);
+  if (cacheIt != genericEnumRepType.end())
+    return cacheIt->second;
+
+  // Create an LLVM struct for every variant:
+  //   MangledBase_VariantName  →  { i32 tag [, concreteFieldTypes...] }
+  llvm::StructType *repSt = nullptr;
+  for (size_t vi = 0; vi < tmpl->variants.size(); ++vi) {
+    const auto &v = tmpl->variants[vi];
+    std::string sname = mangledBase + "_" + v.name;
+
+    if (llvm::StructType::getTypeByName(context, sname))
+      continue; // already created in a prior call
+
+    std::vector<llvm::Type *> fields;
+    fields.push_back(llvm::Type::getInt32Ty(context)); // field 0: tag
+
+    for (const auto &f : v.fields) {
+      llvm::Type *ft = nullptr;
+      auto sit = subst.find(f.typeName);
+      if (sit != subst.end()) {
+        ft = sit->second;
+      } else {
+        ft = TypeResolver::fromName(context, f.typeName);
+        if (!ft)
+          ft = llvm::StructType::getTypeByName(context, f.typeName);
+      }
+      if (!ft) {
+        llvm::errs() << "CodeGen error: cannot resolve type '" << f.typeName
+                     << "' for generic enum '" << baseName << "::" << v.name
+                     << "'\n";
+        return nullptr;
+      }
+      fields.push_back(ft);
+    }
+
+    auto *st = llvm::StructType::create(context, sname);
+    st->setBody(fields);
+
+    // The representative type is the variant struct with the most elements
+    // (largest alloca covers all variants at runtime).
+    if (!repSt || st->getNumElements() > repSt->getNumElements())
+      repSt = st;
+  }
+
+  // For variants already created (second instantiation path), pick the largest.
+  if (!repSt) {
+    for (const auto &v : tmpl->variants) {
+      std::string sname = mangledBase + "_" + v.name;
+      if (auto *st = llvm::StructType::getTypeByName(context, sname))
+        if (!repSt || st->getNumElements() > repSt->getNumElements())
+          repSt = st;
+    }
+  }
+
+  if (repSt) {
+    genericEnumRepType[mangledBase] = repSt;
+    genericEnumMangledNames[baseName] = mangledBase;
+  }
+  return repSt;
+}
+
+/**
+ * Given a subject alloca whose allocated type is one of the per-variant
+ * structs produced by instantiateGenericEnum, returns the mangled base name
+ * (e.g. "Option$Animal") so that visitMatchStmt can reconstruct per-variant
+ * struct names (e.g. "Option$Animal_Some") without re-scanning enum tables.
+ *
+ * Falls back to the plain enum name (e.g. "Option") for non-generic enums
+ * whose variant structs are named "Option_None" / "Option_Some".
+ */
+static std::string
+deriveMangledEnumBase(llvm::Value *subjectPtr,
+                      const std::unordered_map<std::string, std::string>
+                          &genericEnumMangledNames) {
+  if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(subjectPtr)) {
+    llvm::Type *allocTy = ai->getAllocatedType();
+    if (auto *st = llvm::dyn_cast<llvm::StructType>(allocTy)) {
+      llvm::StringRef stName = st->getName();
+      // Strip the last "_VariantName" segment to get the mangled base.
+      size_t lastUnderscore = stName.rfind('_');
+      if (lastUnderscore != llvm::StringRef::npos)
+        return stName.substr(0, lastUnderscore).str();
+    }
+  }
+  return "";
+}
+
+/**
  * BorrowArg is only valid as a call argument; if it appears elsewhere the
  * caller made an error.
  */
@@ -2074,8 +2211,27 @@ Value *CodeGenerator::visitEnumVariant(const EnumVariantExpr &e) {
         ("Unknown enum variant: " + e.enumName + "." + e.variantName).c_str());
 
   // Look up the LLVM struct for this variant.
-  std::string sname = foundEnum->name + "_" + e.variantName;
+  // For a generic enum (e.g. Option<Animal>) the struct is registered under
+  // the mangled name "Option$Animal_Some", not the bare "Option_Some".
+  // Check the genericEnumMangledNames cache first; fall back to the bare name
+  // for non-generic enums (e.g. "Result_Ok").
+  std::string sname;
+  {
+    auto it = genericEnumMangledNames.find(foundEnum->name);
+    if (it != genericEnumMangledNames.end())
+      sname = it->second + "_" + e.variantName; // e.g. "Option$Animal_Some"
+    else
+      sname = foundEnum->name + "_" + e.variantName; // e.g. "Result_Ok"
+  }
   llvm::StructType *variantSt = llvm::StructType::getTypeByName(context, sname);
+  if (!variantSt) {
+    // Last-resort fallback: bare name in case the mangled name missed.
+    std::string bareName = foundEnum->name + "_" + e.variantName;
+    if (auto *bare = llvm::StructType::getTypeByName(context, bareName)) {
+      variantSt = bare;
+      sname = bareName;
+    }
+  }
   if (!variantSt)
     return logError(("No LLVM type for enum variant: " + sname).c_str());
 
@@ -2359,13 +2515,16 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
     return alloca;
   }
 
-  // When type arguments are present (e.g. Array<Test>), go straight to
-  // instantiateGenericStruct.  Calling fromTypeDesc or getTypeByName first
-  // would find the opaque template skeleton (%Array) and return it as-is,
-  // bypassing instantiation and producing an unsized alloca.
+  // When type arguments are present (e.g. Array<Test> or Option<Animal>), go
+  // straight to instantiation. Try generic structs first (e.g. Array<T>), then
+  // generic enums (e.g. Option<T>). Calling fromTypeDesc or getTypeByName first
+  // would find the opaque template skeleton and return it as-is, bypassing
+  // instantiation and producing an unsized alloca.
   Type *ty = nullptr;
   if (!d.type.typeArgs.empty()) {
     ty = instantiateGenericStruct(d.type);
+    if (!ty)
+      ty = instantiateGenericEnum(d.type);
   } else {
     ty = TypeResolver::fromTypeDesc(context, d.type);
     if (!ty)
@@ -2659,6 +2818,13 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
   if (!subjectPtr)
     return nullptr;
 
+  // Derive the mangled enum base name from the subject's allocated type.
+  // For a generic enum like Option<Animal> this is "Option$Animal";
+  // for a non-generic enum like Result it is just "Result".
+  // This lets us reconstruct per-variant struct names in both cases.
+  std::string enumMangledBase =
+      deriveMangledEnumBase(subjectPtr, genericEnumMangledNames);
+
   llvm::Type *i32 = Type::getInt32Ty(context);
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
   llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "match.exit");
@@ -2725,9 +2891,26 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     fn->insert(fn->end(), bb);
     builder.SetInsertPoint(bb);
 
+    // Each arm gets its own scope so that variables declared inside
+    // (e.g. string literals used as call arguments) are destroyed at
+    // the arm's own exit rather than leaking into the outer scope.
+    // Without this, createEntryAlloca puts the alloca at the function
+    // entry but the destructor fires in match.exit — causing a dominator
+    // violation on every path that did not enter that arm, and a
+    // double-free when the outer scope also destroys them.
+    scopeMgr.pushScope();
+
     // Bind payload fields into namedValues so the arm body can use them.
     if (!arm->isWildcard && !arm->bindings.empty()) {
-      std::string structName = arm->enumName + "_" + arm->variantName;
+      // Try the mangled variant name first (generic: "Option$Animal_Some"),
+      // then fall back to the bare name (non-generic: "Option_Some").
+      std::string structName;
+      if (!enumMangledBase.empty())
+        structName = enumMangledBase + "_" + arm->variantName;
+      if (structName.empty() ||
+          !llvm::StructType::getTypeByName(context, structName))
+        structName = arm->enumName + "_" + arm->variantName;
+
       llvm::StructType *variantSt =
           llvm::StructType::getTypeByName(context, structName);
       if (variantSt) {
@@ -2743,8 +2926,20 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
           Value *loaded =
               builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
           builder.CreateStore(loaded, alloca);
-          namedValues[arm->bindings[fi]] =
-              VarInfo(alloca, fieldTy, false, false, false, false);
+          VarInfo vi(alloca, fieldTy, false, false, false, false);
+          // ownsHeap for direct string/array bindings only.
+          // Struct-typed bindings (e.g. Animal inside Option<Animal>) must
+          // NOT own the heap: their string/array data pointers are shared
+          // with the subject alloca (bob). Marking them ownsHeap=true causes
+          // a double-free when both the subject and the local copy are
+          // destroyed. The subject variable owns the buffers; the binding
+          // is a local copy used only for passing by reference.
+          if (TypeResolver::isString(fieldTy) ||
+              TypeResolver::isArray(fieldTy)) {
+            vi.ownsHeap = true;
+          }
+          namedValues[arm->bindings[fi]] = vi;
+          scopeMgr.declare(arm->bindings[fi]);
         }
       }
     }
@@ -2753,9 +2948,19 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     for (const auto &stmt : arm->body->statements)
       stmt->accept(*this);
 
-    // Branch to exit if the arm didn't already terminate.
-    if (!builder.GetInsertBlock()->getTerminator())
+    // Emit per-arm destructors and close the scope before branching.
+    // Use blockHasTerminator rather than getTerminator() directly: after a
+    // return statement visitReturn leaves the insert point on an empty dead
+    // block, and calling getTerminator() on an empty block asserts in LLVM.
+    if (!blockHasTerminator(builder)) {
+      scopeMgr.popScope();
       builder.CreateBr(exitBB);
+    } else {
+      // Arm ended with return/break/continue — visitReturn already emitted
+      // its own cleanup. Just close the bookkeeping; we're on a dead block
+      // so emitting destructors here would produce unreachable IR.
+      scopeMgr.popScope();
+    }
   }
 
   fn->insert(fn->end(), exitBB);
@@ -2896,8 +3101,9 @@ Value *CodeGenerator::visitReturn(const Return &s) {
     if (auto *st = llvm::dyn_cast<llvm::StructType>(allocTy)) {
       llvm::Function *fn = builder.GetInsertBlock()->getParent();
       Type *retTy = fn->getReturnType();
-      retVal = builder.CreateLoad(retTy, ai, "ret.load");
 
+      // Null out heap-owning fields before emitting destructors so the scope
+      // manager does not free them (ownership transfers to the caller).
       for (unsigned i = 0; i < st->getNumElements(); ++i) {
         llvm::Type *elemTy = st->getElementType(i);
         if (TypeResolver::isString(elemTy) || TypeResolver::isArray(elemTy)) {
@@ -2908,17 +3114,65 @@ Value *CodeGenerator::visitReturn(const Return &s) {
           if (innerSt) {
             Value *fieldGep = builder.CreateStructGEP(
                 st, ai, i, "ret.field." + std::to_string(i));
-
             unsigned dataMemberIdx = TypeResolver::isString(elemTy) ? 0 : 1;
-
             Value *dataGep = builder.CreateStructGEP(
                 innerSt, fieldGep, dataMemberIdx, "ret.null.data");
             builder.CreateStore(llvm::ConstantPointerNull::get(
                                     llvm::PointerType::get(context, 0)),
                                 dataGep);
           }
+        } else if (auto *innerSt = llvm::dyn_cast<llvm::StructType>(elemTy)) {
+          // Enum variant payload may itself be a struct (e.g. Animal inside
+          // Option$Animal_Some). Null its string/array sub-fields too so the
+          // scope cleanup after emitAllDestructors doesn't double-free them.
+          for (unsigned j = 0; j < innerSt->getNumElements(); ++j) {
+            llvm::Type *subTy = innerSt->getElementType(j);
+            if (TypeResolver::isString(subTy) || TypeResolver::isArray(subTy)) {
+              llvm::StructType *leafSt =
+                  TypeResolver::isString(subTy)
+                      ? TypeResolver::getStringType(context)
+                      : llvm::dyn_cast<llvm::StructType>(subTy);
+              if (leafSt) {
+                Value *fieldGep = builder.CreateStructGEP(
+                    st, ai, i, "ret.payload." + std::to_string(i));
+                Value *subGep = builder.CreateStructGEP(
+                    innerSt, fieldGep, j,
+                    "ret.sub." + std::to_string(i) + "." + std::to_string(j));
+                unsigned dataMemberIdx = TypeResolver::isString(subTy) ? 0 : 1;
+                Value *dataGep = builder.CreateStructGEP(
+                    leafSt, subGep, dataMemberIdx, "ret.sub.null.data");
+                builder.CreateStore(llvm::ConstantPointerNull::get(
+                                        llvm::PointerType::get(context, 0)),
+                                    dataGep);
+              }
+            }
+          }
         }
       }
+
+      // Load the value to return. If the alloca type matches the declared
+      // return type exactly, one load suffices. If they differ (e.g. the
+      // alloca is "Option$Animal_Some" but retTy is the representative struct),
+      // use the alloca's own type for the load and let LLVM accept it because
+      // both types have identical layouts at the IR level.
+      if (allocTy == retTy) {
+        retVal = builder.CreateLoad(retTy, ai, "ret.load");
+      } else if (retTy->isStructTy()) {
+        // Reinterpret: load as the alloca type, then store+reload as retTy
+        // via a pointer cast so the IR types are consistent.
+        Value *loaded = builder.CreateLoad(allocTy, ai, "ret.raw.load");
+        AllocaInst *tmp = createEntryAlloca(retTy, "ret.coerce.tmp");
+        // The two structs must be the same size for this to be valid — they
+        // always are because instantiateGenericEnum chose the largest variant
+        // as the representative, and we only hit this path for that variant.
+        builder.CreateStore(
+            loaded,
+            builder.CreatePointerCast(tmp, llvm::PointerType::get(context, 0)));
+        retVal = builder.CreateLoad(retTy, tmp, "ret.load");
+      } else {
+        retVal = builder.CreateLoad(retTy, ai, "ret.load");
+      }
+
     } else {
       for (auto &kv : namedValues) {
         if (kv.second.allocaInst == ai) {
@@ -2935,7 +3189,7 @@ Value *CodeGenerator::visitReturn(const Return &s) {
     llvm::Function *fn = builder.GetInsertBlock()->getParent();
     Type *retTy = fn->getReturnType();
     // If retVal is still a pointer (non-struct path, or string/array alloca),
-    // load it now.  The struct path above already performed the load.
+    // load it now. The struct path above already performed the load.
     if (retVal->getType()->isPointerTy() &&
         (TypeResolver::isString(retTy) || TypeResolver::isArray(retTy) ||
          retTy->isStructTy()))
@@ -2985,6 +3239,8 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   if (!retTy)
     retTy = llvm::StructType::getTypeByName(
         context, func.returnType.base.token.getWord());
+  if (!retTy && !func.returnType.typeArgs.empty())
+    retTy = instantiateGenericEnum(func.returnType);
   if (!retTy && fname == "main")
     retTy = Type::getInt32Ty(context);
   if (!retTy)
@@ -2999,6 +3255,8 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     if (!pt)
       pt =
           llvm::StructType::getTypeByName(context, p.type.base.token.getWord());
+    if (!pt && !p.type.typeArgs.empty())
+      pt = instantiateGenericEnum(p.type);
     if (!pt)
       return nullptr;
 
@@ -3362,6 +3620,8 @@ bool CodeGenerator::generate(const Program &program,
     if (!retTy)
       retTy = llvm::StructType::getTypeByName(
           context, fn->returnType.base.token.getWord());
+    if (!retTy && !fn->returnType.typeArgs.empty())
+      retTy = instantiateGenericEnum(fn->returnType);
     if (!retTy && fname == "main")
       retTy = Type::getInt32Ty(context);
     if (!retTy)
@@ -3373,6 +3633,8 @@ bool CodeGenerator::generate(const Program &program,
       if (!pt)
         pt = llvm::StructType::getTypeByName(context,
                                              p.type.base.token.getWord());
+      if (!pt && !p.type.typeArgs.empty())
+        pt = instantiateGenericEnum(p.type);
       if (!pt)
         continue;
       paramTypes.push_back(p.isBorrowRef || passAsPointer(pt)
