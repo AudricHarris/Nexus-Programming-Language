@@ -2280,9 +2280,78 @@ Value *CodeGenerator::visitEnumVariant(const EnumVariantExpr &e) {
         }
       }
     } else if (llvm::isa<llvm::StructType>(fieldTy)) {
-      // Aggregate (struct) payload — store from the source alloca directly.
-      if (auto *ai = dyn_cast<AllocaInst>(val)) {
-        val = builder.CreateLoad(fieldTy, ai, "field.load");
+      // Struct payload (e.g. Animal inside Option.Some(ani)).
+      //
+      // A plain struct-load copies the value including raw string/array data
+      // pointers, giving both the source variable (ani) and the variant
+      // payload aliases to the same heap buffers. When ani's destructor runs
+      // at the end of CreateAnimal's scope it frees those buffers; the variant
+      // then holds dangling pointers — use-after-free in the caller.
+      //
+      // Fix: deep-clone every string/array field inside the struct so the
+      // variant owns independent heap buffers, then null the source field's
+      // data pointer so ani's destructor skips the (now-transferred) buffer.
+      if (auto *srcAI = dyn_cast<AllocaInst>(val)) {
+        auto *innerSt = llvm::cast<llvm::StructType>(fieldTy);
+        // Allocate a clean staging alloca for the deep-copied struct.
+        AllocaInst *dstAI = createEntryAlloca(fieldTy, "payload.deep.tmp");
+
+        for (unsigned fi = 0; fi < innerSt->getNumElements(); ++fi) {
+          llvm::Type *subTy = innerSt->getElementType(fi);
+          Value *srcField = builder.CreateStructGEP(
+              innerSt, srcAI, fi, "src.f" + std::to_string(fi));
+          Value *dstField = builder.CreateStructGEP(
+              innerSt, dstAI, fi, "dst.f" + std::to_string(fi));
+
+          if (TypeResolver::isString(subTy)) {
+            // Clone the string into the dst field; null the src data pointer
+            // so the source variable's destructor won't free the buffer we
+            // just handed to the variant.
+            Value *cloned =
+                StringOps::clone(builder, context, module.get(), srcField);
+            Value *clonedVal =
+                builder.CreateLoad(subTy, cloned, "str.clone.val");
+            builder.CreateStore(clonedVal, dstField);
+            // Null the clone's own stack-slot data so its destructor is a
+            // no-op (we already moved the buffer into dstField above).
+            Value *cloneDataGep =
+                builder.CreateStructGEP(TypeResolver::getStringType(context),
+                                        cloned, 0, "clone.null.data");
+            builder.CreateStore(llvm::ConstantPointerNull::get(
+                                    llvm::PointerType::get(context, 0)),
+                                cloneDataGep);
+            // Null the source field's data pointer so the source variable's
+            // destructor (e.g. ani in CreateAnimal) skips this buffer.
+            Value *srcDataGep =
+                builder.CreateStructGEP(TypeResolver::getStringType(context),
+                                        srcField, 0, "src.null.data");
+            builder.CreateStore(llvm::ConstantPointerNull::get(
+                                    llvm::PointerType::get(context, 0)),
+                                srcDataGep);
+          } else if (TypeResolver::isArray(subTy)) {
+            // Array: transfer data pointer (move semantics — arrays are
+            // typically large; cloning would require knowing elem size).
+            Value *loaded = builder.CreateLoad(subTy, srcField, "arr.move");
+            builder.CreateStore(loaded, dstField);
+            if (auto *arrSt = llvm::dyn_cast<llvm::StructType>(subTy)) {
+              Value *srcDataGep = builder.CreateStructGEP(arrSt, srcField, 1,
+                                                          "src.arr.null.data");
+              builder.CreateStore(llvm::ConstantPointerNull::get(
+                                      llvm::PointerType::get(context, 0)),
+                                  srcDataGep);
+            }
+          } else {
+            // Scalar (i32, bool, etc.): plain copy.
+            Value *loaded = builder.CreateLoad(subTy, srcField, "scalar.copy");
+            builder.CreateStore(loaded, dstField);
+          }
+        }
+        // Load the fully deep-copied struct to store into the variant field.
+        val = builder.CreateLoad(fieldTy, dstAI, "field.load");
+      } else {
+        // Not an alloca (e.g. already a loaded value) — plain store.
+        if (val->getType()->isPointerTy())
+          val = builder.CreateLoad(fieldTy, val, "field.load");
       }
     } else {
       val = TypeResolver::coerce(builder, val, fieldTy);
@@ -2633,11 +2702,85 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
       builder.CreateStore(structVal, alloca);
       vi.ownsHeap = false;
       if (auto *st = llvm::dyn_cast<llvm::StructType>(ty)) {
+        // Check whether any field is a heap type.
+        bool hasHeap = false;
         for (unsigned i = 0; i < st->getNumElements(); ++i) {
-          if (TypeResolver::isString(st->getElementType(i)) ||
-              TypeResolver::isArray(st->getElementType(i))) {
-            vi.ownsHeap = true;
+          llvm::Type *elemTy = st->getElementType(i);
+          if (TypeResolver::isString(elemTy) || TypeResolver::isArray(elemTy)) {
+            hasHeap = true;
             break;
+          }
+          // Nested struct (e.g. Animal inside Option$Animal_Some).
+          if (auto *innerSt = llvm::dyn_cast<llvm::StructType>(elemTy)) {
+            for (unsigned j = 0; j < innerSt->getNumElements(); ++j) {
+              if (TypeResolver::isString(innerSt->getElementType(j)) ||
+                  TypeResolver::isArray(innerSt->getElementType(j))) {
+                hasHeap = true;
+                break;
+              }
+            }
+          }
+          if (hasHeap)
+            break;
+        }
+
+        if (hasHeap) {
+          // If the initialiser is a call result (srcName is empty — not a
+          // named variable), the returned struct value already owns its heap
+          // buffers independently (visitEnumVariant deep-cloned them before
+          // returning, visitReturn loaded the fresh value). We just take
+          // ownership — no second clone needed. Mark owned and done.
+          //
+          // If the initialiser IS a named variable, deep-clone string/array
+          // fields so this variable owns independent copies and the source
+          // remains valid.
+          if (srcName.empty()) {
+            // Move: struct came from a call/literal — buffers are ours.
+            vi.ownsHeap = true;
+          } else {
+            // Clone: source is a named variable that must remain intact.
+            for (unsigned i = 0; i < st->getNumElements(); ++i) {
+              llvm::Type *elemTy = st->getElementType(i);
+              if (TypeResolver::isString(elemTy)) {
+                Value *dstGep = builder.CreateStructGEP(
+                    st, alloca, i, "deep.dst." + std::to_string(i));
+                Value *cloned =
+                    StringOps::clone(builder, context, module.get(), dstGep);
+                Value *clonedVal =
+                    builder.CreateLoad(elemTy, cloned, "str.deep");
+                builder.CreateStore(clonedVal, dstGep);
+                Value *cDataGep = builder.CreateStructGEP(
+                    TypeResolver::getStringType(context), cloned, 0,
+                    "cln.null");
+                builder.CreateStore(llvm::ConstantPointerNull::get(
+                                        llvm::PointerType::get(context, 0)),
+                                    cDataGep);
+              } else if (auto *innerSt =
+                             llvm::dyn_cast<llvm::StructType>(elemTy)) {
+                Value *innerGep = builder.CreateStructGEP(
+                    st, alloca, i, "inner." + std::to_string(i));
+                for (unsigned j = 0; j < innerSt->getNumElements(); ++j) {
+                  llvm::Type *subTy = innerSt->getElementType(j);
+                  if (!TypeResolver::isString(subTy))
+                    continue;
+                  Value *subDst = builder.CreateStructGEP(
+                      innerSt, innerGep, j,
+                      "sub.dst." + std::to_string(i) + "." + std::to_string(j));
+                  Value *cloned =
+                      StringOps::clone(builder, context, module.get(), subDst);
+                  Value *clonedVal =
+                      builder.CreateLoad(subTy, cloned, "str.sub.deep");
+                  builder.CreateStore(clonedVal, subDst);
+                  Value *cDataGep = builder.CreateStructGEP(
+                      TypeResolver::getStringType(context), cloned, 0,
+                      "sub.cln.null");
+                  builder.CreateStore(llvm::ConstantPointerNull::get(
+                                          llvm::PointerType::get(context, 0)),
+                                      cDataGep);
+                }
+              }
+            }
+            vi.ownsHeap = true;
           }
         }
       }
@@ -2704,6 +2847,10 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
  * @return the value produced by the last statement, or nullptr
  */
 Value *CodeGenerator::visitBlock(const Block &b) {
+  // Snapshot the variable map before opening the scope so we can identify
+  // which variables are new (declared inside this block) when we close it.
+  auto preVars = namedValues;
+
   scopeMgr.pushScope();
   Value *last = nullptr;
   for (const auto &stmt : b.statements) {
@@ -2711,6 +2858,83 @@ Value *CodeGenerator::visitBlock(const Block &b) {
     if (blockHasTerminator(builder))
       break;
   }
+
+  // Before the scope manager runs its destructors, emit explicit free IR for
+  // any string fields nested inside struct-typed variables declared in this
+  // block. The scope manager frees top-level string/array allocas and one
+  // level of struct fields — but not struct-inside-struct (e.g. the Animal
+  // payload inside Option$Animal_Some). Without this those string buffers leak.
+  if (!blockHasTerminator(builder)) {
+    llvm::Function *fn = builder.GetInsertBlock()->getParent();
+    llvm::StructType *strTy = TypeResolver::getStringType(context);
+    llvm::Type *ptrTy = llvm::PointerType::get(context, 0);
+
+    for (auto &[varName, vi] : namedValues) {
+      // Only process variables that were introduced in this scope.
+      if (preVars.count(varName))
+        continue;
+      // Only struct-typed, heap-owning, non-reference variables need this.
+      if (vi.isReference || !vi.ownsHeap || vi.isMoved)
+        continue;
+      auto *outerSt = llvm::dyn_cast<llvm::StructType>(vi.type);
+      if (!outerSt)
+        continue;
+
+      // Iterate outer struct fields looking for struct sub-fields that contain
+      // strings. The scope manager handles direct string fields; we emit free
+      // IR only for strings nested one level deeper (struct → struct → string).
+      for (unsigned i = 0; i < outerSt->getNumElements(); ++i) {
+        auto *innerSt =
+            llvm::dyn_cast<llvm::StructType>(outerSt->getElementType(i));
+        if (!innerSt || TypeResolver::isString(innerSt) ||
+            TypeResolver::isArray(innerSt))
+          continue; // skip non-struct fields and top-level string/array fields
+
+        for (unsigned j = 0; j < innerSt->getNumElements(); ++j) {
+          llvm::Type *subTy = innerSt->getElementType(j);
+          if (!TypeResolver::isString(subTy))
+            continue;
+
+          // GEP to the nested string field and conditionally free its buffer.
+          Value *outerGep = builder.CreateStructGEP(outerSt, vi.allocaInst, i,
+                                                    varName + ".dtor.outer." +
+                                                        std::to_string(i));
+          Value *strGep = builder.CreateStructGEP(innerSt, outerGep, j,
+                                                  varName + ".dtor.str." +
+                                                      std::to_string(i) + "." +
+                                                      std::to_string(j));
+          Value *dataGep =
+              builder.CreateStructGEP(strTy, strGep, 0, "dtor.data.ptr");
+          Value *dataPtr = builder.CreateLoad(ptrTy, dataGep, "dtor.data");
+
+          auto *freeBB = llvm::BasicBlock::Create(context,
+                                                  varName + ".dtor.free." +
+                                                      std::to_string(i) + "." +
+                                                      std::to_string(j),
+                                                  fn);
+          auto *skipBB = llvm::BasicBlock::Create(context,
+                                                  varName + ".dtor.skip." +
+                                                      std::to_string(i) + "." +
+                                                      std::to_string(j),
+                                                  fn);
+
+          Value *isNull =
+              builder.CreateICmpEQ(dataPtr,
+                                   llvm::ConstantPointerNull::get(
+                                       llvm::cast<llvm::PointerType>(ptrTy)),
+                                   "dtor.isnull");
+          builder.CreateCondBr(isNull, skipBB, freeBB);
+
+          builder.SetInsertPoint(freeBB);
+          builder.CreateCall(getFree(), {dataPtr});
+          builder.CreateBr(skipBB);
+
+          builder.SetInsertPoint(skipBB);
+        }
+      }
+    }
+  }
+
   scopeMgr.popScope();
   return last;
 }
@@ -2922,24 +3146,43 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
           llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
           Value *fieldPtr = builder.CreateStructGEP(
               variantSt, subjectPtr, fieldIdx, arm->bindings[fi] + ".fptr");
-          AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
-          Value *loaded =
-              builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
-          builder.CreateStore(loaded, alloca);
-          VarInfo vi(alloca, fieldTy, false, false, false, false);
-          // ownsHeap for direct string/array bindings only.
-          // Struct-typed bindings (e.g. Animal inside Option<Animal>) must
-          // NOT own the heap: their string/array data pointers are shared
-          // with the subject alloca (bob). Marking them ownsHeap=true causes
-          // a double-free when both the subject and the local copy are
-          // destroyed. The subject variable owns the buffers; the binding
-          // is a local copy used only for passing by reference.
-          if (TypeResolver::isString(fieldTy) ||
-              TypeResolver::isArray(fieldTy)) {
-            vi.ownsHeap = true;
+
+          if (fieldTy->isStructTy()) {
+            // Struct payload (e.g. Animal inside Option<Animal>):
+            // bind as a REFERENCE into the subject's in-place storage.
+            //
+            // A by-value copy would duplicate the string/array data POINTERS
+            // (not the heap buffers themselves), so both the copy and the
+            // subject would call free() on the same addresses — double-free.
+            // Binding as a reference means the arm variable is just a pointer
+            // to the payload field inside bob's alloca; resolveStructPtr() and
+            // the borrow-arg emitter both handle isReference by loading the
+            // pointer first, so PrintAnimal(&ani) and UpdateAnimal(&mut ani)
+            // transparently operate on the payload in-place, and mutations
+            // through &mut go directly into the subject alloca.
+            AllocaInst *ptrAlloca = createEntryAlloca(
+                llvm::PointerType::get(context, 0), arm->bindings[fi] + ".ref");
+            builder.CreateStore(fieldPtr, ptrAlloca);
+            VarInfo vi(ptrAlloca, llvm::PointerType::get(context, 0), false,
+                       false, /*isReference=*/true, /*isConst=*/false);
+            vi.pointeeType = fieldTy;
+            vi.ownsHeap = false; // subject owns all heap buffers
+            namedValues[arm->bindings[fi]] = vi;
+            scopeMgr.declare(arm->bindings[fi]);
+          } else {
+            // Scalar / string / array payload: safe to copy by value.
+            // String/array bindings get ownsHeap=true because loading them
+            // out of the variant produces an independent value.
+            AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
+            Value *loaded =
+                builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
+            builder.CreateStore(loaded, alloca);
+            VarInfo vi(alloca, fieldTy, false, false, false, false);
+            vi.ownsHeap = TypeResolver::isString(fieldTy) ||
+                          TypeResolver::isArray(fieldTy);
+            namedValues[arm->bindings[fi]] = vi;
+            scopeMgr.declare(arm->bindings[fi]);
           }
-          namedValues[arm->bindings[fi]] = vi;
-          scopeMgr.declare(arm->bindings[fi]);
         }
       }
     }
@@ -3102,75 +3345,73 @@ Value *CodeGenerator::visitReturn(const Return &s) {
       llvm::Function *fn = builder.GetInsertBlock()->getParent();
       Type *retTy = fn->getReturnType();
 
-      // Null out heap-owning fields before emitting destructors so the scope
-      // manager does not free them (ownership transfers to the caller).
-      for (unsigned i = 0; i < st->getNumElements(); ++i) {
-        llvm::Type *elemTy = st->getElementType(i);
-        if (TypeResolver::isString(elemTy) || TypeResolver::isArray(elemTy)) {
-          llvm::StructType *innerSt =
-              TypeResolver::isString(elemTy)
-                  ? TypeResolver::getStringType(context)
-                  : llvm::dyn_cast<llvm::StructType>(elemTy);
-          if (innerSt) {
-            Value *fieldGep = builder.CreateStructGEP(
-                st, ai, i, "ret.field." + std::to_string(i));
-            unsigned dataMemberIdx = TypeResolver::isString(elemTy) ? 0 : 1;
-            Value *dataGep = builder.CreateStructGEP(
-                innerSt, fieldGep, dataMemberIdx, "ret.null.data");
-            builder.CreateStore(llvm::ConstantPointerNull::get(
-                                    llvm::PointerType::get(context, 0)),
-                                dataGep);
-          }
-        } else if (auto *innerSt = llvm::dyn_cast<llvm::StructType>(elemTy)) {
-          // Enum variant payload may itself be a struct (e.g. Animal inside
-          // Option$Animal_Some). Null its string/array sub-fields too so the
-          // scope cleanup after emitAllDestructors doesn't double-free them.
-          for (unsigned j = 0; j < innerSt->getNumElements(); ++j) {
-            llvm::Type *subTy = innerSt->getElementType(j);
-            if (TypeResolver::isString(subTy) || TypeResolver::isArray(subTy)) {
-              llvm::StructType *leafSt =
-                  TypeResolver::isString(subTy)
-                      ? TypeResolver::getStringType(context)
-                      : llvm::dyn_cast<llvm::StructType>(subTy);
-              if (leafSt) {
-                Value *fieldGep = builder.CreateStructGEP(
-                    st, ai, i, "ret.payload." + std::to_string(i));
-                Value *subGep = builder.CreateStructGEP(
-                    innerSt, fieldGep, j,
-                    "ret.sub." + std::to_string(i) + "." + std::to_string(j));
-                unsigned dataMemberIdx = TypeResolver::isString(subTy) ? 0 : 1;
-                Value *dataGep = builder.CreateStructGEP(
-                    leafSt, subGep, dataMemberIdx, "ret.sub.null.data");
-                builder.CreateStore(llvm::ConstantPointerNull::get(
-                                        llvm::PointerType::get(context, 0)),
-                                    dataGep);
-              }
-            }
-          }
-        }
-      }
-
-      // Load the value to return. If the alloca type matches the declared
-      // return type exactly, one load suffices. If they differ (e.g. the
-      // alloca is "Option$Animal_Some" but retTy is the representative struct),
-      // use the alloca's own type for the load and let LLVM accept it because
-      // both types have identical layouts at the IR level.
+      // Load the struct value FIRST so the caller receives the live buffers.
+      // We null the source alloca's heap-pointer fields AFTER the load so that
+      // scopeMgr.emitAllDestructors() (called below) will see null data
+      // pointers and skip free() — preventing a double-free of buffers that
+      // are now owned by the returned value. Nulling before the load was the
+      // previous (broken) behaviour: it produced a return value with null data
+      // pointers, causing SEGV in the caller on the first string access.
       if (allocTy == retTy) {
         retVal = builder.CreateLoad(retTy, ai, "ret.load");
       } else if (retTy->isStructTy()) {
-        // Reinterpret: load as the alloca type, then store+reload as retTy
-        // via a pointer cast so the IR types are consistent.
+        // Reinterpret: load as the alloca type, store+reload as retTy via a
+        // pointer cast so LLVM IR types are consistent. Valid because
+        // instantiateGenericEnum chose the largest variant as the
+        // representative.
         Value *loaded = builder.CreateLoad(allocTy, ai, "ret.raw.load");
         AllocaInst *tmp = createEntryAlloca(retTy, "ret.coerce.tmp");
-        // The two structs must be the same size for this to be valid — they
-        // always are because instantiateGenericEnum chose the largest variant
-        // as the representative, and we only hit this path for that variant.
         builder.CreateStore(
             loaded,
             builder.CreatePointerCast(tmp, llvm::PointerType::get(context, 0)));
         retVal = builder.CreateLoad(retTy, tmp, "ret.load");
       } else {
         retVal = builder.CreateLoad(retTy, ai, "ret.load");
+      }
+
+      // Now null the data pointers in the source alloca so emitAllDestructors
+      // skips freeing them (ownership has transferred to the caller).
+      // We recurse one level into struct-typed fields to catch e.g. the Animal
+      // payload inside Option$Animal_Some (whose string fields must also be
+      // nulled so the variant-struct destructor doesn't free them).
+      auto nullStringData = [&](llvm::StructType *strSt, Value *ptr) {
+        Value *dataGep =
+            builder.CreateStructGEP(strSt, ptr, 0, "ret.null.data");
+        builder.CreateStore(
+            llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
+            dataGep);
+      };
+      auto nullArrayData = [&](llvm::StructType *arrSt, Value *ptr) {
+        Value *dataGep = builder.CreateStructGEP(arrSt, ptr, 1, "ret.null.arr");
+        builder.CreateStore(
+            llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
+            dataGep);
+      };
+
+      for (unsigned i = 0; i < st->getNumElements(); ++i) {
+        llvm::Type *elemTy = st->getElementType(i);
+        Value *fieldGep =
+            builder.CreateStructGEP(st, ai, i, "ret.src." + std::to_string(i));
+        if (TypeResolver::isString(elemTy)) {
+          nullStringData(TypeResolver::getStringType(context), fieldGep);
+        } else if (TypeResolver::isArray(elemTy)) {
+          if (auto *arrSt = llvm::dyn_cast<llvm::StructType>(elemTy))
+            nullArrayData(arrSt, fieldGep);
+        } else if (auto *innerSt = llvm::dyn_cast<llvm::StructType>(elemTy)) {
+          // Recurse into struct fields (e.g. Animal inside Option$Animal_Some).
+          for (unsigned j = 0; j < innerSt->getNumElements(); ++j) {
+            llvm::Type *subTy = innerSt->getElementType(j);
+            Value *subGep = builder.CreateStructGEP(
+                innerSt, fieldGep, j,
+                "ret.src." + std::to_string(i) + "." + std::to_string(j));
+            if (TypeResolver::isString(subTy))
+              nullStringData(TypeResolver::getStringType(context), subGep);
+            else if (TypeResolver::isArray(subTy)) {
+              if (auto *arrSt = llvm::dyn_cast<llvm::StructType>(subTy))
+                nullArrayData(arrSt, subGep);
+            }
+          }
+        }
       }
 
     } else {
