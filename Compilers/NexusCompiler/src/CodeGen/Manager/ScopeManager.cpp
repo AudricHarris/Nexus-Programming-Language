@@ -154,35 +154,7 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
 
   if (ty->isStructTy() && !TypeResolver::isString(ty) &&
       !TypeResolver::isArray(ty)) {
-    StructType *st = cast<StructType>(ty);
-    for (unsigned i = 0; i < st->getNumElements(); i++) {
-      Type *fieldTy = st->getElementType(i);
-      if (!TypeResolver::isString(fieldTy) && !TypeResolver::isArray(fieldTy))
-        continue;
-
-      Value *fieldPtr = B_.CreateStructGEP(st, vi.allocaInst, i,
-                                           "field.dtor." + std::to_string(i));
-
-      if (TypeResolver::isString(fieldTy)) {
-        Value *load = B_.CreateLoad(cast<StructType>(fieldTy), fieldPtr);
-        Value *data = B_.CreateExtractValue(load, {0});
-        llvm::Function *fn = B_.GetInsertBlock()->getParent();
-
-        BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free", fn);
-        BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip", fn);
-        Value *isNull = B_.CreateICmpEQ(
-            data, ConstantPointerNull::get(PointerType::get(ctx_, 0)),
-            "is.null");
-
-        B_.CreateCondBr(isNull, skipBB, freeBB);
-        B_.SetInsertPoint(freeBB);
-        B_.CreateCall(getFree(), {data});
-        B_.CreateBr(skipBB);
-        B_.SetInsertPoint(skipBB);
-      } else if (TypeResolver::isArray(fieldTy)) {
-        emitArrayFree(fieldPtr, cast<StructType>(fieldTy), 0);
-      }
-    }
+    emitStructFieldDestructors(vi.allocaInst, cast<StructType>(ty));
     return;
   }
 
@@ -214,6 +186,43 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
     if (vi.allocaInst)
       emitArrayFree(vi.allocaInst, cast<StructType>(ty), 0);
     return;
+  }
+}
+
+void ScopeManager::emitStructFieldDestructors(llvm::Value *ptr,
+                                              llvm::StructType *st) {
+  for (unsigned i = 0; i < st->getNumElements(); i++) {
+    if (blockHasTerminator(B_))
+      return;
+
+    Type *fieldTy = st->getElementType(i);
+    Value *fieldPtr =
+        B_.CreateStructGEP(st, ptr, i, "field.dtor." + std::to_string(i));
+
+    if (TypeResolver::isString(fieldTy)) {
+      Value *load = B_.CreateLoad(cast<StructType>(fieldTy), fieldPtr);
+      Value *data = B_.CreateExtractValue(load, {0});
+      llvm::Function *fn = B_.GetInsertBlock()->getParent();
+
+      BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free", fn);
+      BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip", fn);
+      Value *isNull = B_.CreateICmpEQ(
+          data, ConstantPointerNull::get(PointerType::get(ctx_, 0)), "is.null");
+
+      B_.CreateCondBr(isNull, skipBB, freeBB);
+      B_.SetInsertPoint(freeBB);
+      B_.CreateCall(getFree(), {data});
+      B_.CreateBr(skipBB);
+      B_.SetInsertPoint(skipBB);
+
+    } else if (TypeResolver::isArray(fieldTy)) {
+      emitArrayFree(fieldPtr, cast<StructType>(fieldTy), 0);
+
+    } else if (fieldTy->isStructTy() && !TypeResolver::isString(fieldTy) &&
+               !TypeResolver::isArray(fieldTy)) {
+      // Recurse: e.g. Animal nested inside Option$Animal_Some
+      emitStructFieldDestructors(fieldPtr, cast<StructType>(fieldTy));
+    }
   }
 }
 

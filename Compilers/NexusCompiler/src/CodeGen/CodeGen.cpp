@@ -2700,7 +2700,7 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
                              ? builder.CreateLoad(ty, init, name + ".structval")
                              : init;
       builder.CreateStore(structVal, alloca);
-      vi.ownsHeap = false;
+      vi.ownsHeap = true;
       if (auto *st = llvm::dyn_cast<llvm::StructType>(ty)) {
         // Check whether any field is a heap type.
         bool hasHeap = false;
@@ -3097,8 +3097,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
                 builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
             builder.CreateStore(loaded, alloca);
             VarInfo vi(alloca, fieldTy, false, false, false, false);
-            vi.ownsHeap = TypeResolver::isString(fieldTy) ||
-                          TypeResolver::isArray(fieldTy);
+            vi.ownsHeap = false;
             namedValues[arm->bindings[fi]] = vi;
             scopeMgr.declare(arm->bindings[fi]);
           }
@@ -3818,6 +3817,10 @@ bool CodeGenerator::generate(const Program &program,
     errs() << "Cannot open output file: " << ec.message() << "\n";
     return false;
   }
+
+  scopeMgr.reset();
+  builder.ClearInsertionPoint();
+
   module->print(out, nullptr);
   return true;
 }
