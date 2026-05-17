@@ -2847,10 +2847,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
  * @return the value produced by the last statement, or nullptr
  */
 Value *CodeGenerator::visitBlock(const Block &b) {
-  // Snapshot the variable map before opening the scope so we can identify
-  // which variables are new (declared inside this block) when we close it.
-  auto preVars = namedValues;
-
   scopeMgr.pushScope();
   Value *last = nullptr;
   for (const auto &stmt : b.statements) {
@@ -2858,83 +2854,6 @@ Value *CodeGenerator::visitBlock(const Block &b) {
     if (blockHasTerminator(builder))
       break;
   }
-
-  // Before the scope manager runs its destructors, emit explicit free IR for
-  // any string fields nested inside struct-typed variables declared in this
-  // block. The scope manager frees top-level string/array allocas and one
-  // level of struct fields — but not struct-inside-struct (e.g. the Animal
-  // payload inside Option$Animal_Some). Without this those string buffers leak.
-  if (!blockHasTerminator(builder)) {
-    llvm::Function *fn = builder.GetInsertBlock()->getParent();
-    llvm::StructType *strTy = TypeResolver::getStringType(context);
-    llvm::Type *ptrTy = llvm::PointerType::get(context, 0);
-
-    for (auto &[varName, vi] : namedValues) {
-      // Only process variables that were introduced in this scope.
-      if (preVars.count(varName))
-        continue;
-      // Only struct-typed, heap-owning, non-reference variables need this.
-      if (vi.isReference || !vi.ownsHeap || vi.isMoved)
-        continue;
-      auto *outerSt = llvm::dyn_cast<llvm::StructType>(vi.type);
-      if (!outerSt)
-        continue;
-
-      // Iterate outer struct fields looking for struct sub-fields that contain
-      // strings. The scope manager handles direct string fields; we emit free
-      // IR only for strings nested one level deeper (struct → struct → string).
-      for (unsigned i = 0; i < outerSt->getNumElements(); ++i) {
-        auto *innerSt =
-            llvm::dyn_cast<llvm::StructType>(outerSt->getElementType(i));
-        if (!innerSt || TypeResolver::isString(innerSt) ||
-            TypeResolver::isArray(innerSt))
-          continue; // skip non-struct fields and top-level string/array fields
-
-        for (unsigned j = 0; j < innerSt->getNumElements(); ++j) {
-          llvm::Type *subTy = innerSt->getElementType(j);
-          if (!TypeResolver::isString(subTy))
-            continue;
-
-          // GEP to the nested string field and conditionally free its buffer.
-          Value *outerGep = builder.CreateStructGEP(outerSt, vi.allocaInst, i,
-                                                    varName + ".dtor.outer." +
-                                                        std::to_string(i));
-          Value *strGep = builder.CreateStructGEP(innerSt, outerGep, j,
-                                                  varName + ".dtor.str." +
-                                                      std::to_string(i) + "." +
-                                                      std::to_string(j));
-          Value *dataGep =
-              builder.CreateStructGEP(strTy, strGep, 0, "dtor.data.ptr");
-          Value *dataPtr = builder.CreateLoad(ptrTy, dataGep, "dtor.data");
-
-          auto *freeBB = llvm::BasicBlock::Create(context,
-                                                  varName + ".dtor.free." +
-                                                      std::to_string(i) + "." +
-                                                      std::to_string(j),
-                                                  fn);
-          auto *skipBB = llvm::BasicBlock::Create(context,
-                                                  varName + ".dtor.skip." +
-                                                      std::to_string(i) + "." +
-                                                      std::to_string(j),
-                                                  fn);
-
-          Value *isNull =
-              builder.CreateICmpEQ(dataPtr,
-                                   llvm::ConstantPointerNull::get(
-                                       llvm::cast<llvm::PointerType>(ptrTy)),
-                                   "dtor.isnull");
-          builder.CreateCondBr(isNull, skipBB, freeBB);
-
-          builder.SetInsertPoint(freeBB);
-          builder.CreateCall(getFree(), {dataPtr});
-          builder.CreateBr(skipBB);
-
-          builder.SetInsertPoint(skipBB);
-        }
-      }
-    }
-  }
-
   scopeMgr.popScope();
   return last;
 }
