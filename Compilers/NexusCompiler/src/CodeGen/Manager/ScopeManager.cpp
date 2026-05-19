@@ -154,7 +154,13 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
 
   if (ty->isStructTy() && !TypeResolver::isString(ty) &&
       !TypeResolver::isArray(ty)) {
-    emitStructFieldDestructors(vi.allocaInst, cast<StructType>(ty));
+    auto *st = cast<StructType>(ty);
+    bool looksLikeEnum =
+        st->getNumElements() >= 1 && st->getElementType(0)->isIntegerTy(32);
+    if (looksLikeEnum)
+      emitTaggedUnionDestructor(vi.allocaInst, st);
+    else
+      emitStructFieldDestructors(vi.allocaInst, st);
     return;
   }
 
@@ -187,6 +193,57 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
       emitArrayFree(vi.allocaInst, cast<StructType>(ty), 0);
     return;
   }
+}
+
+void ScopeManager::emitTaggedUnionDestructor(llvm::Value *ptr,
+                                             llvm::StructType *repSt) {
+  if (blockHasTerminator(B_))
+    return;
+
+  llvm::Type *i32 = llvm::Type::getInt32Ty(ctx_);
+  llvm::Value *tagPtr = B_.CreateStructGEP(repSt, ptr, 0, "dtor.tag.ptr");
+  llvm::Value *tag = B_.CreateLoad(i32, tagPtr, "dtor.tag");
+
+  llvm::Function *fn = B_.GetInsertBlock()->getParent();
+  llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(ctx_, "dtor.exit", fn);
+
+  std::string base = repSt->getName().str();
+  auto lastUs = base.rfind('_');
+  if (lastUs != std::string::npos)
+    base = base.substr(0, lastUs);
+
+  std::vector<llvm::StructType *> variants;
+  for (auto *st : M_->getIdentifiedStructTypes()) {
+    llvm::StringRef sname = st->getName();
+    if (sname.starts_with(base + "_"))
+      variants.push_back(st);
+  }
+
+  if (variants.empty()) {
+    emitStructFieldDestructors(ptr, repSt);
+    return;
+  }
+
+  auto *sw =
+      B_.CreateSwitch(tag, exitBB, static_cast<unsigned>(variants.size()));
+
+  for (auto *varSt : variants) {
+    if (varSt->getNumElements() <= 1)
+      continue;
+
+    llvm::BasicBlock *caseBB = llvm::BasicBlock::Create(ctx_, "dtor.case", fn);
+    auto *cv = llvm::ConstantInt::get(
+        llvm::cast<llvm::IntegerType>(i32),
+        static_cast<uint64_t>(varSt->getNumElements() - 1));
+    sw->addCase(cv, caseBB);
+
+    B_.SetInsertPoint(caseBB);
+    emitStructFieldDestructors(ptr, varSt);
+    if (!blockHasTerminator(B_))
+      B_.CreateBr(exitBB);
+  }
+
+  B_.SetInsertPoint(exitBB);
 }
 
 void ScopeManager::emitStructFieldDestructors(llvm::Value *ptr,
