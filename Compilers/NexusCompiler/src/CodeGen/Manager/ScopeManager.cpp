@@ -45,6 +45,14 @@ void ScopeManager::declare(const std::string &name) {
 void ScopeManager::declareTmp(llvm::AllocaInst *alloca, llvm::Type *ty) {
   if (tmpStack_.empty())
     return;
+  // Guard against duplicate registration: if this alloca is already tracked
+  // in the current (or any enclosing) tmp level, registering it a second time
+  // would cause emitDestructor to emit two free() calls on the same pointer —
+  // a double-free that crashes the compiler process at the end of the scope.
+  for (const auto &level : tmpStack_)
+    for (const auto &vi : level)
+      if (vi.allocaInst == alloca)
+        return;
   VarInfo vi(alloca, ty, false, false, false, false);
   vi.ownsHeap = true;
   tmpStack_.back().push_back(vi);
@@ -212,6 +220,17 @@ void ScopeManager::emitTaggedUnionDestructor(llvm::Value *ptr,
   if (lastUs != std::string::npos)
     base = base.substr(0, lastUs);
 
+  // Collect variant structs IN MODULE ORDER (= enum declaration order = the
+  // same order used by instantiateGenericEnum/generate(), which matches the
+  // tag values assigned by visitEnumVariant: tag 0 -> first variant listed,
+  // tag 1 -> second, etc.).
+  //
+  // The old code used `varSt->getNumElements() - 1` as the case constant.
+  // For Option<Animal> that accidentally worked (None skipped, Some: 2-1=1 ==
+  // tag 1) but it is wrong in general — any enum where the variant's tag index
+  // differs from its payload field count would dispatch to the wrong case,
+  // leaving heap buffers unfreed (memory leak) or freeing the wrong ones
+  // (use-after-free / double-free).
   std::vector<llvm::StructType *> variants;
   for (auto *st : M_->getIdentifiedStructTypes()) {
     llvm::StringRef sname = st->getName();
@@ -227,14 +246,20 @@ void ScopeManager::emitTaggedUnionDestructor(llvm::Value *ptr,
   auto *sw =
       B_.CreateSwitch(tag, exitBB, static_cast<unsigned>(variants.size()));
 
-  for (auto *varSt : variants) {
+  // varIdx is the declaration-order index of this variant, which is exactly
+  // the tag value stored at runtime by visitEnumVariant.
+  for (size_t varIdx = 0; varIdx < variants.size(); ++varIdx) {
+    llvm::StructType *varSt = variants[varIdx];
+
+    // Variants with no payload fields (only the i32 tag) have nothing to free;
+    // the switch default (-> exitBB) handles them without emitting IR.
     if (varSt->getNumElements() <= 1)
       continue;
 
     llvm::BasicBlock *caseBB = llvm::BasicBlock::Create(ctx_, "dtor.case", fn);
     auto *cv = llvm::ConstantInt::get(
         llvm::cast<llvm::IntegerType>(i32),
-        static_cast<uint64_t>(varSt->getNumElements() - 1));
+        static_cast<uint64_t>(varIdx)); // FIX: was numElements - 1
     sw->addCase(cv, caseBB);
 
     B_.SetInsertPoint(caseBB);
