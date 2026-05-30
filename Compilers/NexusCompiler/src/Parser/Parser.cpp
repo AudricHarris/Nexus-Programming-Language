@@ -502,8 +502,28 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
       ++retDims;
     }
 
+    std::vector<TypeDesc> generics;
+    // Handle Generics in return type
+    if (match(TokenKind::LT)) {
+      bool isGeneric = true;
+      while (isGeneric) {
+        if (peek().getKind() == TokenKind::IDENTIFIER) {
+          const Identifier iden = Identifier{peek()};
+          TypeDesc tmp = TypeDesc{iden, 0, false, false};
+          generics.push_back(tmp);
+          consume();
+        }
+
+        if (match(TokenKind::GT))
+          isGeneric = false;
+        else
+          expect(TokenKind::COMMA);
+      }
+    }
+
     auto body = parseBlock();
     TypeDesc retTd(Identifier{retTok}, retDims, false);
+    retTd.typeArgs = generics;
     return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
                                       std::move(body), std::move(retTd));
   }
