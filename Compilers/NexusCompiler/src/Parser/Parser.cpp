@@ -743,7 +743,6 @@ MatchArm Parser::parseMatchArm() {
     expect(TokenKind::DOT, "Expected '.' after enum name");
     Token varTok = expect(TokenKind::IDENTIFIER, "Expected variant name");
     arm.variantName = varTok.getWord();
-
     if (match(TokenKind::LPAREN)) {
       do {
         Token bindTok =
@@ -1151,28 +1150,66 @@ std::unique_ptr<Expression> Parser::parsePostfix() {
       Token prop = expect(TokenKind::IDENTIFIER, "Expected property name");
 
       if (prop.getWord() == "length") {
-        if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
-          return std::make_unique<LengthPropertyExpr>(id->name);
-        if (auto *arr = dynamic_cast<ArrayIndexExpr *>(expr.get()))
-          return std::make_unique<IndexedLengthExpr>(arr->array,
+        if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+          expr = std::make_unique<LengthPropertyExpr>(id->name);
+        } else if (auto *arr = dynamic_cast<ArrayIndexExpr *>(expr.get())) {
+          expr = std::make_unique<IndexedLengthExpr>(arr->array,
                                                      std::move(arr->indices));
-        throw ParseError(prop.getLine(), prop.getColumn(),
-                         "'.length' requires an array identifier");
+        } else {
+          throw ParseError(prop.getLine(), prop.getColumn(),
+                           "'.length' requires an array identifier");
+        }
+        continue; // Keep the loop going for any chaining after .length (if
+                  // supported)
       }
 
       expr = std::make_unique<FieldAccessExpr>(std::move(expr), prop.getWord());
       continue;
     }
 
+    if (match(TokenKind::LPAREN)) {
+      std::vector<ExprPtr> args;
+      if (!match(TokenKind::RPAREN)) {
+        do {
+          if (check(TokenKind::AND)) {
+            consume();
+            if (check(TokenKind::MUT)) {
+              consume();
+              Token nameTok = expect(TokenKind::IDENTIFIER,
+                                     "Expected variable name after '&mut'");
+              args.push_back(
+                  std::make_unique<BorrowMutArgExpr>(Identifier{nameTok}));
+            } else {
+              Token nameTok = expect(TokenKind::IDENTIFIER,
+                                     "Expected variable name after '&'");
+              args.push_back(
+                  std::make_unique<BorrowArgExpr>(Identifier{nameTok}));
+            }
+          } else {
+            args.push_back(parseExpression());
+          }
+        } while (match(TokenKind::COMMA));
+        expect(TokenKind::RPAREN, "Expected ')'");
+      }
+
+      expr = std::make_unique<CallExpr>(std::move(expr), std::move(args));
+      continue;
+    }
+
     if (match(TokenKind::INCREMENT)) {
-      if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
-        return std::make_unique<Increment>(id->name);
+      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+        expr = std::make_unique<Increment>(id->name);
+        continue;
+      }
       throw ParseError(peek().getLine(), peek().getColumn(),
                        "'++' requires an identifier");
     }
+
     if (match(TokenKind::DECREMENT)) {
-      if (auto *id = dynamic_cast<IdentExpr *>(expr.get()))
-        return std::make_unique<Decrement>(id->name);
+      if (auto *id = dynamic_cast<IdentExpr *>(expr.get())) {
+        expr = std::make_unique<Decrement>(id->name);
+        continue;
+      }
       throw ParseError(peek().getLine(), peek().getColumn(),
                        "'--' requires an identifier");
     }
@@ -1254,32 +1291,6 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
       }
     }
 
-    if (match(TokenKind::LPAREN)) {
-      std::vector<ExprPtr> args;
-      if (!match(TokenKind::RPAREN)) {
-        do {
-          if (check(TokenKind::AND)) {
-            consume();
-            if (check(TokenKind::MUT)) {
-              consume();
-              Token nameTok = expect(TokenKind::IDENTIFIER,
-                                     "Expected variable name after '&mut'");
-              args.push_back(
-                  std::make_unique<BorrowMutArgExpr>(Identifier{nameTok}));
-            } else {
-              Token nameTok = expect(TokenKind::IDENTIFIER,
-                                     "Expected variable name after '&'");
-              args.push_back(
-                  std::make_unique<BorrowArgExpr>(Identifier{nameTok}));
-            }
-          } else {
-            args.push_back(parseExpression());
-          }
-        } while (match(TokenKind::COMMA));
-        expect(TokenKind::RPAREN, "Expected ')'");
-      }
-      return std::make_unique<CallExpr>(id, std::move(args));
-    }
     return std::make_unique<IdentExpr>(id);
   }
   default:

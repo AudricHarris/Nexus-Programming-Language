@@ -415,17 +415,19 @@ struct CastExpr : Expression {
 };
 
 struct CallExpr : Expression {
-  Identifier callee;
+  std::unique_ptr<Expression> callee;
   std::vector<ExprPtr> arguments;
-  CallExpr(const Identifier &c, std::vector<ExprPtr> args)
-      : callee(c), arguments(std::move(args)) {}
+
+  CallExpr(std::unique_ptr<Expression> c, std::vector<ExprPtr> args)
+      : callee(std::move(c)), arguments(std::move(args)) {}
+
   llvm::Value *accept(ExprVisitor &v) const override {
     return v.visitCall(*this);
   }
   void toJson(std::ostream &os, int indent) const override {
     std::string p(indent, ' ');
     os << p << "{\"kind\":\"CallExpr\",\"callee\":"
-       << json_utils::escape(callee.token.getWord()) << ",\"args\":[";
+       << ",\"args\":[";
     for (size_t i = 0; i < arguments.size(); ++i) {
       if (i)
         os << ",";
@@ -1037,6 +1039,12 @@ struct EnumDecl {
     os << p << "{\"kind\":\"EnumDecl\",\"name\":" << json_utils::escape(name)
        << "}";
   }
+};
+
+struct EnumConstructorExpr : public Expression {
+  std::string enumName;
+  std::string variantName;
+  std::vector<std::unique_ptr<Expression>> arguments;
 };
 
 // ------------------- //
