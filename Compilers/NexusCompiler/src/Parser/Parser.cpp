@@ -490,7 +490,6 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
 
     expect(TokenKind::RPAREN, "Expected ')'");
   }
-  std::cout << Token(peek().getKind(), "", 0, 0).toString();
   if (match(TokenKind::RETURN_TYPE)) {
     Token retTok = expect(TokenKind::IDENTIFIER, "Expected return type");
 
