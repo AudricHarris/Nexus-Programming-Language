@@ -465,10 +465,28 @@ NexusType TypeChecker::inferUnary(const UnaryExpr &e) {
 // --------- //
 
 NexusType TypeChecker::inferCall(const CallExpr &e) {
-  const std::string &nm = e.callee.token.getWord();
+  std::string nm = "";
+  std::string enumPrefix = "";
+
+  if (auto *id = dynamic_cast<const IdentExpr *>(e.callee.get())) {
+    nm = id->name.token.getWord();
+  } else if (auto *fa = dynamic_cast<const FieldAccessExpr *>(e.callee.get())) {
+    std::string variantName = fa->field;
+
+    if (auto *baseId = dynamic_cast<const IdentExpr *>(fa->object.get())) {
+      std::string enumName = baseId->name.token.getWord();
+      nm = enumName + "$" + variantName;
+    } else {
+      nm = variantName;
+    }
+  } else {
+    error("Callee expression type not supported for type inference.");
+    return NexusType::make("error");
+  }
+
   auto it = funcs_.find(nm);
   if (it == funcs_.end()) {
-    error("Call to undeclared function '" + nm + "'");
+    error("Call to undeclared function or variant constructor '" + nm + "'");
     return NexusType::make("error");
   }
 

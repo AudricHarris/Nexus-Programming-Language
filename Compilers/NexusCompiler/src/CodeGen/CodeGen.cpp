@@ -1272,10 +1272,54 @@ static std::string mangleName(const std::string &name,
  * @return the LLVM Value* of the call result, or nullptr on error
  */
 Value *CodeGenerator::visitCall(const CallExpr &e) {
-  const std::string rawName = e.callee.token.getWord();
-  const std::string calleeName = normalizeFunctionName(rawName);
+  std::string rawName = "";
+  std::string enumPrefix = "";
 
-  // Dispatch built-in calls to their dedicated emitters.
+  if (auto *id = dynamic_cast<const IdentExpr *>(e.callee.get())) {
+    rawName = id->name.token.getWord();
+  } else if (auto *fa = dynamic_cast<const FieldAccessExpr *>(e.callee.get())) {
+    std::string variantName = fa->field;
+
+    if (auto *baseId = dynamic_cast<const IdentExpr *>(fa->object.get())) {
+      std::string enumName = baseId->name.token.getWord();
+
+      llvm::StructType *enumType =
+          llvm::StructType::getTypeByName(context, "struct." + enumName);
+      if (!enumType) {
+        enumType = llvm::StructType::getTypeByName(context, enumName);
+      }
+      llvm::AllocaInst *enumAlloca = createEntryAlloca(enumType, "enum.tmp");
+
+      int tagIndex = (variantName == "Some") ? 1 : 0;
+
+      llvm::Value *tagPtr =
+          builder.CreateStructGEP(enumType, enumAlloca, 0, "tag.ptr");
+      builder.CreateStore(builder.getInt32(tagIndex), tagPtr);
+
+      for (size_t i = 0; i < e.arguments.size(); ++i) {
+        llvm::Value *argVal = codegen(*e.arguments[i]);
+        if (!argVal)
+          return nullptr;
+
+        llvm::Value *payloadPtr =
+            builder.CreateStructGEP(enumType, enumAlloca, i + 1, "payload.ptr");
+        builder.CreateStore(argVal, payloadPtr);
+      }
+
+      return builder.CreateLoad(enumType, enumAlloca, "enum.val");
+    }
+
+    rawName = variantName;
+  } else {
+    return logError(
+        "Callee expression type not supported for code generation.");
+  }
+
+  std::string calleeName = normalizeFunctionName(rawName);
+  if (!enumPrefix.empty()) {
+    calleeName = enumPrefix + "$" + calleeName;
+  }
+
   if ((calleeName == "printf" || rawName == "Printf") &&
       e.arguments.size() == 1)
     return PrintEmitter::handlePrintf(e, builder, context, module.get(),
@@ -1287,7 +1331,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
   if (rawName == "Random")
     return BuiltinEmitter::handleRandom(builder, context, module.get());
 
-  // Look up the callee — first with the arity-mangled name, then bare.
   llvm::Function *callee = module->getFunction(
       calleeName + "$" + std::to_string(e.arguments.size()));
   if (!callee)
@@ -1327,6 +1370,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (sit == namedValues.end())
         return logError(
             ("Unknown variable: " + ba->name.token.getWord()).c_str());
+
       if (sit->second.isReference) {
         v = builder.CreateLoad(PointerType::get(context, 0),
                                sit->second.allocaInst,
@@ -1346,6 +1390,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (sit == namedValues.end())
         return logError(
             ("Unknown variable: " + bm->name.token.getWord()).c_str());
+
       if (sit->second.isReference) {
         v = builder.CreateLoad(PointerType::get(context, 0),
                                sit->second.allocaInst,
@@ -1393,20 +1438,15 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (!v)
         return nullptr;
 
-      // Adapt calling-convention mismatches for user-defined and extern fns.
       if (i < callee->arg_size()) {
         Type *expectedTy = callee->getFunctionType()->getParamType(i);
         Type *vTy = v->getType();
 
         if (TypeResolver::isString(vTy) && expectedTy->isPointerTy() &&
             callee->isDeclaration()) {
-          // Extern function expecting char* — str value: extract data pointer.
           v = builder.CreateExtractValue(v, {0}, "str.data");
         } else if (vTy->isPointerTy() && expectedTy->isPointerTy() &&
                    callee->isDeclaration()) {
-          // v is a pointer (alloca) — check what it points to.
-          // Find the pointee type via the namedValues table so we can unwrap
-          // str* and array* arguments that visitIdentifier returns as allocas.
           llvm::Type *pointeeTy = nullptr;
           if (auto *id =
                   dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
@@ -1414,25 +1454,18 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
             if (sit != namedValues.end())
               pointeeTy = sit->second.type;
           }
-          // Fallback: if v is an alloca (e.g. a string literal not in
-          // namedValues), read the allocated type directly.
           if (!pointeeTy) {
             if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v))
               pointeeTy = ai->getAllocatedType();
           }
 
           if (pointeeTy && TypeResolver::isString(pointeeTy)) {
-            // str variable passed to extern char* param — load the struct then
-            // extract the inner char* (field 0).
             Value *strVal = builder.CreateLoad(pointeeTy, v, "str.load");
             v = builder.CreateExtractValue(strVal, {0}, "str.data");
           } else if (pointeeTy && TypeResolver::isArray(pointeeTy)) {
-            // array variable passed to extern ptr param — load the struct then
-            // extract the inner data pointer (field 1).
             Value *arrVal = builder.CreateLoad(pointeeTy, v, "arr.load");
             v = builder.CreateExtractValue(arrVal, {1}, "arr.data");
           } else {
-            // Array-field GEP passed to extern expecting raw data pointer.
             if (auto *gep = llvm::dyn_cast<llvm::GetElementPtrInst>(v)) {
               llvm::Type *resultTy = gep->getResultElementType();
               llvm::Type *srcTy = gep->getSourceElementType();
@@ -1457,7 +1490,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       }
     }
 
-    // Extern function expecting a pointer: ensure we pass the alloca address.
     if (callee->isDeclaration() && i < callee->arg_size()) {
       Type *expectedTy = callee->getFunctionType()->getParamType(i);
       if (expectedTy->isPointerTy()) {
@@ -1480,7 +1512,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       }
     }
 
-    // Final coercion to the declared parameter type for non-vararg functions.
     if (!callee->isVarArg() && i < callee->arg_size()) {
       Type *expectedTy = callee->getFunctionType()->getParamType(i);
       v = TypeResolver::coerce(builder, v, expectedTy);
@@ -2557,8 +2588,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
 
   llvm::Type *i32 = Type::getInt32Ty(context);
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
-  llvm::BasicBlock *exitBB =
-      llvm::BasicBlock::Create(context, "match.exit");
+  llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "match.exit");
 
   // ------------------------------------------------------------------
   // Build one basic block per arm. Collect (tagValue, BB) pairs for the
@@ -2594,7 +2624,8 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
         return nullptr;
       }
       cases.push_back(std::make_pair(
-          llvm::cast<llvm::ConstantInt>(llvm::ConstantInt::get(i32, tagVal)), bb));
+          llvm::cast<llvm::ConstantInt>(llvm::ConstantInt::get(i32, tagVal)),
+          bb));
     }
   }
 
@@ -2608,8 +2639,8 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
       builder.CreateStructGEP(tagView, subjectPtr, 0, "match.tag.ptr");
   Value *tag = builder.CreateLoad(i32, tagPtr, "match.tag");
 
-  auto *sw = builder.CreateSwitch(tag, defaultBB,
-                                  static_cast<unsigned>(cases.size()));
+  auto *sw =
+      builder.CreateSwitch(tag, defaultBB, static_cast<unsigned>(cases.size()));
   for (auto &[val, bb] : cases)
     sw->addCase(val, bb);
 
@@ -2633,10 +2664,8 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
             break;
           llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
           Value *fieldPtr = builder.CreateStructGEP(
-              variantSt, subjectPtr, fieldIdx,
-              arm->bindings[fi] + ".fptr");
-          AllocaInst *alloca =
-              createEntryAlloca(fieldTy, arm->bindings[fi]);
+              variantSt, subjectPtr, fieldIdx, arm->bindings[fi] + ".fptr");
+          AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
           Value *loaded =
               builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
           builder.CreateStore(loaded, alloca);
