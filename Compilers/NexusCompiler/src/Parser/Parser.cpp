@@ -333,7 +333,6 @@ std::unique_ptr<EnumDecl> Parser::parseEnumDecl() {
                                     std::move(variants));
 }
 
-// Parses <T, U, ...> returns names
 std::vector<std::string> Parser::parseTypeParamList() {
   std::vector<std::string> params;
   do {
