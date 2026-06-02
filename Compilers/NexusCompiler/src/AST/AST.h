@@ -694,6 +694,23 @@ struct StructLitExpr : Expression {
   }
 };
 
+struct TypeIntrinsicExpr : Expression {
+  std::unique_ptr<Expression> value;
+  TypeDesc typeDesc;
+  TypeIntrinsicExpr(std::unique_ptr<Expression> v, TypeDesc td)
+      : value(std::move(v)), typeDesc(std::move(td)) {}
+  llvm::Value *accept(ExprVisitor &v) const override {
+    return v.visitTypeIntrinsic(*this);
+  }
+
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p
+       << "{\"kind\":\"intrinsictypeLitExpr\",\"type\":"
+          "]}";
+  }
+};
+
 // -------------- //
 // Statement base //
 // -------------- //

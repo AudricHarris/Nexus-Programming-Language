@@ -541,6 +541,23 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
   return fn;
 }
 
+std::unique_ptr<Statement> Parser::parseTypeIntrinsicStmt() {
+  consume();
+  expect(TokenKind::LPAREN, "Expected '(' after 'Type'");
+
+  auto valueExpr = parseExpression();
+
+  expect(TokenKind::COMMA, "Expected ',' in Type(...)");
+
+  TypeDesc td = parseTypeDesc();
+
+  expect(TokenKind::RPAREN, "Expected ')' after type in Type(...)");
+  expect(TokenKind::SEMI, "Expected ';'");
+
+  return std::make_unique<ExprStmt>(
+      std::make_unique<TypeIntrinsicExpr>(std::move(valueExpr), std::move(td)));
+}
+
 // ------- //
 // Block   //
 // ------- //
@@ -596,49 +613,48 @@ std::unique_ptr<Statement> Parser::parseStatement() {
   if (peek().getKind() == TokenKind::IDENTIFIER && peek().getWord() == "let")
     return parseVarDeclStatement(AssignKind::Copy);
 
-  if (looksLikeType(peekAt(0))) {
-    size_t offset = 1;
+  if (peek().getKind() == TokenKind::IDENTIFIER && peek().getWord() == "Type") {
+    return parseTypeIntrinsicStmt();
 
-    // Skip over generic type args: Array<Test>, Map<str, i32>, etc.
-    // We look for the matching '>' using a depth counter, accepting only
-    // IDENTIFIER, ',', '<', '>' and '[]' tokens inside the angle brackets.
-    if (peekAt(offset).getKind() == TokenKind::LT) {
-      size_t depth = 1;
-      size_t j = offset + 1;
-      while (depth > 0 && peekAt(j).getKind() != TokenKind::END_OF_FILE) {
-        TokenKind k = peekAt(j).getKind();
-        if (k == TokenKind::LT)
-          ++depth;
-        else if (k == TokenKind::GT)
-          --depth;
-        else if (k != TokenKind::IDENTIFIER && k != TokenKind::COMMA &&
-                 k != TokenKind::LBRACKET && k != TokenKind::RBRACKET)
-          break; // not a valid type arg list, stop scanning
-        ++j;
+    if (looksLikeType(peekAt(0))) {
+      size_t offset = 1;
+
+      if (peekAt(offset).getKind() == TokenKind::LT) {
+        size_t depth = 1;
+        size_t j = offset + 1;
+        while (depth > 0 && peekAt(j).getKind() != TokenKind::END_OF_FILE) {
+          TokenKind k = peekAt(j).getKind();
+          if (k == TokenKind::LT)
+            ++depth;
+          else if (k == TokenKind::GT)
+            --depth;
+          else if (k != TokenKind::IDENTIFIER && k != TokenKind::COMMA &&
+                   k != TokenKind::LBRACKET && k != TokenKind::RBRACKET)
+            break;
+          ++j;
+        }
+        if (depth == 0)
+          offset = j;
       }
-      if (depth == 0)
-        offset = j; // successfully skipped past '>'
-    }
 
-    // Skip over array dimension brackets: Type[][]
-    while (peekAt(offset).getKind() == TokenKind::LBRACKET &&
-           peekAt(offset + 1).getKind() == TokenKind::RBRACKET) {
-      offset += 2;
-    }
+      while (peekAt(offset).getKind() == TokenKind::LBRACKET &&
+             peekAt(offset + 1).getKind() == TokenKind::RBRACKET) {
+        offset += 2;
+      }
 
-    if (peekAt(offset).getKind() == TokenKind::IDENTIFIER) {
-      TokenKind op = peekAt(offset + 1).getKind();
-      if (op == TokenKind::ASSIGN)
-        return parseVarDeclStatement(AssignKind::Copy);
-      if (op == TokenKind::MOVE)
-        return parseVarDeclStatement(AssignKind::Move);
-      if (op == TokenKind::BORROW)
-        return parseVarDeclStatement(AssignKind::Borrow);
-      if (op == TokenKind::SEMI)
-        return parseVarDeclNoInit();
+      if (peekAt(offset).getKind() == TokenKind::IDENTIFIER) {
+        TokenKind op = peekAt(offset + 1).getKind();
+        if (op == TokenKind::ASSIGN)
+          return parseVarDeclStatement(AssignKind::Copy);
+        if (op == TokenKind::MOVE)
+          return parseVarDeclStatement(AssignKind::Move);
+        if (op == TokenKind::BORROW)
+          return parseVarDeclStatement(AssignKind::Borrow);
+        if (op == TokenKind::SEMI)
+          return parseVarDeclNoInit();
+      }
     }
   }
-
   auto expr = parseExpression();
   expect(TokenKind::SEMI, "Expected ';'");
   return std::make_unique<ExprStmt>(std::move(expr));

@@ -56,6 +56,7 @@ public:
   std::unique_ptr<Expression> parsePrimary();
   std::unique_ptr<Expression> parseNewArray();
   std::unique_ptr<Statement> parseArrayAssign();
+  std::unique_ptr<Statement> parseTypeIntrinsicStmt();
   std::unique_ptr<Expression> parseAssignment();
   std::unique_ptr<Expression> parseOr();
   std::unique_ptr<Expression> parseAnd();
