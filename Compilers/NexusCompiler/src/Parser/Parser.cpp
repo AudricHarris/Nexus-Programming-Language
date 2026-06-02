@@ -304,13 +304,11 @@ std::unique_ptr<EnumDecl> Parser::parseEnumDecl() {
 
   std::vector<EnumVariant> variants;
   while (!check(TokenKind::RBRACE) && !isAtEnd()) {
-    // Variant names may coincide with keywords in some lexers, so we consume
-    // whatever token is present and validate that it has a non-empty word.
     if (!check(TokenKind::IDENTIFIER) && peek().getWord().empty()) {
       throw ParseError(peek().getLine(), peek().getColumn(),
                        "Expected variant name");
     }
-    Token varTok = consume(); // accept identifier or keyword-spelled name
+    Token varTok = consume();
 
     std::vector<EnumVariantField> fields;
     if (match(TokenKind::LPAREN)) {
@@ -322,8 +320,16 @@ std::unique_ptr<EnumDecl> Parser::parseEnumDecl() {
       expect(TokenKind::RPAREN, "Expected ')'");
     }
 
-    variants.emplace_back(varTok.getWord(), std::move(fields));
-
+    std::optional<long long> explicitValue;
+    if (match(TokenKind::ASSIGN)) {
+      bool neg = match(TokenKind::SUB);
+      Token valTok = expect(TokenKind::LIT_INT,
+                            "Expected integer after '=' in enum variant");
+      long long v = std::stoll(valTok.getWord());
+      explicitValue = neg ? -v : v;
+    }
+    variants.emplace_back(varTok.getWord(), std::move(fields),
+                          std::move(explicitValue));
     match(TokenKind::COMMA);
   }
 

@@ -1017,9 +1017,11 @@ struct EnumVariantField {
 struct EnumVariant {
   std::string name;
   std::vector<EnumVariantField> fields; // empty = unit variant
+  std::optional<long long> explicitVal;
 
-  EnumVariant(std::string n, std::vector<EnumVariantField> f = {})
-      : name(std::move(n)), fields(std::move(f)) {}
+  EnumVariant(std::string n, std::vector<EnumVariantField> f = {},
+              std::optional<long long> x = std::nullopt)
+      : name(std::move(n)), fields(std::move(f)), explicitVal(x) {}
 };
 
 struct EnumDecl {
