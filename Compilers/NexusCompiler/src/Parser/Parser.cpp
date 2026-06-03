@@ -76,7 +76,9 @@ void Parser::synchronize() {
     }
     switch (peek().getKind()) {
     case TokenKind::RETURN:
+      return;
     case TokenKind::LBRACE:
+      consume();
       return;
     default:
       consume();
@@ -229,7 +231,7 @@ ExternBlock Parser::parseExternBlock() {
         paramTypes.emplace_back(Identifier{typeTok}, dims, false, isRef);
       } while (match(TokenKind::COMMA));
     }
-    expect(TokenKind::RPAREN, "E pected ')'");
+    expect(TokenKind::RPAREN, "Expected ')'");
 
     Token voidTok{TokenKind::IDENTIFIER, "void", nameTok.getLine(), 0};
     TypeDesc retType{Identifier{voidTok}};
@@ -528,8 +530,11 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
     auto body = parseBlock();
     TypeDesc retTd(Identifier{retTok}, retDims, false);
     retTd.typeArgs = generics;
-    return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
-                                      std::move(body), std::move(retTd));
+    auto fn =
+        std::make_unique<Function>(Identifier{nameToken}, std::move(params),
+                                   std::move(body), std::move(retTd));
+    fn->typeParams = std::move(typeParams);
+    return fn;
   }
 
   Token voidTok{TokenKind::IDENTIFIER, "void", nameToken.getLine(), 0};
@@ -615,44 +620,44 @@ std::unique_ptr<Statement> Parser::parseStatement() {
 
   if (peek().getKind() == TokenKind::IDENTIFIER && peek().getWord() == "Type") {
     return parseTypeIntrinsicStmt();
+  }
 
-    if (looksLikeType(peekAt(0))) {
-      size_t offset = 1;
+  if (looksLikeType(peekAt(0))) {
+    size_t offset = 1;
 
-      if (peekAt(offset).getKind() == TokenKind::LT) {
-        size_t depth = 1;
-        size_t j = offset + 1;
-        while (depth > 0 && peekAt(j).getKind() != TokenKind::END_OF_FILE) {
-          TokenKind k = peekAt(j).getKind();
-          if (k == TokenKind::LT)
-            ++depth;
-          else if (k == TokenKind::GT)
-            --depth;
-          else if (k != TokenKind::IDENTIFIER && k != TokenKind::COMMA &&
-                   k != TokenKind::LBRACKET && k != TokenKind::RBRACKET)
-            break;
-          ++j;
-        }
-        if (depth == 0)
-          offset = j;
+    if (peekAt(offset).getKind() == TokenKind::LT) {
+      size_t depth = 1;
+      size_t j = offset + 1;
+      while (depth > 0 && peekAt(j).getKind() != TokenKind::END_OF_FILE) {
+        TokenKind k = peekAt(j).getKind();
+        if (k == TokenKind::LT)
+          ++depth;
+        else if (k == TokenKind::GT)
+          --depth;
+        else if (k != TokenKind::IDENTIFIER && k != TokenKind::COMMA &&
+                 k != TokenKind::LBRACKET && k != TokenKind::RBRACKET)
+          break;
+        ++j;
       }
+      if (depth == 0)
+        offset = j;
+    }
 
-      while (peekAt(offset).getKind() == TokenKind::LBRACKET &&
-             peekAt(offset + 1).getKind() == TokenKind::RBRACKET) {
-        offset += 2;
-      }
+    while (peekAt(offset).getKind() == TokenKind::LBRACKET &&
+           peekAt(offset + 1).getKind() == TokenKind::RBRACKET) {
+      offset += 2;
+    }
 
-      if (peekAt(offset).getKind() == TokenKind::IDENTIFIER) {
-        TokenKind op = peekAt(offset + 1).getKind();
-        if (op == TokenKind::ASSIGN)
-          return parseVarDeclStatement(AssignKind::Copy);
-        if (op == TokenKind::MOVE)
-          return parseVarDeclStatement(AssignKind::Move);
-        if (op == TokenKind::BORROW)
-          return parseVarDeclStatement(AssignKind::Borrow);
-        if (op == TokenKind::SEMI)
-          return parseVarDeclNoInit();
-      }
+    if (peekAt(offset).getKind() == TokenKind::IDENTIFIER) {
+      TokenKind op = peekAt(offset + 1).getKind();
+      if (op == TokenKind::ASSIGN)
+        return parseVarDeclStatement(AssignKind::Copy);
+      if (op == TokenKind::MOVE)
+        return parseVarDeclStatement(AssignKind::Move);
+      if (op == TokenKind::BORROW)
+        return parseVarDeclStatement(AssignKind::Borrow);
+      if (op == TokenKind::SEMI)
+        return parseVarDeclNoInit();
     }
   }
   auto expr = parseExpression();
@@ -1309,6 +1314,8 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         } while (this->match(TokenKind::COMMA));
         this->expect(TokenKind::RPAREN, "Expected ')'");
       }
+      return std::make_unique<GenericCallExpr>(id, std::move(typeArgs),
+                                               std::move(args));
     }
 
     return std::make_unique<IdentExpr>(id);

@@ -2229,14 +2229,8 @@ Value *CodeGenerator::visitStructLit(const StructLitExpr &e) {
     if (TypeResolver::isString(fieldTy)) {
       if (auto *ai = dyn_cast<AllocaInst>(val)) {
         // Clone the string so the struct owns its own heap buffer.
-        // A destructive move is unsound here: the source alloca may belong to
-        // a named variable (e.g. a function parameter) whose destructor will
-        // still run in the caller, causing a use-after-free on the shared
-        // heap pointer.  Cloning gives the struct independent ownership.
         Value *cloned = StringOps::clone(builder, context, module.get(), ai);
         val = builder.CreateLoad(fieldTy, cloned, "field.load");
-        // Null the clone's own data pointer so its stack slot isn't
-        // double-freed.
         Value *dataGep = builder.CreateStructGEP(
             TypeResolver::getStringType(context), cloned, 0, "src.data.ptr");
         builder.CreateStore(
@@ -2246,10 +2240,6 @@ Value *CodeGenerator::visitStructLit(const StructLitExpr &e) {
     } else if (TypeResolver::isArray(fieldTy)) {
       if (auto *ai = dyn_cast<AllocaInst>(val)) {
         val = builder.CreateLoad(fieldTy, ai, "field.load");
-        // Null the source's data pointer so the original variable no longer
-        // owns the heap buffer — ownership is transferred into this struct
-        // field.  Without this, both the source variable and the struct field
-        // share the same pointer and it gets freed twice at scope exit.
         auto *arrSt = llvm::dyn_cast<llvm::StructType>(fieldTy);
         if (arrSt) {
           Value *srcDataGep =
@@ -2316,12 +2306,24 @@ Value *CodeGenerator::visitChainedCmp(const ChainedCmpExpr &e) {
   return result;
 }
 
+/**
+ * Generates IR for the Type() intrinsic, which prints the type name of its
+ * first argument to stdout at runtime.
+ *
+ * FIX (Bug 1): The original loop used typeArgs.empty() as the upper bound,
+ * which always evaluates to 0 or 1 (bool), causing the type-argument list
+ * to never be fully appended. Changed to typeArgs.size().
+ *
+ * @param e the type-intrinsic expression AST node
+ * @return always nullptr (side-effect only)
+ */
 Value *CodeGenerator::visitTypeIntrinsic(const TypeIntrinsicExpr &e) {
   const std::string typeName = e.typeDesc.base.token.getWord();
   std::string msg = typeName;
   if (!e.typeDesc.typeArgs.empty()) {
     msg += "<";
-    for (size_t i = 0; i < e.typeDesc.typeArgs.empty(); ++i) {
+    // BUG FIX: was typeArgs.empty() (always 0 or 1), must be typeArgs.size()
+    for (size_t i = 0; i < e.typeDesc.typeArgs.size(); ++i) {
       if (i)
         msg += ", ";
       msg += e.typeDesc.typeArgs[i].base.token.getWord();
@@ -2374,21 +2376,15 @@ Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
     }
   }
   if (TypeResolver::isString(fieldTy)) {
-    // Normalise val to a pointer-to-string so StringOps::clone can work with
-    // it, regardless of whether the RHS was an alloca or a loaded value.
     llvm::Value *srcPtr = nullptr;
     if (val->getType()->isPointerTy()) {
       srcPtr = val;
     } else {
-      // RHS is already a loaded %string value — spill it to a temp alloca.
       AllocaInst *tmp = createEntryAlloca(fieldTy, e.field + ".assign.tmp");
       builder.CreateStore(val, tmp);
       srcPtr = tmp;
     }
 
-    // Free the field's current heap buffer before overwriting it, preventing
-    // a leak when the same field is assigned more than once (e.g. UpdateAnimal
-    // sets pet.name = nName; without this the original "Bob" buffer leaks).
     llvm::StructType *strTy = TypeResolver::getStringType(context);
     Value *oldDataGep =
         builder.CreateStructGEP(strTy, gep, 0, e.field + ".old.data");
@@ -2408,15 +2404,10 @@ Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
     builder.CreateBr(skipBB);
     builder.SetInsertPoint(skipBB);
 
-    // Clone the incoming string so the struct field owns its own heap buffer.
-    // A raw store would alias the caller's pointer, causing a double-free when
-    // both the caller's variable and the struct field are destructed.
     Value *cloned = StringOps::clone(builder, context, module.get(), srcPtr);
     Value *freshVal = builder.CreateLoad(fieldTy, cloned, e.field + ".fresh");
     builder.CreateStore(freshVal, gep);
 
-    // Null the clone's own stack slot so its (stack-only) destructor does not
-    // double-free the buffer we just handed to the struct.
     if (auto *cloneAI = llvm::dyn_cast<llvm::AllocaInst>(cloned)) {
       Value *cloneDataGep =
           builder.CreateStructGEP(strTy, cloneAI, 0, e.field + ".clone.null");
@@ -2581,11 +2572,6 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
         src = tmp;
       }
 
-      // Determine whether `src` is a temporary (freshly produced by a call,
-      // not a named user variable).  If it is, we *move* ownership — store
-      // the struct value directly and null the source's data pointer — so no
-      // second heap allocation is made.  If it is a named variable the user
-      // can still read, we must clone to preserve the original.
       auto *srcAI = dyn_cast<AllocaInst>(src);
       bool isTmp = srcAI && [&]() {
         for (auto &kv : namedValues)
@@ -2595,16 +2581,13 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
       }();
 
       if (isTmp) {
-        // Move: transfer the heap buffer directly, no new allocation.
         Value *freshVal = builder.CreateLoad(ty, src, name + ".fresh");
         builder.CreateStore(freshVal, alloca);
-        // Null the source so its scope-exit destructor doesn't double-free.
         llvm::StructType *st = TypeResolver::getStringType(context);
         Value *dataPtr = builder.CreateStructGEP(st, srcAI, 0, "tmp.data");
         builder.CreateStore(
             ConstantPointerNull::get(PointerType::get(context, 0)), dataPtr);
       } else {
-        // Clone: source is a named variable that must remain intact.
         Value *fresh = StringOps::clone(builder, context, module.get(), src);
         Value *freshVal = builder.CreateLoad(ty, fresh, name + ".fresh");
         builder.CreateStore(freshVal, alloca);
@@ -2816,11 +2799,20 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 
 /**
  * Generates IR for a Match statement.
- * Structure: entry → cond → body → exit.
  *
- * The Match allocates a temporary variable for each parameter provided in the
- * enum. It will only allocate if it enters that field if not it will just
- * continue like the normal program you can write normal logic.
+ * Reads the tag field of the subject enum, then dispatches to the
+ * appropriate arm via an LLVM switch instruction. For arms with payload
+ * bindings, the variant struct is looked up using the mangled name
+ * (enumName$typeArg_VariantName) so generic enums like Option<Animal>
+ * resolve correctly.
+ *
+ * FIX (Bug 2): The variant struct lookup now tries both the plain name
+ * (EnumName_Variant) and the mangled generic name (EnumName$T_Variant)
+ * so that bindings inside match arms work for instantiated generic enums.
+ *
+ * FIX (Bug 4): The tag value search now checks ed->name == arm.enumName
+ * before accepting a variant match, preventing wrong tag assignment when
+ * multiple enums share a variant name.
  *
  * @param s the Match statement AST node
  * @return always nullptr
@@ -2848,20 +2840,35 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
       defaultBB = bb;
     } else {
       int tagVal = -1;
-      for (const auto &ed : currentProgram->enums) {
-        for (size_t vi = 0; vi < ed->variants.size(); ++vi) {
-          if (ed->variants[vi].name == arm.variantName) {
-            std::string key = ed->name + "::" + arm.variantName;
-            auto tvIt = enumTagValues.find(key);
-            tagVal = (tvIt != enumTagValues.end())
-                         ? static_cast<int>(tvIt->second)
-                         : static_cast<int>(vi);
-            break;
-          }
-        }
-        if (tagVal >= 0)
-          break;
+
+      // First try the enumTagValues cache keyed by "EnumName::VariantName".
+      {
+        std::string key = arm.enumName + "::" + arm.variantName;
+        auto tvIt = enumTagValues.find(key);
+        if (tvIt != enumTagValues.end())
+          tagVal = static_cast<int>(tvIt->second);
       }
+
+      // FIX (Bug 4): If not cached, search by matching both the enum name
+      // and the variant name — do NOT accept a match on variant name alone,
+      // as that picks the wrong tag when two enums share a variant name.
+      if (tagVal < 0) {
+        for (const auto &ed : currentProgram->enums) {
+          // BUG FIX: was missing this enum-name guard; now requires the enum
+          // name to match arm.enumName before accepting the variant.
+          if (ed->name != arm.enumName)
+            continue;
+          for (size_t vi = 0; vi < ed->variants.size(); ++vi) {
+            if (ed->variants[vi].name == arm.variantName) {
+              tagVal = static_cast<int>(vi);
+              break;
+            }
+          }
+          if (tagVal >= 0)
+            break;
+        }
+      }
+
       if (tagVal < 0) {
         logError(("match: unknown variant '" + arm.variantName + "'").c_str());
         return nullptr;
@@ -2888,9 +2895,31 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     builder.SetInsertPoint(bb);
 
     if (!arm->isWildcard && !arm->bindings.empty()) {
-      std::string structName = arm->enumName + "_" + arm->variantName;
+      // FIX (Bug 2): For generic enums (e.g. Option<Animal>), the per-variant
+      // struct is named "Option$Animal_Some", not "Option_Some". Try the plain
+      // name first, then scan all identified struct types for one whose name
+      // starts with the enum name (with either '_' or '$' separator) and ends
+      // with '_VariantName', to handle both concrete and instantiated enums.
+      std::string plainName = arm->enumName + "_" + arm->variantName;
       llvm::StructType *variantSt =
-          llvm::StructType::getTypeByName(context, structName);
+          llvm::StructType::getTypeByName(context, plainName);
+
+      if (!variantSt) {
+        // Search for a mangled variant struct: EnumName$TypeArg_VariantName
+        std::string suffix = "_" + arm->variantName;
+        for (auto *st : module->getIdentifiedStructTypes()) {
+          std::string stName = st->getName().str();
+          // Must start with the enum name and end with _VariantName.
+          if (stName.rfind(arm->enumName, 0) == 0 &&
+              stName.size() > suffix.size() &&
+              stName.compare(stName.size() - suffix.size(), suffix.size(),
+                             suffix) == 0) {
+            variantSt = st;
+            break;
+          }
+        }
+      }
+
       if (variantSt) {
         for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
           // Field 0 is the tag; payload starts at index 1.
@@ -3095,8 +3124,6 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   if (retVal) {
     llvm::Function *fn = builder.GetInsertBlock()->getParent();
     Type *retTy = fn->getReturnType();
-    // If retVal is still a pointer (non-struct path, or string/array alloca),
-    // load it now.  The struct path above already performed the load.
     if (retVal->getType()->isPointerTy() &&
         (TypeResolver::isString(retTy) || TypeResolver::isArray(retTy) ||
          retTy->isStructTy()))
