@@ -1334,11 +1334,83 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
     if (auto *baseId = dynamic_cast<const IdentExpr *>(fa->object.get())) {
       std::string enumName = baseId->name.token.getWord();
 
+      // Try the plain name first (non-generic enums).
       llvm::StructType *enumType =
           llvm::StructType::getTypeByName(context, "struct." + enumName);
-      if (!enumType) {
+      if (!enumType)
         enumType = llvm::StructType::getTypeByName(context, enumName);
+
+      // For generic enums (e.g. Option<Animal>), the union struct is
+      // registered under a mangled name like "Option$Animal" — not "Option".
+      // Infer the concrete type args from the call arguments by inspecting the
+      // namedValues table (no IR is emitted here), then call
+      // instantiateGenericEnum which is idempotent and returns the existing
+      // struct if it was already created by the forward-declaration pass.
+      if (!enumType && currentProgram) {
+        const EnumDecl *tmpl = nullptr;
+        for (const auto &ed : currentProgram->enums) {
+          if (ed->name == enumName && !ed->typeParams.empty()) {
+            tmpl = ed.get();
+            break;
+          }
+        }
+
+        if (tmpl) {
+          // Map each type parameter to its concrete LLVM type by looking at
+          // the type of the corresponding call argument in namedValues.
+          std::unordered_map<std::string, llvm::Type *> typeSubst;
+          for (const auto &v : tmpl->variants) {
+            if (v.name != variantName)
+              continue;
+            for (size_t i = 0; i < v.fields.size() && i < e.arguments.size();
+                 ++i) {
+              const std::string &fieldTypeName = v.fields[i].typeName;
+              for (const auto &tp : tmpl->typeParams) {
+                if (tp != fieldTypeName)
+                  continue;
+                if (auto *id =
+                        dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
+                  auto it = namedValues.find(id->name.token.getWord());
+                  if (it != namedValues.end())
+                    typeSubst[tp] = it->second.type;
+                }
+                break;
+              }
+            }
+            break;
+          }
+
+          // Build ordered concrete arg lists matching tmpl->typeParams.
+          std::vector<llvm::Type *> concreteArgs;
+          std::vector<std::string> argNames;
+          bool allResolved = true;
+          for (const auto &tp : tmpl->typeParams) {
+            auto it = typeSubst.find(tp);
+            if (it == typeSubst.end()) {
+              allResolved = false;
+              break;
+            }
+            llvm::Type *t = it->second;
+            concreteArgs.push_back(t);
+            std::string tname;
+            if (auto *st = llvm::dyn_cast<llvm::StructType>(t))
+              tname = st->getName().str();
+            else {
+              llvm::raw_string_ostream rso(tname);
+              t->print(rso);
+            }
+            argNames.push_back(tname);
+          }
+
+          if (allResolved && !concreteArgs.empty())
+            enumType = instantiateGenericEnum(enumName, concreteArgs, argNames);
+        }
       }
+
+      if (!enumType)
+        return logError(
+            ("Unknown enum type for variant constructor: " + enumName).c_str());
+
       llvm::AllocaInst *enumAlloca = createEntryAlloca(enumType, "enum.tmp");
       builder.CreateStore(llvm::Constant::getNullValue(enumType), enumAlloca);
 
@@ -1371,8 +1443,24 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         if (!argVal)
           return nullptr;
 
-        llvm::Value *payloadPtr =
-            builder.CreateStructGEP(enumType, enumAlloca, i + 1, "payload.ptr");
+        // Field 0 is the tag; payload fields start at index 1.
+        unsigned fieldIdx = static_cast<unsigned>(i) + 1;
+        if (fieldIdx >= enumType->getNumElements())
+          return logError("Too many arguments for enum variant constructor");
+
+        llvm::Type *fieldTy = enumType->getElementType(fieldIdx);
+        llvm::Value *payloadPtr = builder.CreateStructGEP(
+            enumType, enumAlloca, fieldIdx, "payload.ptr");
+
+        // Aggregate arguments (structs, strings, arrays) are returned as
+        // AllocaInst* pointers by codegen — load the value before storing
+        // it into the enum's payload slot.
+        if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(argVal)) {
+          llvm::Type *allocTy = ai->getAllocatedType();
+          if (allocTy == fieldTy) {
+            argVal = builder.CreateLoad(allocTy, ai, "payload.val");
+          }
+        }
         builder.CreateStore(argVal, payloadPtr);
       }
 
@@ -1994,6 +2082,61 @@ unsigned CodeGenerator::findFieldIndex(const std::vector<StructDecl *> &defs,
  * @return the LLVM Value* of the field, or nullptr on error
  */
 Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
+  // Check for enum variant access (e.g. Option.None, Code.A) BEFORE trying
+  // resolveStructPtr, because the enum name is not a variable and will cause
+  // resolveStructPtr to return null, masking the real intent.
+  if (auto *baseId = dynamic_cast<const IdentExpr *>(e.object.get())) {
+    const std::string &enumName = baseId->name.token.getWord();
+    const std::string &varName = e.field;
+
+    if (currentProgram) {
+      for (const auto &ed : currentProgram->enums) {
+        if (ed->name != enumName)
+          continue;
+        for (size_t vi = 0; vi < ed->variants.size(); ++vi) {
+          if (ed->variants[vi].name != varName)
+            continue;
+
+          long long tagVal = vi;
+          std::string key = enumName + "::" + varName;
+          auto tvIt = enumTagValues.find(key);
+          if (tvIt != enumTagValues.end())
+            tagVal = tvIt->second;
+
+          std::string sname = enumName + "_" + varName;
+          llvm::StructType *varSt =
+              llvm::StructType::getTypeByName(context, sname);
+
+          if (!varSt) {
+            std::string prefix = enumName + "$";
+            for (auto &st : module->getIdentifiedStructTypes()) {
+              std::string stName = st->getName().str();
+              if (stName.rfind(prefix, 0) == 0 &&
+                  stName.find("_" + varName) != std::string::npos) {
+                varSt = st;
+                break;
+              }
+            }
+          }
+
+          if (!varSt) {
+            varSt = llvm::StructType::create(
+                context, {llvm::Type::getInt32Ty(context)}, sname);
+          }
+
+          AllocaInst *alloca = createEntryAlloca(varSt, sname + ".val");
+          builder.CreateStore(llvm::Constant::getNullValue(varSt), alloca);
+          Value *tagPtr =
+              builder.CreateStructGEP(varSt, alloca, 0, sname + ".tag");
+          builder.CreateStore(
+              llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), tagVal),
+              tagPtr);
+          return alloca;
+        }
+      }
+    }
+  }
+
   auto [structPtr, st] = resolveStructPtr(*e.object);
   if (!structPtr || !st)
     return logError("Field access requires a struct expression");
@@ -3173,6 +3316,30 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
   if (!retTy)
     retTy = llvm::StructType::getTypeByName(
         context, func.returnType.base.token.getWord());
+
+  // Generic return types (e.g. Option<Animal>) must be instantiated if not
+  // already present. The forward-declaration pass runs first so the mangled
+  // struct should already exist; this is a safety fallback for both passes.
+  if (!retTy && !func.returnType.typeArgs.empty()) {
+    const std::string &retBase = func.returnType.base.token.getWord();
+    std::vector<llvm::Type *> concreteArgs;
+    std::vector<std::string> argNames;
+    for (const auto &arg : func.returnType.typeArgs) {
+      llvm::Type *t = TypeResolver::fromTypeDesc(context, arg);
+      if (!t)
+        t = llvm::StructType::getTypeByName(context, arg.base.token.getWord());
+      if (t) {
+        concreteArgs.push_back(t);
+        argNames.push_back(arg.base.token.getWord());
+      }
+    }
+    if (!concreteArgs.empty()) {
+      retTy = instantiateGenericEnum(retBase, concreteArgs, argNames);
+      if (!retTy)
+        retTy = instantiateGenericStruct(func.returnType);
+    }
+  }
+
   if (!retTy && fname == "main")
     retTy = Type::getInt32Ty(context);
   if (!retTy)
@@ -3550,6 +3717,33 @@ bool CodeGenerator::generate(const Program &program,
     if (!retTy)
       retTy = llvm::StructType::getTypeByName(
           context, fn->returnType.base.token.getWord());
+
+    // For generic return types like Option<Animal>, TypeResolver and a plain
+    // name lookup both fail because the instantiated struct hasn't been
+    // registered yet under "Option". Instantiate it now so the forward
+    // declaration gets the correct concrete return type instead of void.
+    if (!retTy && !fn->returnType.typeArgs.empty()) {
+      const std::string &retBase = fn->returnType.base.token.getWord();
+      std::vector<llvm::Type *> concreteArgs;
+      std::vector<std::string> argNames;
+      for (const auto &arg : fn->returnType.typeArgs) {
+        llvm::Type *t = TypeResolver::fromTypeDesc(context, arg);
+        if (!t)
+          t = llvm::StructType::getTypeByName(context,
+                                              arg.base.token.getWord());
+        if (t) {
+          concreteArgs.push_back(t);
+          argNames.push_back(arg.base.token.getWord());
+        }
+      }
+      if (!concreteArgs.empty()) {
+        // Try as a generic enum first, then as a generic struct.
+        retTy = instantiateGenericEnum(retBase, concreteArgs, argNames);
+        if (!retTy)
+          retTy = instantiateGenericStruct(fn->returnType);
+      }
+    }
+
     if (!retTy && fname == "main")
       retTy = Type::getInt32Ty(context);
     if (!retTy)
