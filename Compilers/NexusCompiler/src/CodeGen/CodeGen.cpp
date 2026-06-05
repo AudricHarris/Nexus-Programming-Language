@@ -1411,7 +1411,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         return logError(
             ("Unknown enum type for variant constructor: " + enumName).c_str());
 
-      llvm::AllocaInst *enumAlloca = createEntryAlloca(enumType, "enum.tmp");
+      llvm::AllocaInst *enumAlloca = createEntryAlloca(enumType, "");
       builder.CreateStore(llvm::Constant::getNullValue(enumType), enumAlloca);
 
       int tagIndex = 0;
@@ -1586,7 +1586,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         if (!v)
           return nullptr;
         if (!v->getType()->isPointerTy()) {
-          AllocaInst *tmp = createEntryAlloca(v->getType(), "ref.arg.tmp");
+          AllocaInst *tmp = createEntryAlloca(v->getType(), "");
           builder.CreateStore(v, tmp);
           v = tmp;
         }
@@ -1641,7 +1641,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
           v = builder.CreateLoad(expectedTy, v, "deref.arg");
         } else if (vTy->isStructTy() && expectedTy->isPointerTy() &&
                    !callee->isDeclaration()) {
-          AllocaInst *tmp = createEntryAlloca(vTy, "struct.arg.tmp");
+          AllocaInst *tmp = createEntryAlloca(vTy, "");
           builder.CreateStore(v, tmp);
           v = tmp;
         }
@@ -1663,7 +1663,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
                     : sit->second.allocaInst;
           }
         } else if (!v->getType()->isPointerTy()) {
-          AllocaInst *tmp = createEntryAlloca(v->getType(), "ref.tmp");
+          AllocaInst *tmp = createEntryAlloca(v->getType(), "");
           builder.CreateStore(v, tmp);
           v = tmp;
         }
@@ -1747,7 +1747,7 @@ Value *CodeGenerator::visitGenericCall(const GenericCallExpr &e) {
                                  TypeResolver::isArray(expectedTy)))
         v = builder.CreateLoad(expectedTy, v, "deref.arg");
       else if (vTy->isStructTy() && expectedTy->isPointerTy()) {
-        AllocaInst *tmp = createEntryAlloca(vTy, "struct.arg.tmp");
+        AllocaInst *tmp = createEntryAlloca(vTy, "");
         builder.CreateStore(v, tmp);
         v = tmp;
       } else {
@@ -2104,30 +2104,39 @@ Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
             tagVal = tvIt->second;
 
           std::string sname = enumName + "_" + varName;
-          llvm::StructType *varSt =
-              llvm::StructType::getTypeByName(context, sname);
 
-          if (!varSt) {
-            std::string prefix = enumName + "$";
-            for (auto &st : module->getIdentifiedStructTypes()) {
-              std::string stName = st->getName().str();
-              if (stName.rfind(prefix, 0) == 0 &&
-                  stName.find("_" + varName) != std::string::npos) {
-                varSt = st;
-                break;
-              }
+          // For generic enums (e.g. Option<Animal>), we must allocate using
+          // the union struct "Option$Animal" rather than the narrow variant
+          // struct "Option$Animal_None", so that a subsequent load in
+          // visitReturn gets the correct type width. Scan for the union type
+          // by finding any "EnumName$..._VariantName" struct and stripping the
+          // variant suffix to recover the base union name.
+          llvm::StructType *allocSt = nullptr;
+          std::string variantSuffix = "_" + varName;
+          for (auto *st : module->getIdentifiedStructTypes()) {
+            std::string stName = st->getName().str();
+            if (stName.rfind(enumName + "$", 0) == 0 &&
+                stName.size() > variantSuffix.size() &&
+                stName.compare(stName.size() - variantSuffix.size(),
+                               variantSuffix.size(), variantSuffix) == 0) {
+              std::string baseName =
+                  stName.substr(0, stName.size() - variantSuffix.size());
+              allocSt = llvm::StructType::getTypeByName(context, baseName);
+              break;
             }
           }
-
-          if (!varSt) {
-            varSt = llvm::StructType::create(
+          // Non-generic enum: use the plain variant struct.
+          if (!allocSt)
+            allocSt = llvm::StructType::getTypeByName(context, sname);
+          // Last resort: tag-only struct.
+          if (!allocSt)
+            allocSt = llvm::StructType::create(
                 context, {llvm::Type::getInt32Ty(context)}, sname);
-          }
 
-          AllocaInst *alloca = createEntryAlloca(varSt, sname + ".val");
-          builder.CreateStore(llvm::Constant::getNullValue(varSt), alloca);
+          AllocaInst *alloca = createEntryAlloca(allocSt, sname + ".val");
+          builder.CreateStore(llvm::Constant::getNullValue(allocSt), alloca);
           Value *tagPtr =
-              builder.CreateStructGEP(varSt, alloca, 0, sname + ".tag");
+              builder.CreateStructGEP(allocSt, alloca, 0, sname + ".tag");
           builder.CreateStore(
               llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), tagVal),
               tagPtr);
@@ -2535,8 +2544,8 @@ Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
                                         oldDataGep, e.field + ".old.ptr");
     llvm::BasicBlock *curBB = builder.GetInsertBlock();
     llvm::Function *fn = curBB->getParent();
-    auto *freeBB = llvm::BasicBlock::Create(context, e.field + ".old.free", fn);
-    auto *skipBB = llvm::BasicBlock::Create(context, e.field + ".old.skip", fn);
+    auto *freeBB = llvm::BasicBlock::Create(context, "", fn);
+    auto *skipBB = llvm::BasicBlock::Create(context, "", fn);
     Value *isNull = builder.CreateICmpEQ(
         oldData,
         llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
@@ -2582,7 +2591,10 @@ llvm::AllocaInst *CodeGenerator::createEntryAlloca(llvm::Type *ty,
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
   llvm::BasicBlock &entry = fn->getEntryBlock();
   llvm::IRBuilder<> tmpB(&entry, entry.begin());
-  return tmpB.CreateAlloca(ty, nullptr, name);
+  // Always use an empty name so LLVM never needs to rename a colliding value
+  // in its ValueSymbolTable (reinsertValue has a double-free bug when it does).
+  (void)name;
+  return tmpB.CreateAlloca(ty, nullptr, "");
 }
 
 /**
@@ -2710,7 +2722,7 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
     if (TypeResolver::isString(ty)) {
       Value *src = init;
       if (!src->getType()->isPointerTy()) {
-        AllocaInst *tmp = builder.CreateAlloca(ty, nullptr, name + ".src.tmp");
+        AllocaInst *tmp = builder.CreateAlloca(ty, nullptr, "");
         builder.CreateStore(src, tmp);
         src = tmp;
       }
@@ -2751,7 +2763,7 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
         if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(init)) {
           Type *realTy = srcAI->getAllocatedType();
           if (realTy != ty) {
-            alloca = builder.CreateAlloca(realTy, nullptr, name);
+            alloca = builder.CreateAlloca(realTy, nullptr, "");
             ty = realTy;
             vi = VarInfo(alloca, ty, false, false, false, d.isConst);
           }
@@ -2876,9 +2888,9 @@ Value *CodeGenerator::visitIfStmt(const IfStmt &s) {
                                 "tobool");
 
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
-  BasicBlock *thenBB = BasicBlock::Create(context, "then", fn);
-  BasicBlock *elseBB = BasicBlock::Create(context, "else");
-  BasicBlock *mergeBB = BasicBlock::Create(context, "merge");
+  BasicBlock *thenBB = BasicBlock::Create(context, "", fn);
+  BasicBlock *elseBB = BasicBlock::Create(context, "");
+  BasicBlock *mergeBB = BasicBlock::Create(context, "");
 
   builder.CreateCondBr(cond, thenBB, elseBB);
 
@@ -2910,9 +2922,9 @@ Value *CodeGenerator::visitIfStmt(const IfStmt &s) {
  */
 Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
-  BasicBlock *condBB = BasicBlock::Create(context, "while.cond", fn);
-  BasicBlock *bodyBB = BasicBlock::Create(context, "while.body");
-  BasicBlock *exitBB = BasicBlock::Create(context, "while.exit");
+  BasicBlock *condBB = BasicBlock::Create(context, "", fn);
+  BasicBlock *bodyBB = BasicBlock::Create(context, "");
+  BasicBlock *exitBB = BasicBlock::Create(context, "");
 
   builder.CreateBr(condBB);
 
@@ -2967,7 +2979,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
 
   llvm::Type *i32 = Type::getInt32Ty(context);
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
-  llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "match.exit");
+  llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "");
 
   llvm::BasicBlock *defaultBB = exitBB; // fall-through when no wildcard
   std::vector<std::pair<llvm::ConstantInt *, llvm::BasicBlock *>> cases;
@@ -2976,7 +2988,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
   for (const auto &arm : s.arms) {
     std::string label =
         arm.isWildcard ? "match.wildcard" : "match.arm." + arm.variantName;
-    auto *bb = llvm::BasicBlock::Create(context, label, fn);
+    auto *bb = llvm::BasicBlock::Create(context, "", fn);
     armBlocks.push_back({&arm, bb});
 
     if (arm.isWildcard) {
@@ -3087,7 +3099,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
       stmt->accept(*this);
 
     // Branch to exit if the arm didn't already terminate.
-    if (!builder.GetInsertBlock()->getTerminator())
+    if (!blockHasTerminator(builder))
       builder.CreateBr(exitBB);
   }
 
@@ -3131,10 +3143,10 @@ Value *CodeGenerator::visitForRange(const ForRangeStmt &s) {
   namedValues[vname] = vi;
 
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
-  BasicBlock *condBB = BasicBlock::Create(context, "for.cond", fn);
-  BasicBlock *bodyBB = BasicBlock::Create(context, "for.body");
-  BasicBlock *stepBB = BasicBlock::Create(context, "for.step");
-  BasicBlock *exitBB = BasicBlock::Create(context, "for.exit");
+  BasicBlock *condBB = BasicBlock::Create(context, "", fn);
+  BasicBlock *bodyBB = BasicBlock::Create(context, "");
+  BasicBlock *stepBB = BasicBlock::Create(context, "");
+  BasicBlock *exitBB = BasicBlock::Create(context, "");
 
   builder.CreateBr(condBB);
 
@@ -3279,7 +3291,7 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   }
 
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
-  llvm::BasicBlock *dead = llvm::BasicBlock::Create(context, "ret.dead", fn);
+  llvm::BasicBlock *dead = llvm::BasicBlock::Create(context, "", fn);
   builder.SetInsertPoint(dead);
   builder.CreateUnreachable();
 
@@ -3397,8 +3409,8 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
 
     if (param.isBorrowRef) {
       // Reference parameter: store the incoming pointer into a pointer alloca.
-      AllocaInst *ptrAlloca = builder.CreateAlloca(PointerType::get(context, 0),
-                                                   nullptr, pname + ".refptr");
+      AllocaInst *ptrAlloca =
+          builder.CreateAlloca(PointerType::get(context, 0), nullptr, "");
       builder.CreateStore(&arg, ptrAlloca);
 
       Type *pointee = TypeResolver::fromTypeDesc(context, param.type);
