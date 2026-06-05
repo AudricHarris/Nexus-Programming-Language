@@ -168,7 +168,6 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
         Value *load = B_.CreateLoad(cast<StructType>(fieldTy), fieldPtr);
         Value *data = B_.CreateExtractValue(load, {0});
         llvm::Function *fn = B_.GetInsertBlock()->getParent();
-
         std::string uid = std::to_string(bbCounter_++);
         BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free" + uid, fn);
         BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip" + uid, fn);
