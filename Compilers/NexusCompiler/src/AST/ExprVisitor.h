@@ -29,6 +29,7 @@ struct FieldAssignExpr;
 struct StructLitExpr;
 struct CompoundAssignExpr;
 struct ChainedCmpExpr;
+struct TypeIntrinsicExpr;
 
 namespace llvm {
 class Value;
@@ -66,6 +67,7 @@ struct ExprVisitor {
   virtual llvm::Value *visitStructLit(const StructLitExpr &) = 0;
   virtual llvm::Value *visitCompoundAssign(const CompoundAssignExpr &) = 0;
   virtual llvm::Value *visitChainedCmp(const ChainedCmpExpr &) = 0;
+  virtual llvm::Value *visitTypeIntrinsic(const TypeIntrinsicExpr &) = 0;
 };
 
 // Pure-virtual visitor for Statement nodes.

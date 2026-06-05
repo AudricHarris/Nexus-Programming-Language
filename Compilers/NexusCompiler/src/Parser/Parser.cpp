@@ -76,7 +76,9 @@ void Parser::synchronize() {
     }
     switch (peek().getKind()) {
     case TokenKind::RETURN:
+      return;
     case TokenKind::LBRACE:
+      consume();
       return;
     default:
       consume();
@@ -229,7 +231,7 @@ ExternBlock Parser::parseExternBlock() {
         paramTypes.emplace_back(Identifier{typeTok}, dims, false, isRef);
       } while (match(TokenKind::COMMA));
     }
-    expect(TokenKind::RPAREN, "E pected ')'");
+    expect(TokenKind::RPAREN, "Expected ')'");
 
     Token voidTok{TokenKind::IDENTIFIER, "void", nameTok.getLine(), 0};
     TypeDesc retType{Identifier{voidTok}};
@@ -304,13 +306,11 @@ std::unique_ptr<EnumDecl> Parser::parseEnumDecl() {
 
   std::vector<EnumVariant> variants;
   while (!check(TokenKind::RBRACE) && !isAtEnd()) {
-    // Variant names may coincide with keywords in some lexers, so we consume
-    // whatever token is present and validate that it has a non-empty word.
     if (!check(TokenKind::IDENTIFIER) && peek().getWord().empty()) {
       throw ParseError(peek().getLine(), peek().getColumn(),
                        "Expected variant name");
     }
-    Token varTok = consume(); // accept identifier or keyword-spelled name
+    Token varTok = consume();
 
     std::vector<EnumVariantField> fields;
     if (match(TokenKind::LPAREN)) {
@@ -322,8 +322,16 @@ std::unique_ptr<EnumDecl> Parser::parseEnumDecl() {
       expect(TokenKind::RPAREN, "Expected ')'");
     }
 
-    variants.emplace_back(varTok.getWord(), std::move(fields));
-
+    std::optional<long long> explicitValue;
+    if (match(TokenKind::ASSIGN)) {
+      bool neg = match(TokenKind::SUB);
+      Token valTok = expect(TokenKind::LIT_INT,
+                            "Expected integer after '=' in enum variant");
+      long long v = std::stoll(valTok.getWord());
+      explicitValue = neg ? -v : v;
+    }
+    variants.emplace_back(varTok.getWord(), std::move(fields),
+                          std::move(explicitValue));
     match(TokenKind::COMMA);
   }
 
@@ -333,7 +341,6 @@ std::unique_ptr<EnumDecl> Parser::parseEnumDecl() {
                                     std::move(variants));
 }
 
-// Parses <T, U, ...> returns names
 std::vector<std::string> Parser::parseTypeParamList() {
   std::vector<std::string> params;
   do {
@@ -523,8 +530,11 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
     auto body = parseBlock();
     TypeDesc retTd(Identifier{retTok}, retDims, false);
     retTd.typeArgs = generics;
-    return std::make_unique<Function>(Identifier{nameToken}, std::move(params),
-                                      std::move(body), std::move(retTd));
+    auto fn =
+        std::make_unique<Function>(Identifier{nameToken}, std::move(params),
+                                   std::move(body), std::move(retTd));
+    fn->typeParams = std::move(typeParams);
+    return fn;
   }
 
   Token voidTok{TokenKind::IDENTIFIER, "void", nameToken.getLine(), 0};
@@ -534,6 +544,23 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
                                        TypeDesc(Identifier{voidTok}));
   fn->typeParams = std::move(typeParams);
   return fn;
+}
+
+std::unique_ptr<Statement> Parser::parseTypeIntrinsicStmt() {
+  consume();
+  expect(TokenKind::LPAREN, "Expected '(' after 'Type'");
+
+  auto valueExpr = parseExpression();
+
+  expect(TokenKind::COMMA, "Expected ',' in Type(...)");
+
+  TypeDesc td = parseTypeDesc();
+
+  expect(TokenKind::RPAREN, "Expected ')' after type in Type(...)");
+  expect(TokenKind::SEMI, "Expected ';'");
+
+  return std::make_unique<ExprStmt>(
+      std::make_unique<TypeIntrinsicExpr>(std::move(valueExpr), std::move(td)));
 }
 
 // ------- //
@@ -591,12 +618,13 @@ std::unique_ptr<Statement> Parser::parseStatement() {
   if (peek().getKind() == TokenKind::IDENTIFIER && peek().getWord() == "let")
     return parseVarDeclStatement(AssignKind::Copy);
 
+  if (peek().getKind() == TokenKind::IDENTIFIER && peek().getWord() == "Type") {
+    return parseTypeIntrinsicStmt();
+  }
+
   if (looksLikeType(peekAt(0))) {
     size_t offset = 1;
 
-    // Skip over generic type args: Array<Test>, Map<str, i32>, etc.
-    // We look for the matching '>' using a depth counter, accepting only
-    // IDENTIFIER, ',', '<', '>' and '[]' tokens inside the angle brackets.
     if (peekAt(offset).getKind() == TokenKind::LT) {
       size_t depth = 1;
       size_t j = offset + 1;
@@ -608,14 +636,13 @@ std::unique_ptr<Statement> Parser::parseStatement() {
           --depth;
         else if (k != TokenKind::IDENTIFIER && k != TokenKind::COMMA &&
                  k != TokenKind::LBRACKET && k != TokenKind::RBRACKET)
-          break; // not a valid type arg list, stop scanning
+          break;
         ++j;
       }
       if (depth == 0)
-        offset = j; // successfully skipped past '>'
+        offset = j;
     }
 
-    // Skip over array dimension brackets: Type[][]
     while (peekAt(offset).getKind() == TokenKind::LBRACKET &&
            peekAt(offset + 1).getKind() == TokenKind::RBRACKET) {
       offset += 2;
@@ -633,7 +660,6 @@ std::unique_ptr<Statement> Parser::parseStatement() {
         return parseVarDeclNoInit();
     }
   }
-
   auto expr = parseExpression();
   expect(TokenKind::SEMI, "Expected ';'");
   return std::make_unique<ExprStmt>(std::move(expr));
@@ -1288,6 +1314,8 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
         } while (this->match(TokenKind::COMMA));
         this->expect(TokenKind::RPAREN, "Expected ')'");
       }
+      return std::make_unique<GenericCallExpr>(id, std::move(typeArgs),
+                                               std::move(args));
     }
 
     return std::make_unique<IdentExpr>(id);

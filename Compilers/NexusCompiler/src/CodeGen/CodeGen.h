@@ -63,6 +63,7 @@ public:
   llvm::Value *visitFieldAssign(const FieldAssignExpr &e) override;
   llvm::Value *visitStructLit(const StructLitExpr &e) override;
   llvm::Value *visitChainedCmp(const ChainedCmpExpr &e) override;
+  llvm::Value *visitTypeIntrinsic(const TypeIntrinsicExpr &e) override;
 
   llvm::Value *visitBlock(const Block &b);
   llvm::Value *visitVarDecl(const VarDecl &d) override;
@@ -88,6 +89,7 @@ private:
   std::unordered_map<std::string, std::vector<bool>> borrowRefParams;
   std::unordered_map<std::string, std::vector<bool>> borrowMutParams;
   std::unordered_map<std::string, llvm::Function *> genericCache;
+  std::unordered_map<std::string, long long> enumTagValues;
 
   const Program *currentProgram = nullptr;
 
@@ -118,6 +120,10 @@ private:
                             const std::string &mangledName,
                             const std::vector<llvm::Type *> &typeArgs);
   llvm::StructType *instantiateGenericStruct(const TypeDesc &td);
+  llvm::StructType *
+  instantiateGenericEnum(const std::string &enumName,
+                         const std::vector<llvm::Type *> &concreteArgs,
+                         const std::vector<std::string> &argNames);
 
   // Helpers
   llvm::AllocaInst *createEntryAlloca(llvm::Type *ty, const std::string &name);
