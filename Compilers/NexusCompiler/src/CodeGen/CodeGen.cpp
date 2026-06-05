@@ -1411,7 +1411,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         return logError(
             ("Unknown enum type for variant constructor: " + enumName).c_str());
 
-      llvm::AllocaInst *enumAlloca = createEntryAlloca(enumType, "enum.tmp");
+      llvm::AllocaInst *enumAlloca = createEntryAlloca(enumType, "");
       builder.CreateStore(llvm::Constant::getNullValue(enumType), enumAlloca);
 
       int tagIndex = 0;
@@ -1586,7 +1586,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         if (!v)
           return nullptr;
         if (!v->getType()->isPointerTy()) {
-          AllocaInst *tmp = createEntryAlloca(v->getType(), "ref.arg.tmp");
+          AllocaInst *tmp = createEntryAlloca(v->getType(), "");
           builder.CreateStore(v, tmp);
           v = tmp;
         }
@@ -1641,7 +1641,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
           v = builder.CreateLoad(expectedTy, v, "deref.arg");
         } else if (vTy->isStructTy() && expectedTy->isPointerTy() &&
                    !callee->isDeclaration()) {
-          AllocaInst *tmp = createEntryAlloca(vTy, "struct.arg.tmp");
+          AllocaInst *tmp = createEntryAlloca(vTy, "");
           builder.CreateStore(v, tmp);
           v = tmp;
         }
@@ -1663,7 +1663,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
                     : sit->second.allocaInst;
           }
         } else if (!v->getType()->isPointerTy()) {
-          AllocaInst *tmp = createEntryAlloca(v->getType(), "ref.tmp");
+          AllocaInst *tmp = createEntryAlloca(v->getType(), "");
           builder.CreateStore(v, tmp);
           v = tmp;
         }
@@ -1747,7 +1747,7 @@ Value *CodeGenerator::visitGenericCall(const GenericCallExpr &e) {
                                  TypeResolver::isArray(expectedTy)))
         v = builder.CreateLoad(expectedTy, v, "deref.arg");
       else if (vTy->isStructTy() && expectedTy->isPointerTy()) {
-        AllocaInst *tmp = createEntryAlloca(vTy, "struct.arg.tmp");
+        AllocaInst *tmp = createEntryAlloca(vTy, "");
         builder.CreateStore(v, tmp);
         v = tmp;
       } else {
@@ -2104,30 +2104,39 @@ Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
             tagVal = tvIt->second;
 
           std::string sname = enumName + "_" + varName;
-          llvm::StructType *varSt =
-              llvm::StructType::getTypeByName(context, sname);
 
-          if (!varSt) {
-            std::string prefix = enumName + "$";
-            for (auto &st : module->getIdentifiedStructTypes()) {
-              std::string stName = st->getName().str();
-              if (stName.rfind(prefix, 0) == 0 &&
-                  stName.find("_" + varName) != std::string::npos) {
-                varSt = st;
-                break;
-              }
+          // For generic enums (e.g. Option<Animal>), we must allocate using
+          // the union struct "Option$Animal" rather than the narrow variant
+          // struct "Option$Animal_None", so that a subsequent load in
+          // visitReturn gets the correct type width. Scan for the union type
+          // by finding any "EnumName$..._VariantName" struct and stripping the
+          // variant suffix to recover the base union name.
+          llvm::StructType *allocSt = nullptr;
+          std::string variantSuffix = "_" + varName;
+          for (auto *st : module->getIdentifiedStructTypes()) {
+            std::string stName = st->getName().str();
+            if (stName.rfind(enumName + "$", 0) == 0 &&
+                stName.size() > variantSuffix.size() &&
+                stName.compare(stName.size() - variantSuffix.size(),
+                               variantSuffix.size(), variantSuffix) == 0) {
+              std::string baseName =
+                  stName.substr(0, stName.size() - variantSuffix.size());
+              allocSt = llvm::StructType::getTypeByName(context, baseName);
+              break;
             }
           }
-
-          if (!varSt) {
-            varSt = llvm::StructType::create(
+          // Non-generic enum: use the plain variant struct.
+          if (!allocSt)
+            allocSt = llvm::StructType::getTypeByName(context, sname);
+          // Last resort: tag-only struct.
+          if (!allocSt)
+            allocSt = llvm::StructType::create(
                 context, {llvm::Type::getInt32Ty(context)}, sname);
-          }
 
-          AllocaInst *alloca = createEntryAlloca(varSt, sname + ".val");
-          builder.CreateStore(llvm::Constant::getNullValue(varSt), alloca);
+          AllocaInst *alloca = createEntryAlloca(allocSt, "");
+          builder.CreateStore(llvm::Constant::getNullValue(allocSt), alloca);
           Value *tagPtr =
-              builder.CreateStructGEP(varSt, alloca, 0, sname + ".tag");
+              builder.CreateStructGEP(allocSt, alloca, 0, sname + ".tag");
           builder.CreateStore(
               llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), tagVal),
               tagPtr);
@@ -2179,7 +2188,7 @@ Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
                 context, {llvm::Type::getInt32Ty(context)}, sname);
           }
 
-          AllocaInst *alloca = createEntryAlloca(varSt, sname + ".val");
+          AllocaInst *alloca = createEntryAlloca(varSt, "");
           builder.CreateStore(llvm::Constant::getNullValue(varSt), alloca);
           Value *tagPtr =
               builder.CreateStructGEP(varSt, alloca, 0, sname + ".tag");
@@ -2358,7 +2367,7 @@ Value *CodeGenerator::visitStructLit(const StructLitExpr &e) {
   if (!st)
     return logError(("Unknown struct type: " + e.typeName).c_str());
 
-  AllocaInst *alloca = createEntryAlloca(st, e.typeName + ".lit");
+  AllocaInst *alloca = createEntryAlloca(st, "");
 
   for (unsigned i = 0; i < e.values.size(); ++i) {
     if (i >= st->getNumElements())
@@ -2465,7 +2474,6 @@ Value *CodeGenerator::visitTypeIntrinsic(const TypeIntrinsicExpr &e) {
   std::string msg = typeName;
   if (!e.typeDesc.typeArgs.empty()) {
     msg += "<";
-    // BUG FIX: was typeArgs.empty() (always 0 or 1), must be typeArgs.size()
     for (size_t i = 0; i < e.typeDesc.typeArgs.size(); ++i) {
       if (i)
         msg += ", ";
@@ -2523,7 +2531,7 @@ Value *CodeGenerator::visitFieldAssign(const FieldAssignExpr &e) {
     if (val->getType()->isPointerTy()) {
       srcPtr = val;
     } else {
-      AllocaInst *tmp = createEntryAlloca(fieldTy, e.field + ".assign.tmp");
+      AllocaInst *tmp = createEntryAlloca(fieldTy, "");
       builder.CreateStore(val, tmp);
       srcPtr = tmp;
     }
@@ -2710,7 +2718,7 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
     if (TypeResolver::isString(ty)) {
       Value *src = init;
       if (!src->getType()->isPointerTy()) {
-        AllocaInst *tmp = builder.CreateAlloca(ty, nullptr, name + ".src.tmp");
+        AllocaInst *tmp = builder.CreateAlloca(ty, nullptr, "");
         builder.CreateStore(src, tmp);
         src = tmp;
       }
@@ -2751,7 +2759,7 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
         if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(init)) {
           Type *realTy = srcAI->getAllocatedType();
           if (realTy != ty) {
-            alloca = builder.CreateAlloca(realTy, nullptr, name);
+            alloca = builder.CreateAlloca(realTy, nullptr, "");
             ty = realTy;
             vi = VarInfo(alloca, ty, false, false, false, d.isConst);
           }
@@ -3087,7 +3095,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
       stmt->accept(*this);
 
     // Branch to exit if the arm didn't already terminate.
-    if (!builder.GetInsertBlock()->getTerminator())
+    if (!blockHasTerminator(builder))
       builder.CreateBr(exitBB);
   }
 

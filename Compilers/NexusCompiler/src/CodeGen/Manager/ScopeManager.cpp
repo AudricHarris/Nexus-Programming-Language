@@ -30,6 +30,7 @@ void ScopeManager::reset() {
   stack_.clear();
   tmpStack_.clear();
   destructorsEmitted_ = false;
+  bbCounter_ = 0;
 }
 
 void ScopeManager::pushScope() {
@@ -168,8 +169,9 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
         Value *data = B_.CreateExtractValue(load, {0});
         llvm::Function *fn = B_.GetInsertBlock()->getParent();
 
-        BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free", fn);
-        BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip", fn);
+        std::string uid = std::to_string(bbCounter_++);
+        BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free" + uid, fn);
+        BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip" + uid, fn);
         Value *isNull = B_.CreateICmpEQ(
             data, ConstantPointerNull::get(PointerType::get(ctx_, 0)),
             "is.null");
@@ -195,8 +197,9 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
       return;
 
     llvm::Function *fn = B_.GetInsertBlock()->getParent();
-    BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free", fn);
-    BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip", fn);
+    std::string uid = std::to_string(bbCounter_++);
+    BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free" + uid, fn);
+    BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip" + uid, fn);
     Value *isNull = B_.CreateICmpEQ(
         data, llvm::ConstantPointerNull::get(llvm::PointerType::get(ctx_, 0)),
         "is.null");
@@ -229,7 +232,7 @@ void ScopeManager::emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt,
   Value *dataPtr = B_.CreateExtractValue(loaded, {1}, "data");
   Value *len = B_.CreateExtractValue(loaded, {0}, "len");
 
-  std::string sfx = std::to_string(depth);
+  std::string sfx = std::to_string(depth) + "_" + std::to_string(bbCounter_++);
   BasicBlock *nullCheckPassBB =
       BasicBlock::Create(ctx_, "arr.notnull" + sfx, fn);
   BasicBlock *nullCheckDoneBB =
@@ -308,8 +311,9 @@ void ScopeManager::emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt,
           Value *strVal = B_.CreateLoad(strSt, fieldPtr);
           Value *data = B_.CreateExtractValue(strVal, {0}, "str.data");
 
-          BasicBlock *freeBB = BasicBlock::Create(ctx_, "sf.sfree" + sfx, fn);
-          BasicBlock *skipBB = BasicBlock::Create(ctx_, "sf.sskip" + sfx, fn);
+          std::string fuid = std::to_string(bbCounter_++);
+          BasicBlock *freeBB = BasicBlock::Create(ctx_, "sf.sfree" + fuid, fn);
+          BasicBlock *skipBB = BasicBlock::Create(ctx_, "sf.sskip" + fuid, fn);
           Value *isNull = B_.CreateICmpEQ(
               data, ConstantPointerNull::get(PointerType::get(ctx_, 0)),
               "sf.null");

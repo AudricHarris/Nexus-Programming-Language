@@ -32,6 +32,7 @@ public:
   bool isLocal(const std::string &name) const;
 
 private:
+  unsigned bbCounter_ = 0;
   llvm::IRBuilder<> &B_;
   llvm::LLVMContext &ctx_;
   llvm::Module *M_;
