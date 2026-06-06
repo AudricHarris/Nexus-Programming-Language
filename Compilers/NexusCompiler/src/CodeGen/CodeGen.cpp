@@ -666,6 +666,26 @@ Value *CodeGenerator::visitAssign(const AssignExpr &e) {
     return it->second.allocaInst;
   }
 
+  // Enum-to-integer implicit conversion: extract the tag from an enum struct
+  // when the target variable is an integer type (e.g.  num = someEnum;).
+  if (targetTy->isIntegerTy()) {
+    if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(val)) {
+      llvm::Type *srcTy = srcAI->getAllocatedType();
+      if (srcTy->isStructTy()) {
+        auto *st = llvm::cast<llvm::StructType>(srcTy);
+        if (st->getNumElements() >= 1 &&
+            st->getElementType(0)->isIntegerTy(32)) {
+          llvm::StructType *tagView = llvm::StructType::get(
+              context, {llvm::Type::getInt32Ty(context)}, false);
+          Value *tagPtr =
+              builder.CreateStructGEP(tagView, srcAI, 0, "enum.to.int.ptr");
+          val = builder.CreateLoad(llvm::Type::getInt32Ty(context), tagPtr,
+                                   "enum.to.int");
+        }
+      }
+    }
+  }
+
   val = TypeResolver::coerce(builder, val, targetTy);
 
   switch (e.kind) {
@@ -2474,7 +2494,6 @@ Value *CodeGenerator::visitTypeIntrinsic(const TypeIntrinsicExpr &e) {
   std::string msg = typeName;
   if (!e.typeDesc.typeArgs.empty()) {
     msg += "<";
-    // BUG FIX: was typeArgs.empty() (always 0 or 1), must be typeArgs.size()
     for (size_t i = 0; i < e.typeDesc.typeArgs.size(); ++i) {
       if (i)
         msg += ", ";
@@ -2793,7 +2812,30 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
         }
       }
     } else {
-      builder.CreateStore(TypeResolver::coerce(builder, init, ty), alloca);
+      // Enum-to-integer implicit conversion: if the target is an integer type
+      // and the source is an enum struct (first field is an i32 tag), extract
+      // the tag value instead of trying to coerce a struct to an integer.
+      // e.g.  i32 num = bob;  →  num gets bob's discriminant value.
+      Value *coerced = init;
+      if (ty->isIntegerTy()) {
+        if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(init)) {
+          llvm::Type *srcTy = srcAI->getAllocatedType();
+          if (srcTy->isStructTy()) {
+            auto *st = llvm::cast<llvm::StructType>(srcTy);
+            if (st->getNumElements() >= 1 &&
+                st->getElementType(0)->isIntegerTy(32)) {
+              llvm::StructType *tagView = llvm::StructType::get(
+                  context, {llvm::Type::getInt32Ty(context)}, false);
+              Value *tagPtr =
+                  builder.CreateStructGEP(tagView, srcAI, 0, "enum.to.int.ptr");
+              Value *tag = builder.CreateLoad(llvm::Type::getInt32Ty(context),
+                                              tagPtr, "enum.to.int");
+              coerced = TypeResolver::coerce(builder, tag, ty);
+            }
+          }
+        }
+      }
+      builder.CreateStore(coerced, alloca);
     }
     break;
   }
@@ -3009,8 +3051,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
       // as that picks the wrong tag when two enums share a variant name.
       if (tagVal < 0) {
         for (const auto &ed : currentProgram->enums) {
-          // BUG FIX: was missing this enum-name guard; now requires the enum
-          // name to match arm.enumName before accepting the variant.
           if (ed->name != arm.enumName)
             continue;
           for (size_t vi = 0; vi < ed->variants.size(); ++vi) {
@@ -3193,6 +3233,119 @@ Value *CodeGenerator::visitForRange(const ForRangeStmt &s) {
   builder.CreateStore(newVal, varAlloca);
   builder.CreateBr(condBB);
 
+  fn->insert(fn->end(), exitBB);
+  builder.SetInsertPoint(exitBB);
+
+  namedValues.erase(vname);
+  return nullptr;
+}
+
+/**
+ * Generates IR for a foreach loop: for (T elem : iterable).
+ *
+ * Array struct layout (from TypeResolver::getOrCreateArrayStruct):
+ *   field 0 — i64  length
+ *   field 1 — ptr  data pointer (opaque, points to elements)
+ *
+ * A counter i (i64) drives the loop: 0 <= i < length.
+ * Each iteration loads iterable[i] into the loop variable alloca.
+ */
+Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
+  const std::string &vname = s.varName.token.getWord();
+
+  // ── evaluate iterable once ───────────────────────────────────────────────
+  Value *arrVal = codegen(*s.iterable);
+  if (!arrVal)
+    return nullptr;
+
+  // ── resolve the array struct type from the iterable's LLVM type ──────────
+  // arrVal may be an alloca (pointer) or a loaded aggregate.
+  // Either way we need the StructType to GEP into it.
+  llvm::Type *arrValTy = arrVal->getType();
+
+  // If it's a pointer, get the pointee struct type.
+  llvm::StructType *arrStructTy = nullptr;
+  bool isPtr = arrValTy->isPointerTy();
+  if (isPtr) {
+    // Walk named struct types — the alloca's pointee is the array struct.
+    arrStructTy = TypeResolver::getOrCreateArrayStruct(
+        context, TypeResolver::fromTypeDesc(context, s.varType));
+  } else if (auto *st = llvm::dyn_cast<llvm::StructType>(arrValTy)) {
+    arrStructTy = st;
+  }
+
+  // ── extract length (field 0) and data pointer (field 1) ──────────────────
+  llvm::Type *i64 = llvm::Type::getInt64Ty(context);
+  Value *lenVal = nullptr;
+  Value *dataPtr = nullptr;
+
+  if (isPtr) {
+    // arrVal is an AllocaInst* — GEP into the struct.
+    Value *lenGEP = builder.CreateStructGEP(arrStructTy, arrVal, 0, "len.ptr");
+    Value *dataGEP =
+        builder.CreateStructGEP(arrStructTy, arrVal, 1, "data.ptr");
+    lenVal = builder.CreateLoad(i64, lenGEP, "arr.len");
+    dataPtr = builder.CreateLoad(llvm::PointerType::get(context, 0), dataGEP,
+                                 "arr.data");
+  } else {
+    // arrVal is a loaded aggregate — use extractvalue.
+    lenVal = builder.CreateExtractValue(arrVal, {0}, "arr.len");
+    dataPtr = builder.CreateExtractValue(arrVal, {1}, "arr.data");
+  }
+
+  // ── element LLVM type ─────────────────────────────────────────────────────
+  llvm::Type *elemTy = TypeResolver::fromTypeDesc(context, s.varType);
+  if (!elemTy)
+    elemTy = llvm::Type::getInt32Ty(context);
+
+  // ── allocas: loop counter and loop variable ───────────────────────────────
+  AllocaInst *idxAlloca = createEntryAlloca(i64, "__foreach_idx");
+  builder.CreateStore(llvm::ConstantInt::get(i64, 0), idxAlloca);
+
+  AllocaInst *varAlloca = createEntryAlloca(elemTy, vname);
+  namedValues[vname] =
+      VarInfo(varAlloca, elemTy, false, false, false, s.varType.isConst);
+
+  // ── basic blocks ──────────────────────────────────────────────────────────
+  llvm::Function *fn = builder.GetInsertBlock()->getParent();
+  BasicBlock *condBB = BasicBlock::Create(context, "foreach.cond", fn);
+  BasicBlock *bodyBB = BasicBlock::Create(context, "foreach.body");
+  BasicBlock *stepBB = BasicBlock::Create(context, "foreach.step");
+  BasicBlock *exitBB = BasicBlock::Create(context, "foreach.exit");
+
+  builder.CreateBr(condBB);
+
+  // ── condition: i < length ─────────────────────────────────────────────────
+  builder.SetInsertPoint(condBB);
+  Value *curIdx = builder.CreateLoad(i64, idxAlloca, "idx");
+  Value *cond = builder.CreateICmpSLT(curIdx, lenVal, "foreach.cond");
+  builder.CreateCondBr(cond, bodyBB, exitBB);
+
+  // ── body: load element, run user code ────────────────────────────────────
+  fn->insert(fn->end(), bodyBB);
+  builder.SetInsertPoint(bodyBB);
+
+  // GEP using the opaque data pointer; no bitcast needed with opaque pointers.
+  Value *elemPtr = builder.CreateGEP(elemTy, dataPtr, curIdx, "elem.ptr");
+  Value *elemVal = builder.CreateLoad(elemTy, elemPtr, vname + ".val");
+  builder.CreateStore(elemVal, varAlloca);
+
+  loopStack.push_back({stepBB, exitBB});
+  codegen(*s.body);
+  loopStack.pop_back();
+
+  if (!blockHasTerminator(builder))
+    builder.CreateBr(stepBB);
+
+  // ── step: ++i ─────────────────────────────────────────────────────────────
+  fn->insert(fn->end(), stepBB);
+  builder.SetInsertPoint(stepBB);
+  Value *nextIdx =
+      builder.CreateAdd(curIdx, llvm::ConstantInt::get(i64, 1), "idx.next");
+  builder.CreateStore(nextIdx, idxAlloca);
+  builder.CreateBr(condBB);
+
+  // ── exit ──────────────────────────────────────────────────────────────────
   fn->insert(fn->end(), exitBB);
   builder.SetInsertPoint(exitBB);
 
