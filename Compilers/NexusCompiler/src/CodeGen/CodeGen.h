@@ -72,6 +72,7 @@ public:
   llvm::Value *visitWhileStmt(const WhileStmt &s) override;
   llvm::Value *visitMatchStmt(const MatchStmt &s) override;
   llvm::Value *visitForRange(const ForRangeStmt &s) override;
+  llvm::Value *visitForEach(const ForEachStmt &s) override;
   llvm::Value *visitReturn(const Return &s) override;
   llvm::Value *visitBreak(const Break &) override;
   llvm::Value *visitContinue(const Continue &) override;

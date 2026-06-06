@@ -792,7 +792,11 @@ std::unique_ptr<WhileStmt> Parser::parseLoop() {
   return std::make_unique<WhileStmt>(std::move(cond), std::move(body));
 }
 
-std::unique_ptr<ForRangeStmt> Parser::parseForLoop() {
+// Returns either a ForRangeStmt (for range()) or a ForEachStmt (for arrays).
+// Grammar:
+//   for ( [const] Type[][] varName : range(args...) ) body
+//   for ( [const] Type[][] varName : expr            ) body
+std::unique_ptr<Statement> Parser::parseForLoop() {
   expect(TokenKind::LPAREN, "Expected '(' after 'for'");
 
   bool isConst = false;
@@ -811,55 +815,64 @@ std::unique_ptr<ForRangeStmt> Parser::parseForLoop() {
   }
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected loop variable name");
 
-  if (peek().getKind() == TokenKind::COLON) {
-    consume();
-  }
-  if (!isIdentWord("range"))
-    throw ParseError(peek().getLine(), peek().getColumn(),
-                     "Expected 'range' in for-range");
-  consume();
-  expect(TokenKind::LPAREN, "Expected '(' after 'range'");
-
-  std::vector<ExprPtr> rangeArgs;
-  if (!check(TokenKind::RPAREN)) {
-    do {
-      rangeArgs.push_back(parseExpression());
-    } while (match(TokenKind::COMMA));
-  }
-  expect(TokenKind::RPAREN, "Expected ')' after range arguments");
-  expect(TokenKind::RPAREN, "Expected ')' to close for(...)");
-
-  ExprPtr startExpr, endExpr, stepExpr;
-  auto intLit = [](long long v, int line = 0, int col = 0) -> ExprPtr {
-    Token t{TokenKind::LIT_INT, std::to_string(v), line, col};
-    return std::make_unique<IntLitExpr>(t);
-  };
-
-  if (rangeArgs.size() == 1) {
-    startExpr = intLit(0);
-    endExpr = std::move(rangeArgs[0]);
-    stepExpr = intLit(1);
-  } else if (rangeArgs.size() == 2) {
-    startExpr = std::move(rangeArgs[0]);
-    endExpr = std::move(rangeArgs[1]);
-    stepExpr = intLit(1);
-  } else if (rangeArgs.size() == 3) {
-    startExpr = std::move(rangeArgs[0]);
-    endExpr = std::move(rangeArgs[1]);
-    stepExpr = std::move(rangeArgs[2]);
-  } else {
-    throw ParseError(peek().getLine(), peek().getColumn(),
-                     "range() takes 1, 2 or 3 arguments");
-  }
-
-  auto body = parseBlock(true);
+  expect(TokenKind::COLON, "Expected ':' in for loop");
 
   TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
                                typeTok.getLine(), typeTok.getColumn()}},
               dims, isConst);
-  return std::make_unique<ForRangeStmt>(
-      std::move(td), Identifier{nameTok}, std::move(startExpr),
-      std::move(endExpr), std::move(stepExpr), std::move(body));
+
+  // ---- range() fast-path --------------------------------------------------
+  if (isIdentWord("range")) {
+    consume(); // eat 'range'
+    expect(TokenKind::LPAREN, "Expected '(' after 'range'");
+
+    std::vector<ExprPtr> rangeArgs;
+    if (!check(TokenKind::RPAREN)) {
+      do {
+        rangeArgs.push_back(parseExpression());
+      } while (match(TokenKind::COMMA));
+    }
+    expect(TokenKind::RPAREN, "Expected ')' after range arguments");
+    expect(TokenKind::RPAREN, "Expected ')' to close for(...)");
+
+    ExprPtr startExpr, endExpr, stepExpr;
+    auto intLit = [](long long v, int line = 0, int col = 0) -> ExprPtr {
+      Token t{TokenKind::LIT_INT, std::to_string(v), line, col};
+      return std::make_unique<IntLitExpr>(t);
+    };
+
+    if (rangeArgs.size() == 1) {
+      startExpr = intLit(0);
+      endExpr = std::move(rangeArgs[0]);
+      stepExpr = intLit(1);
+    } else if (rangeArgs.size() == 2) {
+      startExpr = std::move(rangeArgs[0]);
+      endExpr = std::move(rangeArgs[1]);
+      stepExpr = intLit(1);
+    } else if (rangeArgs.size() == 3) {
+      startExpr = std::move(rangeArgs[0]);
+      endExpr = std::move(rangeArgs[1]);
+      stepExpr = std::move(rangeArgs[2]);
+    } else {
+      throw ParseError(peek().getLine(), peek().getColumn(),
+                       "range() takes 1, 2 or 3 arguments");
+    }
+
+    auto body = parseBlock(true);
+    return std::make_unique<ForRangeStmt>(
+        std::move(td), Identifier{nameTok}, std::move(startExpr),
+        std::move(endExpr), std::move(stepExpr), std::move(body));
+  }
+
+  // ---- generic foreach: for (T elem : expr) -------------------------------
+  // The iterable can be any expression that yields an array (variable,
+  // function call, index expression, …).
+  auto iterable = parseExpression();
+  expect(TokenKind::RPAREN, "Expected ')' to close for(...)");
+
+  auto body = parseBlock(true);
+  return std::make_unique<ForEachStmt>(std::move(td), Identifier{nameTok},
+                                       std::move(iterable), std::move(body));
 }
 std::unique_ptr<Return> Parser::parseReturnStatement() {
   auto ret = std::make_unique<Return>();

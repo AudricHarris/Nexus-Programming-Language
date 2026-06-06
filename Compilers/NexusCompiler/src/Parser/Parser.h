@@ -50,7 +50,7 @@ public:
   std::unique_ptr<IfStmt> parseIfStatement();
   std::unique_ptr<WhileStmt> parseWhileLoop();
   std::unique_ptr<WhileStmt> parseLoop();
-  std::unique_ptr<ForRangeStmt> parseForLoop();
+  std::unique_ptr<Statement> parseForLoop();
   std::unique_ptr<Return> parseReturnStatement();
   std::unique_ptr<Statement> parseLoopBreak();
   std::unique_ptr<Expression> parsePrimary();

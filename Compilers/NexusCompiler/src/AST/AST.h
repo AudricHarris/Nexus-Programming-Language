@@ -842,6 +842,28 @@ struct ForRangeStmt : Statement {
   }
 };
 
+// for (T elem : arrayExpr) — generic foreach over any array value
+struct ForEachStmt : Statement {
+  TypeDesc varType;
+  Identifier varName;
+  ExprPtr iterable; // any expression that yields an array
+  std::unique_ptr<Block> body;
+
+  ForEachStmt(TypeDesc t, Identifier n, ExprPtr iter, std::unique_ptr<Block> b)
+      : varType(std::move(t)), varName(std::move(n)), iterable(std::move(iter)),
+        body(std::move(b)) {}
+
+  llvm::Value *accept(StmtVisitor &v) const override {
+    return v.visitForEach(*this);
+  }
+  void toJson(std::ostream &os, int indent) const override {
+    std::string p(indent, ' ');
+    os << p << "{\"kind\":\"ForEachStmt\","
+       << "\"var\":" << json_utils::escape(varName.token.getWord()) << ","
+       << "\"type\":" << json_utils::escape(varType.fullName()) << "}";
+  }
+};
+
 struct Return : Statement {
   std::optional<ExprPtr> value;
   Return() = default;
