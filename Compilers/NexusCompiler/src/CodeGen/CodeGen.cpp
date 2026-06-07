@@ -3883,10 +3883,6 @@ bool CodeGenerator::generate(const Program &program,
       retTy = llvm::StructType::getTypeByName(
           context, fn->returnType.base.token.getWord());
 
-    // For generic return types like Option<Animal>, TypeResolver and a plain
-    // name lookup both fail because the instantiated struct hasn't been
-    // registered yet under "Option". Instantiate it now so the forward
-    // declaration gets the correct concrete return type instead of void.
     if (!retTy && !fn->returnType.typeArgs.empty()) {
       const std::string &retBase = fn->returnType.base.token.getWord();
       std::vector<llvm::Type *> concreteArgs;
