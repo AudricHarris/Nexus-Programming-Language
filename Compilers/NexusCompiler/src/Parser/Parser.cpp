@@ -509,22 +509,24 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
     }
 
     std::vector<TypeDesc> generics;
-    // Handle Generics in return type
     if (match(TokenKind::LT)) {
       bool isGeneric = true;
       while (isGeneric) {
         if (peek().getKind() == TokenKind::IDENTIFIER) {
-          const Identifier iden = Identifier{peek()};
-          TypeDesc tmp = TypeDesc{iden, 0, false, false};
-          generics.push_back(tmp);
-          consume();
+          generics.push_back(parseTypeDesc());
         }
-
         if (match(TokenKind::GT))
           isGeneric = false;
         else
           expect(TokenKind::COMMA);
       }
+    }
+
+    while (peek().getKind() == TokenKind::LBRACKET &&
+           peekAt(1).getKind() == TokenKind::RBRACKET) {
+      consume();
+      consume();
+      ++retDims;
     }
 
     auto body = parseBlock();
