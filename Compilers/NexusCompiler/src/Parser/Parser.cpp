@@ -146,9 +146,31 @@ std::unique_ptr<Program> Parser::parse() {
       bool nextIsConst = check(TokenKind::CONST);
       const Token &typeCheck = nextIsConst ? peekAt(1) : peek();
       if (looksLikeType(typeCheck)) {
-        size_t typeOff = nextIsConst ? 1 : 0;
-        if (peekAt(typeOff + 1).getKind() == TokenKind::IDENTIFIER &&
-            peekAt(typeOff + 2).getKind() != TokenKind::LPAREN) {
+        // Skip past the full type: base + optional <...> + optional [][]
+        // to check whether what follows is a variable name (global decl)
+        // rather than a function name (fn decl).
+        size_t off = nextIsConst ? 1 : 0; // points at base type identifier
+        ++off;                            // step past base identifier
+        // skip generic args <...>
+        if (peekAt(off).getKind() == TokenKind::LT) {
+          size_t depth = 1;
+          ++off;
+          while (depth > 0 && peekAt(off).getKind() != TokenKind::END_OF_FILE) {
+            TokenKind k = peekAt(off).getKind();
+            if (k == TokenKind::LT)
+              ++depth;
+            else if (k == TokenKind::GT)
+              --depth;
+            ++off;
+          }
+        }
+        // skip trailing [][]
+        while (peekAt(off).getKind() == TokenKind::LBRACKET &&
+               peekAt(off + 1).getKind() == TokenKind::RBRACKET)
+          off += 2;
+        // now off points at what should be the variable name
+        if (peekAt(off).getKind() == TokenKind::IDENTIFIER &&
+            peekAt(off + 1).getKind() != TokenKind::LPAREN) {
           auto gv = parseGlobalVarDecl();
           gv->isPublic = isPublic;
           prog->globals.push_back(std::move(gv));
@@ -362,6 +384,8 @@ std::vector<TypeDesc> Parser::parseTypeArgList() {
 
 TypeDesc Parser::parseTypeDesc() {
   Token typeTok = expect(TokenKind::IDENTIFIER, "Expected type name");
+
+  // Phase 1: dims before generic args — e.g. the [][] in i32[][]
   int dims = 0;
   while (peek().getKind() == TokenKind::LBRACKET &&
          peekAt(1).getKind() == TokenKind::RBRACKET) {
@@ -369,11 +393,24 @@ TypeDesc Parser::parseTypeDesc() {
     consume();
     ++dims;
   }
+
+  // Phase 2: optional generic type arguments — e.g. <Animal> in Option<Animal>
   std::vector<TypeDesc> typeArgs;
   if (check(TokenKind::LT)) {
     consume();
     typeArgs = parseTypeArgList();
   }
+
+  // Phase 3: dims after the closing '>' — e.g. [] in Option<Animal>[]
+  // Without this pass, the [] is left unconsumed and the caller sees it as
+  // the next token, causing "Expected variable name" or top-level errors.
+  while (peek().getKind() == TokenKind::LBRACKET &&
+         peekAt(1).getKind() == TokenKind::RBRACKET) {
+    consume();
+    consume();
+    ++dims;
+  }
+
   TypeDesc td(Identifier{typeTok}, dims);
   td.typeArgs = std::move(typeArgs);
   return td;
@@ -424,7 +461,10 @@ std::unique_ptr<GlobalVarDecl> Parser::parseGlobalVarDecl() {
     isConst = true;
   }
 
-  Token typeTok = expect(TokenKind::IDENTIFIER, "Expected type");
+  // Parse the full type: base identifier, optional <TypeArgs>, optional [][]
+  TypeDesc td = parseTypeDesc();
+  td.isConst = isConst;
+
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected variable name");
   expect(TokenKind::ASSIGN, "Global variables must be initialized");
 
@@ -438,14 +478,14 @@ std::unique_ptr<GlobalVarDecl> Parser::parseGlobalVarDecl() {
       } while (match(TokenKind::COMMA));
     }
     expect(TokenKind::RBRACE, "Expected '}' to close struct literal");
-    init = std::make_unique<StructLitExpr>(typeTok.getWord(), std::move(vals));
+    init = std::make_unique<StructLitExpr>(td.base.token.getWord(),
+                                           std::move(vals));
   } else {
     init = parseExpression();
   }
 
   expect(TokenKind::SEMI, "Expected ';'");
 
-  TypeDesc td(Identifier{typeTok}, 0, isConst);
   return std::make_unique<GlobalVarDecl>(std::move(td), nameTok.getWord(),
                                          std::move(init), isConst);
 }
@@ -480,56 +520,23 @@ std::unique_ptr<Function> Parser::parseFunctionDecl() {
         consume();
         isConst = true;
       }
-      Token typeTok = expect(TokenKind::IDENTIFIER, "Expected parameter type");
-
-      int dims = 0;
-      while (peek().getKind() == TokenKind::LBRACKET &&
-             peekAt(1).getKind() == TokenKind::RBRACKET) {
-        consume();
-        consume();
-        ++dims;
-      }
+      // Parse full type: base + optional <TypeArgs> + optional [][]
+      TypeDesc paramTd = parseTypeDesc();
+      paramTd.isConst = isConst;
 
       Token nameTok = expect(TokenKind::IDENTIFIER, "Expected parameter name");
-      params.emplace_back(TypeDesc(Identifier{typeTok}, dims, isConst),
-                          Identifier{nameTok}, isBorrowRef, isConst, isMut);
+      params.emplace_back(std::move(paramTd), Identifier{nameTok}, isBorrowRef,
+                          isConst, isMut);
     } while (match(TokenKind::COMMA));
 
     expect(TokenKind::RPAREN, "Expected ')'");
   }
   if (match(TokenKind::RETURN_TYPE)) {
-    Token retTok = expect(TokenKind::IDENTIFIER, "Expected return type");
-
-    int retDims = 0;
-    while (peek().getKind() == TokenKind::LBRACKET &&
-           peekAt(1).getKind() == TokenKind::RBRACKET) {
-      consume();
-      consume();
-      ++retDims;
-    }
-
-    std::vector<TypeDesc> generics;
-    // Handle Generics in return type
-    if (match(TokenKind::LT)) {
-      bool isGeneric = true;
-      while (isGeneric) {
-        if (peek().getKind() == TokenKind::IDENTIFIER) {
-          const Identifier iden = Identifier{peek()};
-          TypeDesc tmp = TypeDesc{iden, 0, false, false};
-          generics.push_back(tmp);
-          consume();
-        }
-
-        if (match(TokenKind::GT))
-          isGeneric = false;
-        else
-          expect(TokenKind::COMMA);
-      }
-    }
+    // Parse full return type: base + optional <TypeArgs> + optional [][]
+    // parseTypeDesc() handles all three cases including Option<Animal>[]
+    TypeDesc retTd = parseTypeDesc();
 
     auto body = parseBlock();
-    TypeDesc retTd(Identifier{retTok}, retDims, false);
-    retTd.typeArgs = generics;
     auto fn =
         std::make_unique<Function>(Identifier{nameToken}, std::move(params),
                                    std::move(body), std::move(retTd));
@@ -669,20 +676,11 @@ std::unique_ptr<Statement> Parser::parseStatement() {
 // Uninitialised var decl:  TypeName name;  //
 // ---------------------------------------- //
 std::unique_ptr<VarDecl> Parser::parseVarDeclNoInit() {
-  Token typeTok = consume();
-  int dims = 0;
-  while (peek().getKind() == TokenKind::LBRACKET &&
-         peekAt(1).getKind() == TokenKind::RBRACKET) {
-    consume();
-    consume();
-    ++dims;
-  }
+  // Parse full type: base + optional <TypeArgs> + optional [][]
+  TypeDesc td = parseTypeDesc();
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected variable name");
   expect(TokenKind::SEMI, "Expected ';'");
 
-  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
-                               typeTok.getLine(), typeTok.getColumn()}},
-              dims);
   return std::make_unique<VarDecl>(std::move(td), Identifier{nameTok}, nullptr,
                                    AssignKind::Copy, false);
 }
@@ -806,20 +804,26 @@ std::unique_ptr<Statement> Parser::parseForLoop() {
   }
 
   Token typeTok = expect(TokenKind::IDENTIFIER, "Expected loop variable type");
-  int dims = 0;
+
+  // Build the initial TypeDesc from the base identifier, then extend it
+  // with optional <TypeArgs> and trailing [][] so that loop variables like
+  // Option<Animal>, Option<Animal>[], or i32[][] all parse correctly.
+  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
+                               typeTok.getLine(), typeTok.getColumn()}},
+              0, isConst);
+  if (check(TokenKind::LT)) {
+    consume();
+    td.typeArgs = parseTypeArgList();
+  }
   while (check(TokenKind::LBRACKET) &&
          peekAt(1).getKind() == TokenKind::RBRACKET) {
     consume();
     consume();
-    ++dims;
+    ++td.dimensions;
   }
+
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected loop variable name");
-
   expect(TokenKind::COLON, "Expected ':' in for loop");
-
-  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
-                               typeTok.getLine(), typeTok.getColumn()}},
-              dims, isConst);
 
   // ---- range() fast-path --------------------------------------------------
   if (isIdentWord("range")) {
@@ -906,19 +910,23 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
   Token typeTok = consume();
   const bool isInferred = (typeTok.getWord() == "let");
 
-  // Parse optional generic type arguments: Array<Test>, Map<str, i32>, etc.
-  std::vector<TypeDesc> typeArgs;
-  if (!isInferred && check(TokenKind::LT)) {
-    consume();                     // '<'
-    typeArgs = parseTypeArgList(); // consumes up to and including '>'
-  }
-
-  int dims = 0;
+  // Parse optional generic type arguments and array dims via parseTypeDesc
+  // when not using type inference: Option<Animal>[], Map<str, i32>, etc.
+  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
+                               typeTok.getLine(), typeTok.getColumn()}},
+              0, isConst);
   if (!isInferred) {
-    while (check(TokenKind::LBRACKET)) {
+    // Parse <TypeArgs> if present
+    if (check(TokenKind::LT)) {
+      consume();
+      td.typeArgs = parseTypeArgList();
+    }
+    // Parse trailing [][] (covers both T[][] and T<U>[][])
+    while (check(TokenKind::LBRACKET) &&
+           peekAt(1).getKind() == TokenKind::RBRACKET) {
       consume();
       expect(TokenKind::RBRACKET, "Expected ']'");
-      ++dims;
+      ++td.dimensions;
     }
   }
   Token nameTok = expect(TokenKind::IDENTIFIER, "Expected variable name");
@@ -949,10 +957,6 @@ std::unique_ptr<VarDecl> Parser::parseVarDeclStatement(AssignKind kind) {
   }
   expect(TokenKind::SEMI, "Expected ';'");
 
-  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, typeTok.getWord(),
-                               typeTok.getLine(), typeTok.getColumn()}},
-              dims, isConst);
-  td.typeArgs = std::move(typeArgs);
   return std::make_unique<VarDecl>(std::move(td), Identifier{nameTok},
                                    std::move(init), kind, isConst);
 }
@@ -1341,7 +1345,10 @@ std::unique_ptr<Expression> Parser::parsePrimary() {
 
 std::unique_ptr<Expression> Parser::parseNewArray() {
   expect(TokenKind::NEW, "Expected 'new'");
-  Token elemTok = expect(TokenKind::IDENTIFIER, "Expected element type");
+
+  // Parse the element type in full — base + optional <TypeArgs> + optional [][]
+  // so that  new Option<Animal>[5]  and  new i32[][3]  both work correctly.
+  TypeDesc elemTd = parseTypeDesc();
 
   std::vector<ExprPtr> sizes;
   expect(TokenKind::LBRACKET, "Expected '['");
@@ -1353,8 +1360,5 @@ std::unique_ptr<Expression> Parser::parseNewArray() {
     consume();
   } while (true);
 
-  TypeDesc td(Identifier{Token{TokenKind::IDENTIFIER, elemTok.getWord(),
-                               elemTok.getLine(), elemTok.getColumn()}},
-              sizes.size());
-  return std::make_unique<NewArrayExpr>(std::move(td), std::move(sizes));
+  return std::make_unique<NewArrayExpr>(std::move(elemTd), std::move(sizes));
 }
