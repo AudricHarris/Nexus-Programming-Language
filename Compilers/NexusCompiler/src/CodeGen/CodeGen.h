@@ -79,6 +79,7 @@ public:
 
 private:
   // LLVM state
+  bool hadError = false;
   llvm::LLVMContext context;
   std::unique_ptr<llvm::Module> module;
   llvm::IRBuilder<> builder;

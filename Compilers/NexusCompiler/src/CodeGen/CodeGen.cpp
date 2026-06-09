@@ -1208,6 +1208,13 @@ Value *CodeGenerator::visitIndexedLength(const IndexedLengthExpr &e) {
 /**
  * Generates IR to allocate a new heap array with the given dimensions.
  * Delegates to ArrayEmitter::makeND which handles both 1-D and N-D cases.
+ *
+ * FIX: Generic element types (e.g. Option<Animal>) were previously unresolved
+ * because only the base name ("Option") was looked up, ignoring typeArgs.
+ * The fix mirrors the generic instantiation logic already used in visitVarDecl:
+ * when the plain-name lookup fails and typeArgs are present, attempt to
+ * instantiate the type as a generic enum first, then as a generic struct.
+ *
  * @param e the new-array expression AST node
  * @return an AllocaInst* pointing to the initialised array struct, or nullptr
  */
@@ -1216,6 +1223,32 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   Type *elemType = TypeResolver::fromName(context, typeName);
   if (!elemType)
     elemType = llvm::StructType::getTypeByName(context, typeName);
+
+  // Handle generic element types such as Option<Animal>.
+  // TypeResolver::fromName and a plain name lookup both fail for these because
+  // the instantiated struct is registered under a mangled name like
+  // "Option$Animal", not "Option".  Instantiate it now the same way
+  // visitVarDecl does for generic variable types.
+  if (!elemType && !e.arrayType.typeArgs.empty()) {
+    std::vector<llvm::Type *> concreteArgs;
+    std::vector<std::string> argNames;
+    for (const auto &arg : e.arrayType.typeArgs) {
+      llvm::Type *t = TypeResolver::fromTypeDesc(context, arg);
+      if (!t)
+        t = llvm::StructType::getTypeByName(context, arg.base.token.getWord());
+      if (t) {
+        concreteArgs.push_back(t);
+        argNames.push_back(arg.base.token.getWord());
+      }
+    }
+    if (!concreteArgs.empty()) {
+      // Try as a generic enum first (e.g. Option<T>), then as a generic struct.
+      elemType = instantiateGenericEnum(typeName, concreteArgs, argNames);
+      if (!elemType)
+        elemType = instantiateGenericStruct(e.arrayType);
+    }
+  }
+
   if (!elemType)
     return logError(("Unknown element type: " + typeName).c_str());
 
@@ -3116,6 +3149,23 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
       }
 
       if (variantSt) {
+        // FIX (Bug 5): subjectPtr is the union alloca (e.g. Option$Animal)
+        // whose layout differs from the variant struct (e.g.
+        // Option$Animal_Some). GEP'ing the variant field offsets directly
+        // against the union alloca produces corrupt loads and causes the IR
+        // verifier to hang.
+        //
+        // Copy the union bytes into a fresh alloca typed as the variant struct,
+        // then GEP from that alloca instead.
+        AllocaInst *variantAlloca =
+            createEntryAlloca(variantSt, arm->enumName + ".variant");
+        llvm::TypeSize variantBytes =
+            module->getDataLayout().getTypeAllocSize(variantSt);
+        builder.CreateMemCpy(
+            variantAlloca, llvm::MaybeAlign(), subjectPtr, llvm::MaybeAlign(),
+            llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
+                                   variantBytes.getFixedValue()));
+
         for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
           // Field 0 is the tag; payload starts at index 1.
           unsigned fieldIdx = static_cast<unsigned>(fi) + 1;
@@ -3123,7 +3173,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
             break;
           llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
           Value *fieldPtr = builder.CreateStructGEP(
-              variantSt, subjectPtr, fieldIdx, arm->bindings[fi] + ".fptr");
+              variantSt, variantAlloca, fieldIdx, arm->bindings[fi] + ".fptr");
           AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
           Value *loaded =
               builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
@@ -3263,13 +3313,57 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   // Either way we need the StructType to GEP into it.
   llvm::Type *arrValTy = arrVal->getType();
 
-  // If it's a pointer, get the pointee struct type.
+  // ── resolve the concrete element type ────────────────────────────────────
+  // TypeResolver::fromTypeDesc returns nullptr for generic types like
+  // Option<Animal> because it only knows primitive/plain names.  When that
+  // happens, fall back to the same generic instantiation path used in
+  // visitVarDecl and visitNewArray so that the mangled struct
+  // (e.g. "Option$Animal") is found or created.
+  llvm::Type *elemTy = TypeResolver::fromTypeDesc(context, s.varType);
+  if (!elemTy)
+    elemTy = llvm::StructType::getTypeByName(context,
+                                             s.varType.base.token.getWord());
+  if (!elemTy && !s.varType.typeArgs.empty()) {
+    std::vector<llvm::Type *> concreteArgs;
+    std::vector<std::string> argNames;
+    bool allResolved = true;
+
+    for (const auto &arg : s.varType.typeArgs) {
+      llvm::Type *t = TypeResolver::fromTypeDesc(context, arg);
+      if (!t)
+        t = llvm::StructType::getTypeByName(context, arg.base.token.getWord());
+      if (!t) {
+        t = instantiateGenericStruct(arg);
+      }
+      if (t) {
+        concreteArgs.push_back(t);
+        argNames.push_back(arg.base.token.getWord());
+      } else {
+        allResolved = false;
+        break;
+      }
+    }
+
+    if (allResolved && !concreteArgs.empty()) {
+      elemTy = instantiateGenericEnum(s.varType.base.token.getWord(),
+                                      concreteArgs, argNames);
+      if (!elemTy)
+        elemTy = instantiateGenericStruct(s.varType);
+    }
+  }
+  if (!elemTy)
+    return logError(("foreach: unknown element type '" +
+                     s.varType.base.token.getWord() + "'")
+                        .c_str());
+
+  // If it's a pointer, get the pointee array-wrapper struct type.
+  // This must not be called with a null elemTy — passing nullptr to
+  // getOrCreateArrayStruct was the root cause of the earlier SEGV in
+  // llvm::Type::isScalableTy().
   llvm::StructType *arrStructTy = nullptr;
   bool isPtr = arrValTy->isPointerTy();
   if (isPtr) {
-    // Walk named struct types — the alloca's pointee is the array struct.
-    arrStructTy = TypeResolver::getOrCreateArrayStruct(
-        context, TypeResolver::fromTypeDesc(context, s.varType));
+    arrStructTy = TypeResolver::getOrCreateArrayStruct(context, elemTy);
   } else if (auto *st = llvm::dyn_cast<llvm::StructType>(arrValTy)) {
     arrStructTy = st;
   }
@@ -3292,11 +3386,6 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
     lenVal = builder.CreateExtractValue(arrVal, {0}, "arr.len");
     dataPtr = builder.CreateExtractValue(arrVal, {1}, "arr.data");
   }
-
-  // ── element LLVM type ─────────────────────────────────────────────────────
-  llvm::Type *elemTy = TypeResolver::fromTypeDesc(context, s.varType);
-  if (!elemTy)
-    elemTy = llvm::Type::getInt32Ty(context);
 
   // ── allocas: loop counter and loop variable ───────────────────────────────
   AllocaInst *idxAlloca = createEntryAlloca(i64, "__foreach_idx");
@@ -3883,6 +3972,10 @@ bool CodeGenerator::generate(const Program &program,
       retTy = llvm::StructType::getTypeByName(
           context, fn->returnType.base.token.getWord());
 
+    // For generic return types like Option<Animal>, TypeResolver and a plain
+    // name lookup both fail because the instantiated struct hasn't been
+    // registered yet under "Option". Instantiate it now so the forward
+    // declaration gets the correct concrete return type instead of void.
     if (!retTy && !fn->returnType.typeArgs.empty()) {
       const std::string &retBase = fn->returnType.base.token.getWord();
       std::vector<llvm::Type *> concreteArgs;
