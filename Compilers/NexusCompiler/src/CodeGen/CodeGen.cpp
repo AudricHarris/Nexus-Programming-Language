@@ -3043,21 +3043,14 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 }
 
 /**
- * Generates IR for a Match statement.
+ * Generates IR for a match statement.
  *
- * Reads the tag field of the subject enum, then dispatches to the
- * appropriate arm via an LLVM switch instruction. For arms with payload
- * bindings, the variant struct is looked up using the mangled name
- * (enumName$typeArg_VariantName) so generic enums like Option<Animal>
- * resolve correctly.
- *
- * FIX (Bug 2): The variant struct lookup now tries both the plain name
- * (EnumName_Variant) and the mangled generic name (EnumName$T_Variant)
- * so that bindings inside match arms work for instantiated generic enums.
- *
- * FIX (Bug 4): The tag value search now checks ed->name == arm.enumName
- * before accepting a variant match, preventing wrong tag assignment when
- * multiple enums share a variant name.
+ * The subject is evaluated once and its tag field (always the first i32
+ * member of the enum struct) is loaded. A single LLVM switch instruction
+ * dispatches to the appropriate arm via an LLVM switch instruction. For
+ * arms with payload bindings, the variant struct is looked up using the
+ * mangled name (enumName$typeArg_VariantName) so generic enums like
+ * Option<Animal> resolve correctly.
  *
  * @param s the Match statement AST node
  * @return always nullptr
@@ -3086,7 +3079,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     } else {
       int tagVal = -1;
 
-      // First try the enumTagValues cache keyed by "EnumName::VariantName".
       {
         std::string key = arm.enumName + "::" + arm.variantName;
         auto tvIt = enumTagValues.find(key);
@@ -3094,9 +3086,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
           tagVal = static_cast<int>(tvIt->second);
       }
 
-      // FIX (Bug 4): If not cached, search by matching both the enum name
-      // and the variant name — do NOT accept a match on variant name alone,
-      // as that picks the wrong tag when two enums share a variant name.
       if (tagVal < 0) {
         for (const auto &ed : currentProgram->enums) {
           if (ed->name != arm.enumName)
@@ -3138,21 +3127,14 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     builder.SetInsertPoint(bb);
 
     if (!arm->isWildcard && !arm->bindings.empty()) {
-      // FIX (Bug 2): For generic enums (e.g. Option<Animal>), the per-variant
-      // struct is named "Option$Animal_Some", not "Option_Some". Try the plain
-      // name first, then scan all identified struct types for one whose name
-      // starts with the enum name (with either '_' or '$' separator) and ends
-      // with '_VariantName', to handle both concrete and instantiated enums.
       std::string plainName = arm->enumName + "_" + arm->variantName;
       llvm::StructType *variantSt =
           llvm::StructType::getTypeByName(context, plainName);
 
       if (!variantSt) {
-        // Search for a mangled variant struct: EnumName$TypeArg_VariantName
         std::string suffix = "_" + arm->variantName;
         for (auto *st : module->getIdentifiedStructTypes()) {
           std::string stName = st->getName().str();
-          // Must start with the enum name and end with _VariantName.
           if (stName.rfind(arm->enumName, 0) == 0 &&
               stName.size() > suffix.size() &&
               stName.compare(stName.size() - suffix.size(), suffix.size(),
@@ -3164,14 +3146,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
       }
 
       if (variantSt) {
-        // FIX (Bug 5): subjectPtr is the union alloca (e.g. Option$Animal)
-        // whose layout differs from the variant struct (e.g.
-        // Option$Animal_Some). GEP'ing the variant field offsets directly
-        // against the union alloca produces corrupt loads and causes the IR
-        // verifier to hang.
-        //
-        // Copy the union bytes into a fresh alloca typed as the variant struct,
-        // then GEP from that alloca instead.
         AllocaInst *variantAlloca =
             createEntryAlloca(variantSt, arm->enumName + ".variant");
         llvm::TypeSize variantBytes =
@@ -3182,7 +3156,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
                                    variantBytes.getFixedValue()));
 
         for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
-          // Field 0 is the tag; payload starts at index 1.
           unsigned fieldIdx = static_cast<unsigned>(fi) + 1;
           if (fieldIdx >= variantSt->getNumElements())
             break;
@@ -3194,8 +3167,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
               builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
           builder.CreateStore(loaded, alloca);
 
-          // If fieldTy is not a StructType (e.g. pointer due to how
-          // TypeResolver resolves generic args), recover it from the alloca.
           llvm::StructType *payloadSt =
               llvm::dyn_cast<llvm::StructType>(fieldTy);
           if (!payloadSt)
@@ -3231,9 +3202,15 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
             }
           }
 
-          // Ensure the payload struct's fields are visible to findFieldIndex
-          // BEFORE building the VarInfo, so that resolveStructPtr can use
-          // pointeeType to find the fields immediately on the first access.
+          // FIX (Bug 9): Ensure the payload struct's fields are visible to
+          // findFieldIndex regardless of whether payloadSt was recovered via
+          // the fallback path or the direct dyn_cast path above.
+          // Previously, only the fallback path registered the struct in
+          // structDefs; when dyn_cast<StructType>(fieldTy) succeeded directly
+          // (the common case for non-opaque types), the registration block was
+          // never reached, so findFieldIndex would fail with "Unknown field"
+          // and resolveStructPtr would return null on the next access, causing
+          // the "Field access requires a struct expression" codegen error.
           if (payloadSt && !payloadSt->getName().empty()) {
             std::string stName = payloadSt->getName().str();
             bool inDefs = false;
@@ -3252,7 +3229,12 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
             }
           }
 
-          VarInfo vi(alloca, fieldTy, false, false, false, false);
+          // Use payloadSt as vi.type when available so that resolveStructPtr's
+          // dyn_cast<StructType>(vi.type) always succeeds for struct payloads.
+          // Falling back to fieldTy is safe for scalar bindings (e.g. i32).
+          llvm::Type *bindingTy =
+              payloadSt ? static_cast<llvm::Type *>(payloadSt) : fieldTy;
+          VarInfo vi(alloca, bindingTy, false, false, false, false);
           // Stash the recovered StructType in pointeeType so that
           // resolveStructPtr's fallback can find it even when
           // dyn_cast<StructType>(vi.type) returns null.
@@ -3265,6 +3247,17 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     // Codegen the arm body statements.
     for (const auto &stmt : arm->body->statements)
       stmt->accept(*this);
+
+    // FIX (Bug 8): Erase bindings introduced by this arm so they cannot be
+    // accidentally resolved in a later arm or after the match exits.
+    // Without this, a binding like 'result' from a Some(result) arm stays
+    // live in namedValues when the next arm (e.g. a wildcard) is codegen'd,
+    // causing spurious "Unknown variable" and "Field access requires a struct
+    // expression" errors in arms that never introduced that binding.
+    if (!arm->isWildcard) {
+      for (const auto &binding : arm->bindings)
+        namedValues.erase(binding);
+    }
 
     // Branch to exit if the arm didn't already terminate.
     if (!blockHasTerminator(builder))
@@ -3478,8 +3471,40 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   builder.CreateStore(lenVal, lenAlloca);
 
   AllocaInst *varAlloca = createEntryAlloca(elemTy, vname);
-  namedValues[vname] =
-      VarInfo(varAlloca, elemTy, false, false, false, s.varType.isConst);
+  {
+    // FIX (Bug 10): Mark the loop variable as non-owning (ownsHeap = false).
+    //
+    // Each iteration copies the element struct by value into varAlloca via a
+    // plain load+store.  For element types that contain string or array fields
+    // (e.g. Option<Animal> where Animal has str name/type fields), those inner
+    // data pointers alias directly into the source array's heap buffer — they
+    // are NOT independent copies.  If the scope manager were allowed to call
+    // free() on those data pointers at the end of each loop-body scope, it
+    // would corrupt the source array's heap allocation, causing a SEGV on the
+    // very next GEP into that buffer (or a double-free at program exit).
+    //
+    // The loop variable is a read-only view of the source element; ownership
+    // stays with the array that was allocated by 'new'.  Setting ownsHeap =
+    // false prevents the scope manager from emitting destructors for it.
+    VarInfo vi(varAlloca, elemTy, false, false, false, s.varType.isConst);
+    vi.ownsHeap = false;
+    namedValues[vname] = vi;
+  }
+
+  // Store a separate alloca for dataPtr so it can be reloaded inside bodyBB.
+  // For the pointer (isPtr) path the dataPtr is a load result computed before
+  // the loop; storing it in an alloca lets the body always read the current
+  // pointer even if the array were reallocated during iteration (defensive).
+  llvm::Type *ptrTy = llvm::PointerType::get(context, 0);
+  AllocaInst *dataPtrAlloca = createEntryAlloca(ptrTy, "__foreach_data");
+  if (isPtr) {
+    // dataPtr was already loaded above via GEP; store it for body reloads.
+    builder.CreateStore(dataPtr, dataPtrAlloca);
+  } else {
+    // For the aggregate path, extract and store the data pointer field.
+    // dataPtr here is an extractvalue SSA result — store it for body reloads.
+    builder.CreateStore(dataPtr, dataPtrAlloca);
+  }
 
   // ── basic blocks ──────────────────────────────────────────────────────────
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
@@ -3501,8 +3526,13 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   fn->insert(fn->end(), bodyBB);
   builder.SetInsertPoint(bodyBB);
 
+  // Reload dataPtr from its alloca so the GEP always uses a memory-stable
+  // pointer value rather than an SSA result that LLVM might not track across
+  // the back-edge correctly in all optimisation configurations.
+  Value *bodyDataPtr = builder.CreateLoad(ptrTy, dataPtrAlloca, "data.reload");
+
   // GEP using the opaque data pointer; no bitcast needed with opaque pointers.
-  Value *elemPtr = builder.CreateGEP(elemTy, dataPtr, curIdx, "elem.ptr");
+  Value *elemPtr = builder.CreateGEP(elemTy, bodyDataPtr, curIdx, "elem.ptr");
   Value *elemVal = builder.CreateLoad(elemTy, elemPtr, vname + ".val");
   builder.CreateStore(elemVal, varAlloca);
 
