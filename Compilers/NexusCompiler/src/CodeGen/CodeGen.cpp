@@ -3172,14 +3172,56 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
           if (fieldIdx >= variantSt->getNumElements())
             break;
           llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
+
+          // Resolve the real pointee type: if the variant field is stored as a
+          // pointer (e.g. when TypeResolver::fromTypeDesc returns ptr for a
+          // struct argument), unwrap it so resolveStructPtr gets the struct.
+          llvm::Type *pointeeTy = fieldTy;
+          if (fieldTy->isPointerTy()) {
+            // Opaque pointer — try to recover the named struct from the module.
+            // The variant struct name is "EnumName$TypeArg_VariantName"; the
+            // type-arg portion is the concrete struct name we need.
+            // Fall back to scanning identifiedStructTypes for a non-array,
+            // non-string struct whose name matches the AST type-arg name.
+            if (!arm->enumName.empty() && !arm->variantName.empty()) {
+              std::string suffix = "_" + arm->variantName;
+              for (auto *st : module->getIdentifiedStructTypes()) {
+                std::string stName = st->getName().str();
+                if (stName.rfind(arm->enumName, 0) == 0 &&
+                    stName.size() > suffix.size() &&
+                    stName.compare(stName.size() - suffix.size(), suffix.size(),
+                                   suffix) == 0) {
+                  // This is the variant struct; field fi+1 should be the
+                  // concrete struct type — re-resolve from it.
+                  if (st->getNumElements() > fieldIdx) {
+                    llvm::Type *t = st->getElementType(fieldIdx);
+                    if (t && !t->isPointerTy())
+                      pointeeTy = t;
+                  }
+                  break;
+                }
+              }
+            }
+          }
+
+          // Register the binding as a reference pointing directly into the
+          // variant alloca's payload field. This avoids loading + re-storing
+          // the value (which loses struct-type info for field-access codegen)
+          // and lets resolveStructPtr resolve the type via the reference path.
           Value *fieldPtr = builder.CreateStructGEP(
               variantSt, variantAlloca, fieldIdx, arm->bindings[fi] + ".fptr");
-          AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
-          Value *loaded =
-              builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
-          builder.CreateStore(loaded, alloca);
-          namedValues[arm->bindings[fi]] =
-              VarInfo(alloca, fieldTy, false, false, false, false);
+
+          // Store the GEP pointer into a pointer-typed alloca so that the
+          // isReference load in visitIdentifier/resolveStructPtr can retrieve
+          // it: allocaInst holds a ptr-to-payload, type = pointeeTy.
+          llvm::Type *ptrTy = llvm::PointerType::get(context, 0);
+          AllocaInst *refAlloca =
+              createEntryAlloca(ptrTy, arm->bindings[fi] + ".ref");
+          builder.CreateStore(fieldPtr, refAlloca);
+          VarInfo vi(refAlloca, pointeeTy, /*isRef=*/true, /*isMut=*/false,
+                     /*isBorrowed=*/false, /*isConst=*/false);
+          vi.pointeeType = llvm::dyn_cast<llvm::StructType>(pointeeTy);
+          namedValues[arm->bindings[fi]] = vi;
         }
       }
     }
@@ -3429,8 +3471,12 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   // ── step: ++i ─────────────────────────────────────────────────────────────
   fn->insert(fn->end(), stepBB);
   builder.SetInsertPoint(stepBB);
+  // Reload from the alloca — curIdx is an SSA value defined in condBB and
+  // reusing it here would always compute (initial_idx + 1), making the loop
+  // run forever.
+  Value *stepIdx = builder.CreateLoad(i64, idxAlloca, "idx.step");
   Value *nextIdx =
-      builder.CreateAdd(curIdx, llvm::ConstantInt::get(i64, 1), "idx.next");
+      builder.CreateAdd(stepIdx, llvm::ConstantInt::get(i64, 1), "idx.next");
   builder.CreateStore(nextIdx, idxAlloca);
   builder.CreateBr(condBB);
 
