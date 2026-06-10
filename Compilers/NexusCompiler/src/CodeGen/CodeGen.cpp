@@ -1421,9 +1421,9 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
               for (const auto &tp : tmpl->typeParams) {
                 if (tp != fieldTypeName)
                   continue;
-                if (auto *id =
+                if (auto *argId =
                         dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
-                  auto it = namedValues.find(id->name.token.getWord());
+                  auto it = namedValues.find(argId->name.token.getWord());
                   if (it != namedValues.end())
                     typeSubst[tp] = it->second.type;
                 }
@@ -2226,11 +2226,11 @@ Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
 
           if (!varSt) {
             std::string prefix = enumName + "$";
-            for (auto &st : module->getIdentifiedStructTypes()) {
-              std::string stName = st->getName().str();
+            for (auto &scanSt : module->getIdentifiedStructTypes()) {
+              std::string stName = scanSt->getName().str();
               if (stName.rfind(prefix, 0) == 0 &&
                   stName.find("_" + varName) != std::string::npos) {
-                varSt = st;
+                varSt = scanSt;
                 break;
               }
             }
@@ -2295,6 +2295,21 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
       ty = it->second.pointeeType ? it->second.pointeeType : ty;
     }
     auto *st = llvm::dyn_cast<llvm::StructType>(ty);
+    // Fallback: if the VarInfo type isn't a StructType (e.g. it was stored as
+    // a pointer or opaque type), try to recover the StructType from the alloca
+    // itself, then from a module name lookup using the alloca's element type.
+    if (!st) {
+      if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(ptr)) {
+        st = llvm::dyn_cast<llvm::StructType>(ai->getAllocatedType());
+      }
+    }
+    if (!st && ty->isPointerTy()) {
+      // ty is an opaque pointer — scan structDefs for any struct whose LLVM
+      // type matches the pointee of the alloca, or whose name is encoded in
+      // the VarInfo via pointeeType.
+      if (it->second.pointeeType)
+        st = llvm::dyn_cast<llvm::StructType>(it->second.pointeeType);
+    }
     if (!st)
       return {nullptr, nullptr};
     return {ptr, st};
@@ -3172,55 +3187,76 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
           if (fieldIdx >= variantSt->getNumElements())
             break;
           llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
+          Value *fieldPtr = builder.CreateStructGEP(
+              variantSt, variantAlloca, fieldIdx, arm->bindings[fi] + ".fptr");
+          AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
+          Value *loaded =
+              builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
+          builder.CreateStore(loaded, alloca);
 
-          // Resolve the real pointee type: if the variant field is stored as a
-          // pointer (e.g. when TypeResolver::fromTypeDesc returns ptr for a
-          // struct argument), unwrap it so resolveStructPtr gets the struct.
-          llvm::Type *pointeeTy = fieldTy;
-          if (fieldTy->isPointerTy()) {
-            // Opaque pointer — try to recover the named struct from the module.
-            // The variant struct name is "EnumName$TypeArg_VariantName"; the
-            // type-arg portion is the concrete struct name we need.
-            // Fall back to scanning identifiedStructTypes for a non-array,
-            // non-string struct whose name matches the AST type-arg name.
-            if (!arm->enumName.empty() && !arm->variantName.empty()) {
-              std::string suffix = "_" + arm->variantName;
-              for (auto *st : module->getIdentifiedStructTypes()) {
-                std::string stName = st->getName().str();
-                if (stName.rfind(arm->enumName, 0) == 0 &&
-                    stName.size() > suffix.size() &&
-                    stName.compare(stName.size() - suffix.size(), suffix.size(),
-                                   suffix) == 0) {
-                  // This is the variant struct; field fi+1 should be the
-                  // concrete struct type — re-resolve from it.
-                  if (st->getNumElements() > fieldIdx) {
-                    llvm::Type *t = st->getElementType(fieldIdx);
-                    if (t && !t->isPointerTy())
-                      pointeeTy = t;
+          // If fieldTy is not a StructType (e.g. pointer due to how
+          // TypeResolver resolves generic args), recover it from the alloca.
+          llvm::StructType *payloadSt =
+              llvm::dyn_cast<llvm::StructType>(fieldTy);
+          if (!payloadSt)
+            payloadSt =
+                llvm::dyn_cast<llvm::StructType>(alloca->getAllocatedType());
+
+          // FIX (Bug 6): For generic enum payloads (e.g. the Animal inside
+          // Option<Animal>), fieldTy is the concrete struct type stored in the
+          // variant struct body, but dyn_cast<StructType> may still return null
+          // when the slot was recorded as an opaque pointer.  In that case,
+          // search structDefs first, then currentProgram->structs, matching by
+          // LLVM type pointer identity to recover the concrete StructType and
+          // register it in structDefs so findFieldIndex can see its fields.
+          if (!payloadSt) {
+            // Try matching by LLVM type against every known struct.
+            for (const auto &sd : currentProgram->structs) {
+              llvm::StructType *candidate =
+                  llvm::StructType::getTypeByName(context, sd->name);
+              if (candidate && (candidate == fieldTy ||
+                                candidate == alloca->getAllocatedType())) {
+                payloadSt = candidate;
+                // Register in structDefs if not already present.
+                bool inDefs = false;
+                for (const auto *existing : structDefs)
+                  if (existing->name == sd->name) {
+                    inDefs = true;
+                    break;
                   }
+                if (!inDefs)
+                  structDefs.push_back(sd.get());
+                break;
+              }
+            }
+          }
+
+          // Ensure the payload struct's fields are visible to findFieldIndex
+          // BEFORE building the VarInfo, so that resolveStructPtr can use
+          // pointeeType to find the fields immediately on the first access.
+          if (payloadSt && !payloadSt->getName().empty()) {
+            std::string stName = payloadSt->getName().str();
+            bool inDefs = false;
+            for (const auto *sd : structDefs)
+              if (sd->name == stName) {
+                inDefs = true;
+                break;
+              }
+            if (!inDefs) {
+              for (const auto &sd : currentProgram->structs) {
+                if (sd->name == stName) {
+                  structDefs.push_back(sd.get());
                   break;
                 }
               }
             }
           }
 
-          // Register the binding as a reference pointing directly into the
-          // variant alloca's payload field. This avoids loading + re-storing
-          // the value (which loses struct-type info for field-access codegen)
-          // and lets resolveStructPtr resolve the type via the reference path.
-          Value *fieldPtr = builder.CreateStructGEP(
-              variantSt, variantAlloca, fieldIdx, arm->bindings[fi] + ".fptr");
-
-          // Store the GEP pointer into a pointer-typed alloca so that the
-          // isReference load in visitIdentifier/resolveStructPtr can retrieve
-          // it: allocaInst holds a ptr-to-payload, type = pointeeTy.
-          llvm::Type *ptrTy = llvm::PointerType::get(context, 0);
-          AllocaInst *refAlloca =
-              createEntryAlloca(ptrTy, arm->bindings[fi] + ".ref");
-          builder.CreateStore(fieldPtr, refAlloca);
-          VarInfo vi(refAlloca, pointeeTy, /*isRef=*/true, /*isMut=*/false,
-                     /*isBorrowed=*/false, /*isConst=*/false);
-          vi.pointeeType = llvm::dyn_cast<llvm::StructType>(pointeeTy);
+          VarInfo vi(alloca, fieldTy, false, false, false, false);
+          // Stash the recovered StructType in pointeeType so that
+          // resolveStructPtr's fallback can find it even when
+          // dyn_cast<StructType>(vi.type) returns null.
+          vi.pointeeType = payloadSt;
           namedValues[arm->bindings[fi]] = vi;
         }
       }
@@ -3433,6 +3469,14 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   AllocaInst *idxAlloca = createEntryAlloca(i64, "__foreach_idx");
   builder.CreateStore(llvm::ConstantInt::get(i64, 0), idxAlloca);
 
+  // FIX (Bug 7): Store lenVal in an alloca so the condition block always
+  // reloads a memory-stable value.  When lenVal was an SSA extractvalue
+  // result computed in a predecessor block, mem2reg could not always prove
+  // the value was correct across the back-edge, leading to an infinite loop
+  // when iterating over arrays whose length field was 0 or unset.
+  AllocaInst *lenAlloca = createEntryAlloca(i64, "__foreach_len");
+  builder.CreateStore(lenVal, lenAlloca);
+
   AllocaInst *varAlloca = createEntryAlloca(elemTy, vname);
   namedValues[vname] =
       VarInfo(varAlloca, elemTy, false, false, false, s.varType.isConst);
@@ -3449,7 +3493,8 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   // ── condition: i < length ─────────────────────────────────────────────────
   builder.SetInsertPoint(condBB);
   Value *curIdx = builder.CreateLoad(i64, idxAlloca, "idx");
-  Value *cond = builder.CreateICmpSLT(curIdx, lenVal, "foreach.cond");
+  Value *reloadedLen = builder.CreateLoad(i64, lenAlloca, "arr.len.reload");
+  Value *cond = builder.CreateICmpSLT(curIdx, reloadedLen, "foreach.cond");
   builder.CreateCondBr(cond, bodyBB, exitBB);
 
   // ── body: load element, run user code ────────────────────────────────────
@@ -3471,9 +3516,9 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   // ── step: ++i ─────────────────────────────────────────────────────────────
   fn->insert(fn->end(), stepBB);
   builder.SetInsertPoint(stepBB);
-  // Reload from the alloca — curIdx is an SSA value defined in condBB and
-  // reusing it here would always compute (initial_idx + 1), making the loop
-  // run forever.
+  // Must reload from idxAlloca — curIdx is an SSA value from condBB and
+  // reusing it would always add 1 to the *original* index, freezing the
+  // counter and looping forever.
   Value *stepIdx = builder.CreateLoad(i64, idxAlloca, "idx.step");
   Value *nextIdx =
       builder.CreateAdd(stepIdx, llvm::ConstantInt::get(i64, 1), "idx.next");
