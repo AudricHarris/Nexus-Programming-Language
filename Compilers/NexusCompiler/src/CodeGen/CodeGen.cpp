@@ -3157,9 +3157,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     sw->addCase(val, bb);
 
   // Recover the subject's concrete struct type once, outside the arm loop.
-  // subjectPtr is always an AllocaInst (visitIdentifier returns the alloca
-  // for struct-typed variables), so getAllocatedType() gives us the union
-  // struct (e.g. Option$Animal) with the correct field types already set.
   llvm::StructType *subjectSt = nullptr;
   if (auto *subjectAI = llvm::dyn_cast<llvm::AllocaInst>(subjectPtr))
     subjectSt = llvm::dyn_cast<llvm::StructType>(subjectAI->getAllocatedType());
@@ -3168,32 +3165,28 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     fn->insert(fn->end(), bb);
     builder.SetInsertPoint(bb);
 
-    if (!arm->isWildcard && !arm->bindings.empty()) {
-      // --- Binding strategy ---
-      // Prefer extracting directly from subjectSt (the union/concrete enum
-      // struct). This avoids the fragile variant-struct name lookup that
-      // previously failed when the mangled name (e.g. "Option$Animal_Some")
-      // wasn't found under the plain name ("Option_Some") and the suffix
-      // scan missed it or returned a struct with wrong element count.
-      //
-      // subjectSt has layout: [i32 tag, payload_field_0, payload_field_1, ...]
-      // Field index 0 is the tag; bindings start at field index 1.
-      //
-      // We still attempt the variant-struct lookup as a first step because it
-      // gives us a narrower type with only the fields of this variant, which
-      // may differ from the union in multi-variant enums where the union is
-      // sized for the largest variant.  If the lookup fails or gives the wrong
-      // element count, we fall through to the subjectSt-based path.
+    // FIX (Bug A, part 1): Push a scope for the entire arm (bindings + body).
+    // The old code never called pushScope/popScope here, so:
+    //   - binding variables (e.g. `animal`) with ownsHeap=true were never
+    //     registered with the scope manager, leaking their cloned string data
+    //     on every loop iteration.
+    //   - variables declared inside the arm body (e.g. `test`, `nameAni`)
+    //     accumulated in the enclosing scope and were freed there instead of
+    //     at arm exit, causing use-after-free or double-free when the enclosing
+    //     scope was a foreach loop body that ran more than once.
+    scopeMgr.pushScope();
 
+    if (!arm->isWildcard && !arm->bindings.empty()) {
+      // --- Variant struct lookup ---
       llvm::StructType *variantSt = nullptr;
 
-      // 1. Exact name lookup: "EnumName_VariantName"
+      // 1. Exact plain name: "EnumName_VariantName" (non-generic enums).
       {
         std::string plainName = arm->enumName + "_" + arm->variantName;
         variantSt = llvm::StructType::getTypeByName(context, plainName);
       }
 
-      // 2. Mangled-name suffix scan: "EnumName$TypeArg_VariantName"
+      // 2. Mangled name scan: "EnumName$TypeArg_VariantName" (generic enums).
       if (!variantSt) {
         std::string suffix = "_" + arm->variantName;
         std::string prefix = arm->enumName + "$";
@@ -3208,11 +3201,24 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
         }
       }
 
-      // Check that variantSt has enough fields to cover all bindings.
-      // If not (e.g. it was instantiated with wrong element count), discard it
-      // and fall back to subjectSt below.
-      if (variantSt && variantSt->getNumElements() < arm->bindings.size() + 1)
-        variantSt = nullptr;
+      // Discard variantSt if it doesn't have enough elements, or if one of
+      // its payload fields is a scalar placeholder while subjectSt's
+      // corresponding field is a struct.
+      if (variantSt) {
+        if (variantSt->getNumElements() < arm->bindings.size() + 1) {
+          variantSt = nullptr;
+        } else if (subjectSt) {
+          for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
+            unsigned idx = static_cast<unsigned>(fi) + 1;
+            if (idx < subjectSt->getNumElements() &&
+                subjectSt->getElementType(idx)->isStructTy() &&
+                !variantSt->getElementType(idx)->isStructTy()) {
+              variantSt = nullptr;
+              break;
+            }
+          }
+        }
+      }
 
       for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
         unsigned fieldIdx = static_cast<unsigned>(fi) + 1;
@@ -3220,46 +3226,19 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
         llvm::Type *fieldTy = nullptr;
         Value *fieldPtr = nullptr;
 
-        // Path A: extract from variantSt via a memcpy'd local alloca.
-        // This is the traditional path and works for non-generic enums where
-        // the variant struct name is registered under "EnumName_VariantName".
         if (variantSt && fieldIdx < variantSt->getNumElements()) {
           fieldTy = variantSt->getElementType(fieldIdx);
-
-          // Only use this path if fieldTy is not just a scalar placeholder
-          // (i32) when the subject's corresponding field is actually a struct.
-          // That would indicate the variant struct was built with the i32
-          // fallback during a forward-declaration pass when the concrete type
-          // wasn't resolved yet.
-          bool fieldTyIsPlausible = true;
-          if (subjectSt && fieldIdx < subjectSt->getNumElements()) {
-            llvm::Type *subjectFieldTy = subjectSt->getElementType(fieldIdx);
-            if (subjectFieldTy->isStructTy() && !fieldTy->isStructTy())
-              fieldTyIsPlausible = false; // variantSt has wrong type for slot
-          }
-
-          if (fieldTyIsPlausible) {
-            AllocaInst *variantAlloca =
-                createEntryAlloca(variantSt, arm->enumName + ".variant");
-            llvm::TypeSize variantBytes =
-                module->getDataLayout().getTypeAllocSize(variantSt);
-            builder.CreateMemCpy(
-                variantAlloca, llvm::MaybeAlign(), subjectPtr,
-                llvm::MaybeAlign(),
-                llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
-                                       variantBytes.getFixedValue()));
-            fieldPtr =
-                builder.CreateStructGEP(variantSt, variantAlloca, fieldIdx,
-                                        arm->bindings[fi] + ".fptr");
-          } else {
-            fieldTy = nullptr; // fall through to Path B
-          }
-        }
-
-        // Path B: extract directly from subjectSt (the live enum alloca).
-        // Used when variantSt is null, has wrong element count, or its field
-        // type is a scalar placeholder instead of the expected struct type.
-        if (!fieldTy && subjectSt && fieldIdx < subjectSt->getNumElements()) {
+          AllocaInst *variantAlloca =
+              createEntryAlloca(variantSt, arm->enumName + ".variant");
+          llvm::TypeSize variantBytes =
+              module->getDataLayout().getTypeAllocSize(variantSt);
+          builder.CreateMemCpy(
+              variantAlloca, llvm::MaybeAlign(), subjectPtr, llvm::MaybeAlign(),
+              llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
+                                     variantBytes.getFixedValue()));
+          fieldPtr = builder.CreateStructGEP(variantSt, variantAlloca, fieldIdx,
+                                             arm->bindings[fi] + ".fptr");
+        } else if (subjectSt && fieldIdx < subjectSt->getNumElements()) {
           fieldTy = subjectSt->getElementType(fieldIdx);
           fieldPtr = builder.CreateStructGEP(subjectSt, subjectPtr, fieldIdx,
                                              arm->bindings[fi] + ".src");
@@ -3272,55 +3251,104 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
           continue;
         }
 
-        // For struct payloads, memcpy into a dedicated alloca so the binding
-        // variable has its own storage (mutations don't alias the enum value).
-        AllocaInst *alloca = nullptr;
-        if (fieldTy->isStructTy()) {
-          alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
+        AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
+
+        if (auto *payloadSt = llvm::dyn_cast<llvm::StructType>(fieldTy)) {
           llvm::TypeSize payloadBytes =
-              module->getDataLayout().getTypeAllocSize(fieldTy);
+              module->getDataLayout().getTypeAllocSize(payloadSt);
           builder.CreateMemCpy(
               alloca, llvm::MaybeAlign(), fieldPtr, llvm::MaybeAlign(),
               llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
                                      payloadBytes.getFixedValue()));
-        } else {
-          alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
-          Value *loaded =
-              builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
-          builder.CreateStore(loaded, alloca);
-        }
 
-        // Recover the StructType for the payload if fieldTy is a StructType.
-        // Register it in structDefs so findFieldIndex can see its fields.
-        llvm::StructType *payloadSt = llvm::dyn_cast<llvm::StructType>(fieldTy);
-        if (payloadSt && !payloadSt->getName().empty()) {
-          std::string stName = payloadSt->getName().str();
-          bool inDefs = false;
-          for (const auto *sd : structDefs)
-            if (sd->name == stName) {
-              inDefs = true;
-              break;
+          llvm::StructType *strTy = TypeResolver::getStringType(context);
+          for (unsigned si = 0; si < payloadSt->getNumElements(); ++si) {
+            llvm::Type *elemTy = payloadSt->getElementType(si);
+            if (TypeResolver::isString(elemTy)) {
+              Value *destFieldPtr = builder.CreateStructGEP(
+                  payloadSt, alloca, si,
+                  arm->bindings[fi] + ".sf" + std::to_string(si));
+
+              // FIX (Bug B): Guard the clone against a null data pointer.
+              // When this arm is reached for a zero-initialized variant (e.g.
+              // a None that was later overwritten) the string's data field may
+              // be null. Cloning a null pointer produces a corrupt allocation;
+              // calling free() on it later triggers the ASan DEADLYSIGNAL.
+              // Emit: if (data != null) clone else leave zeroed field as-is.
+              llvm::BasicBlock *curBB = builder.GetInsertBlock();
+              llvm::BasicBlock *cloneBB =
+                  llvm::BasicBlock::Create(context, "clone.str", fn);
+              llvm::BasicBlock *skipCloneBB =
+                  llvm::BasicBlock::Create(context, "clone.str.skip", fn);
+
+              Value *dataGep = builder.CreateStructGEP(
+                  strTy, destFieldPtr, 0, arm->bindings[fi] + ".sf.data.ptr");
+              Value *dataVal =
+                  builder.CreateLoad(llvm::PointerType::get(context, 0),
+                                     dataGep, arm->bindings[fi] + ".sf.data");
+              Value *isNull =
+                  builder.CreateICmpEQ(dataVal,
+                                       llvm::ConstantPointerNull::get(
+                                           llvm::PointerType::get(context, 0)),
+                                       arm->bindings[fi] + ".sf.null");
+              builder.CreateCondBr(isNull, skipCloneBB, cloneBB);
+
+              builder.SetInsertPoint(cloneBB);
+              Value *cloned = StringOps::clone(builder, context, module.get(),
+                                               destFieldPtr);
+              Value *freshVal = builder.CreateLoad(
+                  elemTy, cloned, arm->bindings[fi] + ".sf.val");
+              builder.CreateStore(freshVal, destFieldPtr);
+              if (auto *cloneAI = llvm::dyn_cast<llvm::AllocaInst>(cloned)) {
+                Value *cloneDataGep = builder.CreateStructGEP(
+                    strTy, cloneAI, 0, arm->bindings[fi] + ".sf.clone.null");
+                builder.CreateStore(llvm::ConstantPointerNull::get(
+                                        llvm::PointerType::get(context, 0)),
+                                    cloneDataGep);
+              }
+              builder.CreateBr(skipCloneBB);
+
+              fn->insert(fn->end(), skipCloneBB);
+              builder.SetInsertPoint(skipCloneBB);
             }
-          if (!inDefs) {
-            for (const auto &sd : currentProgram->structs) {
+          }
+
+          // Register the struct payload in structDefs so findFieldIndex works.
+          if (!payloadSt->getName().empty()) {
+            std::string stName = payloadSt->getName().str();
+            bool inDefs = false;
+            for (const auto *sd : structDefs)
               if (sd->name == stName) {
-                structDefs.push_back(sd.get());
+                inDefs = true;
                 break;
+              }
+            if (!inDefs) {
+              for (const auto &sd : currentProgram->structs) {
+                if (sd->name == stName) {
+                  structDefs.push_back(sd.get());
+                  break;
+                }
               }
             }
           }
-        }
 
-        // If fieldTy is not a StructType, scan currentProgram->structs by
-        // LLVM type pointer identity to recover the concrete StructType.
-        // This handles the opaque-pointer case where dyn_cast fails.
-        if (!payloadSt) {
+          VarInfo vi(alloca, payloadSt, false, false, false, false);
+          vi.pointeeType = payloadSt;
+          vi.ownsHeap = true;
+          namedValues[arm->bindings[fi]] = vi;
+
+        } else {
+          Value *loaded =
+              builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
+          builder.CreateStore(loaded, alloca);
+
+          llvm::StructType *payloadSt2 = nullptr;
           for (const auto &sd : currentProgram->structs) {
             llvm::StructType *candidate =
                 llvm::StructType::getTypeByName(context, sd->name);
             if (candidate && (candidate == fieldTy ||
                               candidate == alloca->getAllocatedType())) {
-              payloadSt = candidate;
+              payloadSt2 = candidate;
               bool inDefs = false;
               for (const auto *existing : structDefs)
                 if (existing->name == sd->name) {
@@ -3332,26 +3360,55 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
               break;
             }
           }
+
+          llvm::Type *bindingTy =
+              payloadSt2 ? static_cast<llvm::Type *>(payloadSt2) : fieldTy;
+          VarInfo vi(alloca, bindingTy, false, false, false, false);
+          vi.pointeeType = payloadSt2;
+          vi.ownsHeap = false;
+          namedValues[arm->bindings[fi]] = vi;
         }
 
-        llvm::Type *bindingTy =
-            payloadSt ? static_cast<llvm::Type *>(payloadSt) : fieldTy;
-        VarInfo vi(alloca, bindingTy, false, false, false, false);
-        vi.pointeeType = payloadSt;
-        namedValues[arm->bindings[fi]] = vi;
+        // FIX (Bug A, part 2): Declare the binding to the scope manager so
+        // that its destructor (free of cloned string data) is emitted when
+        // popScope() is called at the end of this arm, not silently leaked.
+        scopeMgr.declare(arm->bindings[fi]);
       }
     }
 
-    // Codegen the arm body statements.
-    for (const auto &stmt : arm->body->statements)
-      stmt->accept(*this);
+    // FIX (Bug A, part 3): Codegen the arm body through visitBlock so that
+    // variables declared inside (e.g. `str test = animal.name`) are scoped to
+    // the arm body block and freed at its end — not accumulated into the
+    // enclosing scope (e.g. a foreach loop body) and freed on every iteration.
+    //
+    // The old code iterated arm->body->statements directly via accept(),
+    // bypassing visitBlock entirely. This meant no pushScope/popScope for the
+    // body, so all inner variables piled up in whatever scope was current.
+    codegen(*arm->body);
 
-    // Erase bindings introduced by this arm so they cannot be accidentally
-    // resolved in a later arm or after the match exits.
+    // Erase bindings from the symbol table so they cannot be resolved in a
+    // later arm or after the match exits.
     if (!arm->isWildcard) {
       for (const auto &binding : arm->bindings)
         namedValues.erase(binding);
     }
+
+    // FIX (Bug A, part 4): Pop the arm scope, emitting destructors for the
+    // binding variables (e.g. `animal`'s cloned string fields). Without this,
+    // each loop iteration that takes the Some branch leaks the clone from the
+    // previous iteration because the alloca is silently overwritten in-place.
+    //
+    // popScope must come AFTER namedValues.erase so that the scope manager
+    // only emits free() for bindings whose namedValues entry is already gone —
+    // preventing the scope manager from trying to resolve a stale name if it
+    // re-enters the symbol table for any reason.
+    //
+    // Note: if the arm body already emitted a terminator (e.g. an explicit
+    // `return`), visitReturn called scopeMgr.emitAllDestructors() itself, so
+    // we must not emit another branch to exitBB. blockHasTerminator() guards
+    // both the popScope emission and the branch below.
+    if (!blockHasTerminator(builder))
+      scopeMgr.popScope();
 
     if (!blockHasTerminator(builder))
       builder.CreateBr(exitBB);
