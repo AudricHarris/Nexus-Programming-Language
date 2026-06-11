@@ -2013,11 +2013,19 @@ llvm::StructType *CodeGenerator::instantiateGenericEnum(
   for (const auto &v : tmpl->variants) {
     long long tagForThis = nextTag++;
     std::string sname = mangledBase + "_" + v.name;
-    if (llvm::StructType::getTypeByName(context, sname))
+    llvm::StructType *existing =
+        llvm::StructType::getTypeByName(context, sname);
+
+    // Only skip if the body has already been set (non-opaque). A previous
+    // forward-declaration pass may have created this struct as an opaque
+    // placeholder when a field type (e.g. Animal) wasn't resolved yet.
+    // Leaving it opaque lets us retry with the correct type below.
+    if (existing && !existing->isOpaque())
       continue;
 
     std::vector<llvm::Type *> fields;
     fields.push_back(llvm::Type::getInt32Ty(context)); // tag
+    bool allResolved = true;
     for (const auto &f : v.fields) {
       llvm::Type *ft = nullptr;
       auto it = subst.find(f.typeName);
@@ -2028,21 +2036,33 @@ llvm::StructType *CodeGenerator::instantiateGenericEnum(
         if (!ft)
           ft = llvm::StructType::getTypeByName(context, f.typeName);
       }
-      if (!ft)
-        ft = llvm::Type::getInt32Ty(context);
+      if (!ft) {
+        // Field type is not yet registered (e.g. a struct defined after this
+        // enum instantiation). Leave the struct opaque so the next call —
+        // once all types are in the context — can set the correct body.
+        allResolved = false;
+        break;
+      }
       fields.push_back(ft);
     }
-    auto *st = llvm::StructType::create(context, sname);
+
+    if (!allResolved)
+      continue;
+
+    // Re-use the existing opaque struct rather than creating a duplicate name.
+    llvm::StructType *st =
+        existing ? existing : llvm::StructType::create(context, sname);
     st->setBody(fields);
 
     enumTagValues[mangledBase + "::" + v.name] = tagForThis;
     enumTagValues[enumName + "::" + v.name] = tagForThis;
   }
 
-  llvm::StructType *existing =
+  llvm::StructType *existingUnion =
       llvm::StructType::getTypeByName(context, mangledBase);
-  if (existing)
-    return existing;
+  // Only return early if the union body has already been fully set.
+  if (existingUnion && !existingUnion->isOpaque())
+    return existingUnion;
 
   size_t maxFields = 0;
   const EnumVariant *maxVariant = nullptr;
@@ -2055,6 +2075,7 @@ llvm::StructType *CodeGenerator::instantiateGenericEnum(
 
   std::vector<llvm::Type *> unionFields;
   unionFields.push_back(llvm::Type::getInt32Ty(context)); // tag
+  bool unionAllResolved = true;
   if (maxVariant) {
     for (const auto &f : maxVariant->fields) {
       llvm::Type *ft = nullptr;
@@ -2066,11 +2087,24 @@ llvm::StructType *CodeGenerator::instantiateGenericEnum(
         if (!ft)
           ft = llvm::StructType::getTypeByName(context, f.typeName);
       }
-      if (ft)
-        unionFields.push_back(ft);
+      if (!ft) {
+        // Same deferred-resolution strategy: leave the union opaque so a
+        // subsequent call with fully-registered types can fill it in.
+        unionAllResolved = false;
+        break;
+      }
+      unionFields.push_back(ft);
     }
   }
-  auto *unionSt = llvm::StructType::create(context, mangledBase);
+
+  if (!unionAllResolved)
+    return existingUnion; // still opaque — caller will retry later
+
+  // Re-use the existing opaque union struct if present, rather than creating
+  // a duplicate name which LLVM would suffix with ".0", ".1", etc.
+  llvm::StructType *unionSt =
+      existingUnion ? existingUnion
+                    : llvm::StructType::create(context, mangledBase);
   unionSt->setBody(unionFields);
   return unionSt;
 }
@@ -3064,7 +3098,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
   llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "");
 
-  llvm::BasicBlock *defaultBB = exitBB; // fall-through when no wildcard
+  llvm::BasicBlock *defaultBB = exitBB;
   std::vector<std::pair<llvm::ConstantInt *, llvm::BasicBlock *>> cases;
   std::vector<std::pair<const MatchArm *, llvm::BasicBlock *>> armBlocks;
 
@@ -3122,21 +3156,50 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
   for (auto &[val, bb] : cases)
     sw->addCase(val, bb);
 
+  // Recover the subject's concrete struct type once, outside the arm loop.
+  // subjectPtr is always an AllocaInst (visitIdentifier returns the alloca
+  // for struct-typed variables), so getAllocatedType() gives us the union
+  // struct (e.g. Option$Animal) with the correct field types already set.
+  llvm::StructType *subjectSt = nullptr;
+  if (auto *subjectAI = llvm::dyn_cast<llvm::AllocaInst>(subjectPtr))
+    subjectSt = llvm::dyn_cast<llvm::StructType>(subjectAI->getAllocatedType());
+
   for (auto &[arm, bb] : armBlocks) {
     fn->insert(fn->end(), bb);
     builder.SetInsertPoint(bb);
 
     if (!arm->isWildcard && !arm->bindings.empty()) {
-      std::string plainName = arm->enumName + "_" + arm->variantName;
-      llvm::StructType *variantSt =
-          llvm::StructType::getTypeByName(context, plainName);
+      // --- Binding strategy ---
+      // Prefer extracting directly from subjectSt (the union/concrete enum
+      // struct). This avoids the fragile variant-struct name lookup that
+      // previously failed when the mangled name (e.g. "Option$Animal_Some")
+      // wasn't found under the plain name ("Option_Some") and the suffix
+      // scan missed it or returned a struct with wrong element count.
+      //
+      // subjectSt has layout: [i32 tag, payload_field_0, payload_field_1, ...]
+      // Field index 0 is the tag; bindings start at field index 1.
+      //
+      // We still attempt the variant-struct lookup as a first step because it
+      // gives us a narrower type with only the fields of this variant, which
+      // may differ from the union in multi-variant enums where the union is
+      // sized for the largest variant.  If the lookup fails or gives the wrong
+      // element count, we fall through to the subjectSt-based path.
 
+      llvm::StructType *variantSt = nullptr;
+
+      // 1. Exact name lookup: "EnumName_VariantName"
+      {
+        std::string plainName = arm->enumName + "_" + arm->variantName;
+        variantSt = llvm::StructType::getTypeByName(context, plainName);
+      }
+
+      // 2. Mangled-name suffix scan: "EnumName$TypeArg_VariantName"
       if (!variantSt) {
         std::string suffix = "_" + arm->variantName;
+        std::string prefix = arm->enumName + "$";
         for (auto *st : module->getIdentifiedStructTypes()) {
           std::string stName = st->getName().str();
-          if (stName.rfind(arm->enumName, 0) == 0 &&
-              stName.size() > suffix.size() &&
+          if (stName.rfind(prefix, 0) == 0 && stName.size() > suffix.size() &&
               stName.compare(stName.size() - suffix.size(), suffix.size(),
                              suffix) == 0) {
             variantSt = st;
@@ -3145,102 +3208,137 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
         }
       }
 
-      if (variantSt) {
-        AllocaInst *variantAlloca =
-            createEntryAlloca(variantSt, arm->enumName + ".variant");
-        llvm::TypeSize variantBytes =
-            module->getDataLayout().getTypeAllocSize(variantSt);
-        builder.CreateMemCpy(
-            variantAlloca, llvm::MaybeAlign(), subjectPtr, llvm::MaybeAlign(),
-            llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
-                                   variantBytes.getFixedValue()));
+      // Check that variantSt has enough fields to cover all bindings.
+      // If not (e.g. it was instantiated with wrong element count), discard it
+      // and fall back to subjectSt below.
+      if (variantSt && variantSt->getNumElements() < arm->bindings.size() + 1)
+        variantSt = nullptr;
 
-        for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
-          unsigned fieldIdx = static_cast<unsigned>(fi) + 1;
-          if (fieldIdx >= variantSt->getNumElements())
-            break;
-          llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
-          Value *fieldPtr = builder.CreateStructGEP(
-              variantSt, variantAlloca, fieldIdx, arm->bindings[fi] + ".fptr");
-          AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
+      for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
+        unsigned fieldIdx = static_cast<unsigned>(fi) + 1;
+
+        llvm::Type *fieldTy = nullptr;
+        Value *fieldPtr = nullptr;
+
+        // Path A: extract from variantSt via a memcpy'd local alloca.
+        // This is the traditional path and works for non-generic enums where
+        // the variant struct name is registered under "EnumName_VariantName".
+        if (variantSt && fieldIdx < variantSt->getNumElements()) {
+          fieldTy = variantSt->getElementType(fieldIdx);
+
+          // Only use this path if fieldTy is not just a scalar placeholder
+          // (i32) when the subject's corresponding field is actually a struct.
+          // That would indicate the variant struct was built with the i32
+          // fallback during a forward-declaration pass when the concrete type
+          // wasn't resolved yet.
+          bool fieldTyIsPlausible = true;
+          if (subjectSt && fieldIdx < subjectSt->getNumElements()) {
+            llvm::Type *subjectFieldTy = subjectSt->getElementType(fieldIdx);
+            if (subjectFieldTy->isStructTy() && !fieldTy->isStructTy())
+              fieldTyIsPlausible = false; // variantSt has wrong type for slot
+          }
+
+          if (fieldTyIsPlausible) {
+            AllocaInst *variantAlloca =
+                createEntryAlloca(variantSt, arm->enumName + ".variant");
+            llvm::TypeSize variantBytes =
+                module->getDataLayout().getTypeAllocSize(variantSt);
+            builder.CreateMemCpy(
+                variantAlloca, llvm::MaybeAlign(), subjectPtr,
+                llvm::MaybeAlign(),
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
+                                       variantBytes.getFixedValue()));
+            fieldPtr =
+                builder.CreateStructGEP(variantSt, variantAlloca, fieldIdx,
+                                        arm->bindings[fi] + ".fptr");
+          } else {
+            fieldTy = nullptr; // fall through to Path B
+          }
+        }
+
+        // Path B: extract directly from subjectSt (the live enum alloca).
+        // Used when variantSt is null, has wrong element count, or its field
+        // type is a scalar placeholder instead of the expected struct type.
+        if (!fieldTy && subjectSt && fieldIdx < subjectSt->getNumElements()) {
+          fieldTy = subjectSt->getElementType(fieldIdx);
+          fieldPtr = builder.CreateStructGEP(subjectSt, subjectPtr, fieldIdx,
+                                             arm->bindings[fi] + ".src");
+        }
+
+        if (!fieldTy || !fieldPtr) {
+          logError(("match: cannot extract binding '" + arm->bindings[fi] +
+                    "' from variant '" + arm->variantName + "'")
+                       .c_str());
+          continue;
+        }
+
+        // For struct payloads, memcpy into a dedicated alloca so the binding
+        // variable has its own storage (mutations don't alias the enum value).
+        AllocaInst *alloca = nullptr;
+        if (fieldTy->isStructTy()) {
+          alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
+          llvm::TypeSize payloadBytes =
+              module->getDataLayout().getTypeAllocSize(fieldTy);
+          builder.CreateMemCpy(
+              alloca, llvm::MaybeAlign(), fieldPtr, llvm::MaybeAlign(),
+              llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
+                                     payloadBytes.getFixedValue()));
+        } else {
+          alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
           Value *loaded =
               builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
           builder.CreateStore(loaded, alloca);
+        }
 
-          llvm::StructType *payloadSt =
-              llvm::dyn_cast<llvm::StructType>(fieldTy);
-          if (!payloadSt)
-            payloadSt =
-                llvm::dyn_cast<llvm::StructType>(alloca->getAllocatedType());
-
-          // FIX (Bug 6): For generic enum payloads (e.g. the Animal inside
-          // Option<Animal>), fieldTy is the concrete struct type stored in the
-          // variant struct body, but dyn_cast<StructType> may still return null
-          // when the slot was recorded as an opaque pointer.  In that case,
-          // search structDefs first, then currentProgram->structs, matching by
-          // LLVM type pointer identity to recover the concrete StructType and
-          // register it in structDefs so findFieldIndex can see its fields.
-          if (!payloadSt) {
-            // Try matching by LLVM type against every known struct.
+        // Recover the StructType for the payload if fieldTy is a StructType.
+        // Register it in structDefs so findFieldIndex can see its fields.
+        llvm::StructType *payloadSt = llvm::dyn_cast<llvm::StructType>(fieldTy);
+        if (payloadSt && !payloadSt->getName().empty()) {
+          std::string stName = payloadSt->getName().str();
+          bool inDefs = false;
+          for (const auto *sd : structDefs)
+            if (sd->name == stName) {
+              inDefs = true;
+              break;
+            }
+          if (!inDefs) {
             for (const auto &sd : currentProgram->structs) {
-              llvm::StructType *candidate =
-                  llvm::StructType::getTypeByName(context, sd->name);
-              if (candidate && (candidate == fieldTy ||
-                                candidate == alloca->getAllocatedType())) {
-                payloadSt = candidate;
-                // Register in structDefs if not already present.
-                bool inDefs = false;
-                for (const auto *existing : structDefs)
-                  if (existing->name == sd->name) {
-                    inDefs = true;
-                    break;
-                  }
-                if (!inDefs)
-                  structDefs.push_back(sd.get());
+              if (sd->name == stName) {
+                structDefs.push_back(sd.get());
                 break;
               }
             }
           }
+        }
 
-          // FIX (Bug 9): Ensure the payload struct's fields are visible to
-          // findFieldIndex regardless of whether payloadSt was recovered via
-          // the fallback path or the direct dyn_cast path above.
-          // Previously, only the fallback path registered the struct in
-          // structDefs; when dyn_cast<StructType>(fieldTy) succeeded directly
-          // (the common case for non-opaque types), the registration block was
-          // never reached, so findFieldIndex would fail with "Unknown field"
-          // and resolveStructPtr would return null on the next access, causing
-          // the "Field access requires a struct expression" codegen error.
-          if (payloadSt && !payloadSt->getName().empty()) {
-            std::string stName = payloadSt->getName().str();
-            bool inDefs = false;
-            for (const auto *sd : structDefs)
-              if (sd->name == stName) {
-                inDefs = true;
-                break;
-              }
-            if (!inDefs) {
-              for (const auto &sd : currentProgram->structs) {
-                if (sd->name == stName) {
-                  structDefs.push_back(sd.get());
+        // If fieldTy is not a StructType, scan currentProgram->structs by
+        // LLVM type pointer identity to recover the concrete StructType.
+        // This handles the opaque-pointer case where dyn_cast fails.
+        if (!payloadSt) {
+          for (const auto &sd : currentProgram->structs) {
+            llvm::StructType *candidate =
+                llvm::StructType::getTypeByName(context, sd->name);
+            if (candidate && (candidate == fieldTy ||
+                              candidate == alloca->getAllocatedType())) {
+              payloadSt = candidate;
+              bool inDefs = false;
+              for (const auto *existing : structDefs)
+                if (existing->name == sd->name) {
+                  inDefs = true;
                   break;
                 }
-              }
+              if (!inDefs)
+                structDefs.push_back(sd.get());
+              break;
             }
           }
-
-          // Use payloadSt as vi.type when available so that resolveStructPtr's
-          // dyn_cast<StructType>(vi.type) always succeeds for struct payloads.
-          // Falling back to fieldTy is safe for scalar bindings (e.g. i32).
-          llvm::Type *bindingTy =
-              payloadSt ? static_cast<llvm::Type *>(payloadSt) : fieldTy;
-          VarInfo vi(alloca, bindingTy, false, false, false, false);
-          // Stash the recovered StructType in pointeeType so that
-          // resolveStructPtr's fallback can find it even when
-          // dyn_cast<StructType>(vi.type) returns null.
-          vi.pointeeType = payloadSt;
-          namedValues[arm->bindings[fi]] = vi;
         }
+
+        llvm::Type *bindingTy =
+            payloadSt ? static_cast<llvm::Type *>(payloadSt) : fieldTy;
+        VarInfo vi(alloca, bindingTy, false, false, false, false);
+        vi.pointeeType = payloadSt;
+        namedValues[arm->bindings[fi]] = vi;
       }
     }
 
@@ -3248,18 +3346,13 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     for (const auto &stmt : arm->body->statements)
       stmt->accept(*this);
 
-    // FIX (Bug 8): Erase bindings introduced by this arm so they cannot be
-    // accidentally resolved in a later arm or after the match exits.
-    // Without this, a binding like 'result' from a Some(result) arm stays
-    // live in namedValues when the next arm (e.g. a wildcard) is codegen'd,
-    // causing spurious "Unknown variable" and "Field access requires a struct
-    // expression" errors in arms that never introduced that binding.
+    // Erase bindings introduced by this arm so they cannot be accidentally
+    // resolved in a later arm or after the match exits.
     if (!arm->isWildcard) {
       for (const auto &binding : arm->bindings)
         namedValues.erase(binding);
     }
 
-    // Branch to exit if the arm didn't already terminate.
     if (!blockHasTerminator(builder))
       builder.CreateBr(exitBB);
   }
