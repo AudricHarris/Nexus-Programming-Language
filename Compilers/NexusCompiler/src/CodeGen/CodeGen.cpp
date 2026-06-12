@@ -2833,6 +2833,14 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
       if (!concreteArgs.empty())
         ty = instantiateGenericEnum(typeName, concreteArgs, argNames);
     }
+    // Apply array dimensions that instantiateGenericStruct/Enum do not handle.
+    // For example, Option<Animal>[] resolves the element type to Option$Animal
+    // first, then this loop wraps it in the array struct (array.Option$Animal)
+    // so that TypeResolver::isArray(ty) is true and ownership is tracked.
+    if (ty && d.type.dimensions > 0) {
+      for (int dim = 0; dim < d.type.dimensions; ++dim)
+        ty = TypeResolver::getOrCreateArrayStruct(context, ty);
+    }
   } else {
     ty = TypeResolver::fromTypeDesc(context, d.type);
     if (!ty)
@@ -2931,11 +2939,27 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
                              ? builder.CreateLoad(ty, init, name + ".structval")
                              : init;
       builder.CreateStore(structVal, alloca);
+
+      // Recursively check whether the struct (or any nested struct) contains
+      // heap-owning string or array fields. The old flat scan only checked
+      // one level and missed cases like Option<Animal> where strings live two
+      // levels deep (Option$Animal → Animal → str name/type).
+      std::function<bool(llvm::Type *)> hasHeapFields =
+          [&](llvm::Type *t) -> bool {
+        if (TypeResolver::isString(t) || TypeResolver::isArray(t))
+          return true;
+        if (auto *st = llvm::dyn_cast<llvm::StructType>(t)) {
+          for (unsigned i = 0; i < st->getNumElements(); ++i)
+            if (hasHeapFields(st->getElementType(i)))
+              return true;
+        }
+        return false;
+      };
+
       vi.ownsHeap = false;
       if (auto *st = llvm::dyn_cast<llvm::StructType>(ty)) {
         for (unsigned i = 0; i < st->getNumElements(); ++i) {
-          if (TypeResolver::isString(st->getElementType(i)) ||
-              TypeResolver::isArray(st->getElementType(i))) {
+          if (hasHeapFields(st->getElementType(i))) {
             vi.ownsHeap = true;
             break;
           }
@@ -3327,6 +3351,22 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
                                         llvm::PointerType::get(context, 0)),
                                     cloneDataGep);
               }
+              // Null the original string data pointer in the subject (bob) so
+              // that bob's scope destructor does not free the buffer a second
+              // time. ani now owns the cloned copy; bob must relinquish the
+              // original. This mirrors the null-out done everywhere else
+              // (visitReturn::nullStringFields, visitAssign, etc.).
+              Value *srcPayloadPtr =
+                  builder.CreateStructGEP(subjectSt, subjectPtr, fieldIdx,
+                                          arm->bindings[fi] + ".src.payload");
+              Value *srcStrFieldPtr = builder.CreateStructGEP(
+                  payloadSt, srcPayloadPtr, si,
+                  arm->bindings[fi] + ".src.sf" + std::to_string(si));
+              Value *srcDataGep = builder.CreateStructGEP(
+                  strTy, srcStrFieldPtr, 0, arm->bindings[fi] + ".src.dp");
+              builder.CreateStore(llvm::ConstantPointerNull::get(
+                                      llvm::PointerType::get(context, 0)),
+                                  srcDataGep);
               builder.CreateBr(skipCloneBB);
 
               fn->insert(fn->end(), skipCloneBB);
