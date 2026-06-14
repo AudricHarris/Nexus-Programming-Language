@@ -1349,7 +1349,6 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
     dimValues.push_back(v);
   }
   return ArrayEmitter::makeND(builder, context, *module, elemType, dimValues);
-  return ArrayEmitter::makeND(builder, context, *module, elemType, dimValues);
 }
 
 /*---------------------------------------*/
@@ -3996,6 +3995,28 @@ Value *CodeGenerator::visitReturn(const Return &s) {
     if (auto *st = llvm::dyn_cast<llvm::StructType>(allocTy)) {
       llvm::Function *fn = builder.GetInsertBlock()->getParent();
       Type *retTy = fn->getReturnType();
+
+      // If the alloca is narrower than the return type (e.g. a no-payload
+      // variant Option_None{i32} being returned as Option$Animal{i32,Animal}),
+      // loading retTy bytes from the small alloca reads garbage beyond it.
+      // Promote: zero a full-sized alloca, memcpy the narrow bytes in, use
+      // that.
+      if (auto *retSt = llvm::dyn_cast<llvm::StructType>(retTy)) {
+        if (retSt != st) {
+          const llvm::DataLayout &DL = fn->getParent()->getDataLayout();
+          uint64_t allocBytes = DL.getTypeAllocSize(st);
+          uint64_t retBytes = DL.getTypeAllocSize(retSt);
+          if (retBytes > allocBytes) {
+            llvm::AllocaInst *wide = createEntryAlloca(retSt, "ret.wide");
+            builder.CreateStore(llvm::Constant::getNullValue(retSt), wide);
+            builder.CreateMemCpy(wide, wide->getAlign(), ai, ai->getAlign(),
+                                 allocBytes);
+            ai = wide;
+            st = retSt;
+          }
+        }
+      }
+
       retVal = builder.CreateLoad(retTy, ai, "ret.load");
       if (TypeResolver::isArray(allocTy)) {
         Value *dataGep =
@@ -4138,6 +4159,12 @@ llvm::Function *CodeGenerator::codegen(const AST_H::Function &func) {
     retTy = Type::getInt32Ty(context);
   if (!retTy)
     return nullptr;
+
+  // Wrap in the array struct for each array dimension on the return type.
+  // Without this, a function returning e.g. List<Option<Animal>> has its
+  // return type resolved to Option$Animal instead of array.Option$Animal.
+  for (int d = 0; d < func.returnType.dimensions; ++d)
+    retTy = TypeResolver::getOrCreateArrayStruct(context, retTy);
 
   std::vector<Type *> paramTypes;
   std::vector<bool> paramIsRef;
@@ -4542,6 +4569,12 @@ bool CodeGenerator::generate(const Program &program,
       retTy = Type::getInt32Ty(context);
     if (!retTy)
       retTy = llvm::Type::getVoidTy(context);
+
+    // Wrap in the array struct for each array dimension on the return type.
+    // Without this, the forward declaration gets the wrong return type and the
+    // definition pass inherits it (it reuses the cached llvm::Function*).
+    for (int d = 0; d < fn->returnType.dimensions; ++d)
+      retTy = TypeResolver::getOrCreateArrayStruct(context, retTy);
 
     std::vector<Type *> paramTypes;
     for (const auto &p : fn->params) {
