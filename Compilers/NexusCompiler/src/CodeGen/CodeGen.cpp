@@ -3784,71 +3784,47 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   if (auto *ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(retVal)) {
     llvm::Type *allocTy = ai->getAllocatedType();
 
-    // Helper: recursively null all heap-owning pointers inside a struct so
-    // that the scope destructor does not free memory that now belongs to the
-    // caller (preventing double-free / use-after-free).
-    std::function<void(llvm::StructType *, llvm::Value *)> nullStringFields =
-        [&](llvm::StructType *cursT, llvm::Value *curPtr) {
-          for (unsigned i = 0; i < cursT->getNumElements(); ++i) {
-            llvm::Type *elemTy = cursT->getElementType(i);
+    if (auto *st = llvm::dyn_cast<llvm::StructType>(allocTy)) {
+      llvm::Function *fn = builder.GetInsertBlock()->getParent();
+      Type *retTy = fn->getReturnType();
+      retVal = builder.CreateLoad(retTy, ai, "ret.load");
 
-            if (TypeResolver::isString(elemTy)) {
-              llvm::StructType *strSt = TypeResolver::getStringType(context);
-              Value *fieldGep =
-                  builder.CreateStructGEP(cursT, curPtr, i, "ret.null.sf");
-              Value *dataGep =
-                  builder.CreateStructGEP(strSt, fieldGep, 0, "ret.null.dp");
-              builder.CreateStore(llvm::ConstantPointerNull::get(
-                                      llvm::PointerType::get(context, 0)),
-                                  dataGep);
+      std::function<void(llvm::StructType *, llvm::Value *)> nullStringFields =
+          [&](llvm::StructType *cursT, llvm::Value *curPtr) {
+            for (unsigned i = 0; i < cursT->getNumElements(); ++i) {
+              llvm::Type *elemTy = cursT->getElementType(i);
 
-            } else if (TypeResolver::isArray(elemTy)) {
-              auto *arrSt = llvm::dyn_cast<llvm::StructType>(elemTy);
-              if (arrSt) {
+              if (TypeResolver::isString(elemTy)) {
+                llvm::StructType *strSt = TypeResolver::getStringType(context);
                 Value *fieldGep =
-                    builder.CreateStructGEP(cursT, curPtr, i, "ret.null.af");
+                    builder.CreateStructGEP(cursT, curPtr, i, "ret.null.sf");
                 Value *dataGep =
-                    builder.CreateStructGEP(arrSt, fieldGep, 1, "ret.null.adp");
+                    builder.CreateStructGEP(strSt, fieldGep, 0, "ret.null.dp");
                 builder.CreateStore(llvm::ConstantPointerNull::get(
                                         llvm::PointerType::get(context, 0)),
                                     dataGep);
+
+              } else if (TypeResolver::isArray(elemTy)) {
+                auto *arrSt = llvm::dyn_cast<llvm::StructType>(elemTy);
+                if (arrSt) {
+                  Value *fieldGep =
+                      builder.CreateStructGEP(cursT, curPtr, i, "ret.null.af");
+                  Value *dataGep = builder.CreateStructGEP(arrSt, fieldGep, 1,
+                                                           "ret.null.adp");
+                  builder.CreateStore(llvm::ConstantPointerNull::get(
+                                          llvm::PointerType::get(context, 0)),
+                                      dataGep);
+                }
+
+              } else if (auto *nestedSt =
+                             llvm::dyn_cast<llvm::StructType>(elemTy)) {
+                Value *fieldGep =
+                    builder.CreateStructGEP(cursT, curPtr, i, "ret.null.ns");
+                nullStringFields(nestedSt, fieldGep);
               }
-
-            } else if (auto *nestedSt =
-                           llvm::dyn_cast<llvm::StructType>(elemTy)) {
-              Value *fieldGep =
-                  builder.CreateStructGEP(cursT, curPtr, i, "ret.null.ns");
-              nullStringFields(nestedSt, fieldGep);
             }
-          }
-        };
+          };
 
-    if (TypeResolver::isString(allocTy)) {
-      // Returning a string directly: null its data pointer so the local
-      // destructor does not free the buffer being handed to the caller.
-      llvm::StructType *strSt = TypeResolver::getStringType(context);
-      Value *dataGep = builder.CreateStructGEP(strSt, ai, 0, "ret.str.null");
-      builder.CreateStore(
-          llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
-          dataGep);
-      retVal = builder.CreateLoad(allocTy, ai, "ret.load");
-
-    } else if (TypeResolver::isArray(allocTy)) {
-      // Returning an array directly: null field 1 (the data pointer) so the
-      // local destructor does not free the buffer being handed to the caller.
-      auto *arrSt = llvm::cast<llvm::StructType>(allocTy);
-      llvm::Function *fn = builder.GetInsertBlock()->getParent();
-      Type *retTy = fn->getReturnType();
-      retVal = builder.CreateLoad(retTy, ai, "ret.load");
-      Value *dataGep = builder.CreateStructGEP(arrSt, ai, 1, "ret.arr.null");
-      builder.CreateStore(
-          llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
-          dataGep);
-
-    } else if (auto *st = llvm::dyn_cast<llvm::StructType>(allocTy)) {
-      llvm::Function *fn = builder.GetInsertBlock()->getParent();
-      Type *retTy = fn->getReturnType();
-      retVal = builder.CreateLoad(retTy, ai, "ret.load");
       nullStringFields(st, ai);
 
     } else {
