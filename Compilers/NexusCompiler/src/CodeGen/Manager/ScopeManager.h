@@ -41,6 +41,7 @@ private:
   std::vector<std::vector<std::string>> stack_;
   std::vector<std::vector<VarInfo>> tmpStack_;
 
+  void emitStructFieldDestructors(llvm::StructType *st, llvm::Value *ptr);
   void emitDestructorsFor(const std::vector<std::string> &names);
   void emitDestructor(VarInfo &vi);
   void emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt, int depth);

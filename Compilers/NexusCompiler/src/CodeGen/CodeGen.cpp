@@ -1209,12 +1209,6 @@ Value *CodeGenerator::visitIndexedLength(const IndexedLengthExpr &e) {
  * Generates IR to allocate a new heap array with the given dimensions.
  * Delegates to ArrayEmitter::makeND which handles both 1-D and N-D cases.
  *
- * FIX: Generic element types (e.g. Option<Animal>) were previously unresolved
- * because only the base name ("Option") was looked up, ignoring typeArgs.
- * The fix mirrors the generic instantiation logic already used in visitVarDecl:
- * when the plain-name lookup fails and typeArgs are present, attempt to
- * instantiate the type as a generic enum first, then as a generic struct.
- *
  * @param e the new-array expression AST node
  * @return an AllocaInst* pointing to the initialised array struct, or nullptr
  */
@@ -1224,11 +1218,6 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   if (!elemType)
     elemType = llvm::StructType::getTypeByName(context, typeName);
 
-  // Handle generic element types such as Option<Animal>.
-  // TypeResolver::fromName and a plain name lookup both fail for these because
-  // the instantiated struct is registered under a mangled name like
-  // "Option$Animal", not "Option".  Instantiate it now the same way
-  // visitVarDecl does for generic variable types.
   if (!elemType && !e.arrayType.typeArgs.empty()) {
     std::vector<llvm::Type *> concreteArgs;
     std::vector<std::string> argNames;
@@ -1242,7 +1231,6 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
       }
     }
     if (!concreteArgs.empty()) {
-      // Try as a generic enum first (e.g. Option<T>), then as a generic struct.
       elemType = instantiateGenericEnum(typeName, concreteArgs, argNames);
       if (!elemType)
         elemType = instantiateGenericStruct(e.arrayType);
@@ -1421,9 +1409,9 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
               for (const auto &tp : tmpl->typeParams) {
                 if (tp != fieldTypeName)
                   continue;
-                if (auto *id =
+                if (auto *argId =
                         dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
-                  auto it = namedValues.find(id->name.token.getWord());
+                  auto it = namedValues.find(argId->name.token.getWord());
                   if (it != namedValues.end())
                     typeSubst[tp] = it->second.type;
                 }
@@ -1512,12 +1500,60 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
           llvm::Type *allocTy = ai->getAllocatedType();
           if (allocTy == fieldTy) {
             argVal = builder.CreateLoad(allocTy, ai, "payload.val");
+            // The payload is now owned by the enum. Null out any string/array
+            // data pointers in the source alloca so scopeMgr doesn't free them
+            // at scope exit (which would be a use-after-free from the caller's
+            // perspective).
+            if (auto *srcSt = llvm::dyn_cast<llvm::StructType>(allocTy)) {
+              for (unsigned si = 0; si < srcSt->getNumElements(); ++si) {
+                llvm::Type *elemTy = srcSt->getElementType(si);
+                if (TypeResolver::isString(elemTy)) {
+                  llvm::StructType *strSt =
+                      TypeResolver::getStringType(context);
+                  Value *fieldGep =
+                      builder.CreateStructGEP(srcSt, ai, si, "src.null.sf");
+                  Value *dataGep = builder.CreateStructGEP(strSt, fieldGep, 0,
+                                                           "src.null.dp");
+                  builder.CreateStore(llvm::ConstantPointerNull::get(
+                                          llvm::PointerType::get(context, 0)),
+                                      dataGep);
+                } else if (TypeResolver::isArray(elemTy)) {
+                  if (auto *arrSt = llvm::dyn_cast<llvm::StructType>(elemTy)) {
+                    Value *fieldGep =
+                        builder.CreateStructGEP(srcSt, ai, si, "src.null.af");
+                    Value *dataGep = builder.CreateStructGEP(arrSt, fieldGep, 1,
+                                                             "src.null.adp");
+                    builder.CreateStore(llvm::ConstantPointerNull::get(
+                                            llvm::PointerType::get(context, 0)),
+                                        dataGep);
+                  }
+                }
+              }
+            }
           }
         }
         builder.CreateStore(argVal, payloadPtr);
       }
 
-      return builder.CreateLoad(enumType, enumAlloca, "enum.val");
+      // FIX: Return the alloca directly instead of pre-loading it.
+      //
+      // The original code returned builder.CreateLoad(enumType, enumAlloca),
+      // producing a LoadInst SSA value. When this is used as a return value,
+      // visitReturn's dyn_cast<AllocaInst> fails on a LoadInst, so the
+      // null-out-before-free logic is entirely skipped. scopeMgr then frees
+      // the string fields (e.g. Animal.name/type inside Option<Animal>), but
+      // the already-loaded SSA struct still holds those pointers. The caller
+      // receives a by-value struct with dangling string data pointers and the
+      // first memcpy of those fields is a heap-use-after-free.
+      //
+      // Returning the alloca (like visitStructLit does) means visitReturn sees
+      // an AllocaInst, runs nullStringFields to clear the data pointers before
+      // scopeMgr frees them, then loads a clean null-data-pointer value for
+      // the ret instruction. The caller receives valid data. Callers that
+      // assign the result (e.g. Option<Animal> bob = CreateAnimal(...)) already
+      // handle AllocaInst returns correctly via visitVarDecl's struct copy
+      // path.
+      return enumAlloca;
     }
 
     rawName = variantName;
@@ -2013,11 +2049,19 @@ llvm::StructType *CodeGenerator::instantiateGenericEnum(
   for (const auto &v : tmpl->variants) {
     long long tagForThis = nextTag++;
     std::string sname = mangledBase + "_" + v.name;
-    if (llvm::StructType::getTypeByName(context, sname))
+    llvm::StructType *existing =
+        llvm::StructType::getTypeByName(context, sname);
+
+    // Only skip if the body has already been set (non-opaque). A previous
+    // forward-declaration pass may have created this struct as an opaque
+    // placeholder when a field type (e.g. Animal) wasn't resolved yet.
+    // Leaving it opaque lets us retry with the correct type below.
+    if (existing && !existing->isOpaque())
       continue;
 
     std::vector<llvm::Type *> fields;
     fields.push_back(llvm::Type::getInt32Ty(context)); // tag
+    bool allResolved = true;
     for (const auto &f : v.fields) {
       llvm::Type *ft = nullptr;
       auto it = subst.find(f.typeName);
@@ -2028,21 +2072,33 @@ llvm::StructType *CodeGenerator::instantiateGenericEnum(
         if (!ft)
           ft = llvm::StructType::getTypeByName(context, f.typeName);
       }
-      if (!ft)
-        ft = llvm::Type::getInt32Ty(context);
+      if (!ft) {
+        // Field type is not yet registered (e.g. a struct defined after this
+        // enum instantiation). Leave the struct opaque so the next call —
+        // once all types are in the context — can set the correct body.
+        allResolved = false;
+        break;
+      }
       fields.push_back(ft);
     }
-    auto *st = llvm::StructType::create(context, sname);
+
+    if (!allResolved)
+      continue;
+
+    // Re-use the existing opaque struct rather than creating a duplicate name.
+    llvm::StructType *st =
+        existing ? existing : llvm::StructType::create(context, sname);
     st->setBody(fields);
 
     enumTagValues[mangledBase + "::" + v.name] = tagForThis;
     enumTagValues[enumName + "::" + v.name] = tagForThis;
   }
 
-  llvm::StructType *existing =
+  llvm::StructType *existingUnion =
       llvm::StructType::getTypeByName(context, mangledBase);
-  if (existing)
-    return existing;
+  // Only return early if the union body has already been fully set.
+  if (existingUnion && !existingUnion->isOpaque())
+    return existingUnion;
 
   size_t maxFields = 0;
   const EnumVariant *maxVariant = nullptr;
@@ -2055,6 +2111,7 @@ llvm::StructType *CodeGenerator::instantiateGenericEnum(
 
   std::vector<llvm::Type *> unionFields;
   unionFields.push_back(llvm::Type::getInt32Ty(context)); // tag
+  bool unionAllResolved = true;
   if (maxVariant) {
     for (const auto &f : maxVariant->fields) {
       llvm::Type *ft = nullptr;
@@ -2066,11 +2123,24 @@ llvm::StructType *CodeGenerator::instantiateGenericEnum(
         if (!ft)
           ft = llvm::StructType::getTypeByName(context, f.typeName);
       }
-      if (ft)
-        unionFields.push_back(ft);
+      if (!ft) {
+        // Same deferred-resolution strategy: leave the union opaque so a
+        // subsequent call with fully-registered types can fill it in.
+        unionAllResolved = false;
+        break;
+      }
+      unionFields.push_back(ft);
     }
   }
-  auto *unionSt = llvm::StructType::create(context, mangledBase);
+
+  if (!unionAllResolved)
+    return existingUnion; // still opaque — caller will retry later
+
+  // Re-use the existing opaque union struct if present, rather than creating
+  // a duplicate name which LLVM would suffix with ".0", ".1", etc.
+  llvm::StructType *unionSt =
+      existingUnion ? existingUnion
+                    : llvm::StructType::create(context, mangledBase);
   unionSt->setBody(unionFields);
   return unionSt;
 }
@@ -2226,11 +2296,11 @@ Value *CodeGenerator::visitFieldAccess(const FieldAccessExpr &e) {
 
           if (!varSt) {
             std::string prefix = enumName + "$";
-            for (auto &st : module->getIdentifiedStructTypes()) {
-              std::string stName = st->getName().str();
+            for (auto &scanSt : module->getIdentifiedStructTypes()) {
+              std::string stName = scanSt->getName().str();
               if (stName.rfind(prefix, 0) == 0 &&
                   stName.find("_" + varName) != std::string::npos) {
-                varSt = st;
+                varSt = scanSt;
                 break;
               }
             }
@@ -2295,6 +2365,21 @@ CodeGenerator::resolveStructPtr(const Expression &expr) {
       ty = it->second.pointeeType ? it->second.pointeeType : ty;
     }
     auto *st = llvm::dyn_cast<llvm::StructType>(ty);
+    // Fallback: if the VarInfo type isn't a StructType (e.g. it was stored as
+    // a pointer or opaque type), try to recover the StructType from the alloca
+    // itself, then from a module name lookup using the alloca's element type.
+    if (!st) {
+      if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(ptr)) {
+        st = llvm::dyn_cast<llvm::StructType>(ai->getAllocatedType());
+      }
+    }
+    if (!st && ty->isPointerTy()) {
+      // ty is an opaque pointer — scan structDefs for any struct whose LLVM
+      // type matches the pointee of the alloca, or whose name is encoded in
+      // the VarInfo via pointeeType.
+      if (it->second.pointeeType)
+        st = llvm::dyn_cast<llvm::StructType>(it->second.pointeeType);
+    }
     if (!st)
       return {nullptr, nullptr};
     return {ptr, st};
@@ -2736,6 +2821,14 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
       if (!concreteArgs.empty())
         ty = instantiateGenericEnum(typeName, concreteArgs, argNames);
     }
+    // Apply array dimensions that instantiateGenericStruct/Enum do not handle.
+    // For example, Option<Animal>[] resolves the element type to Option$Animal
+    // first, then this loop wraps it in the array struct (array.Option$Animal)
+    // so that TypeResolver::isArray(ty) is true and ownership is tracked.
+    if (ty && d.type.dimensions > 0) {
+      for (int dim = 0; dim < d.type.dimensions; ++dim)
+        ty = TypeResolver::getOrCreateArrayStruct(context, ty);
+    }
   } else {
     ty = TypeResolver::fromTypeDesc(context, d.type);
     if (!ty)
@@ -2827,18 +2920,34 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
       builder.CreateStore(arrVal, alloca);
       if (isNew && init->getType()->isPointerTy())
         builder.CreateCall(getFree(), {init});
-      vi.ownsHeap = isNew;
+      vi.ownsHeap = true;
 
     } else if (ty->isStructTy()) {
       Value *structVal = init->getType()->isPointerTy()
                              ? builder.CreateLoad(ty, init, name + ".structval")
                              : init;
       builder.CreateStore(structVal, alloca);
+
+      // Recursively check whether the struct (or any nested struct) contains
+      // heap-owning string or array fields. The old flat scan only checked
+      // one level and missed cases like Option<Animal> where strings live two
+      // levels deep (Option$Animal → Animal → str name/type).
+      std::function<bool(llvm::Type *)> hasHeapFields =
+          [&](llvm::Type *t) -> bool {
+        if (TypeResolver::isString(t) || TypeResolver::isArray(t))
+          return true;
+        if (auto *st = llvm::dyn_cast<llvm::StructType>(t)) {
+          for (unsigned i = 0; i < st->getNumElements(); ++i)
+            if (hasHeapFields(st->getElementType(i)))
+              return true;
+        }
+        return false;
+      };
+
       vi.ownsHeap = false;
       if (auto *st = llvm::dyn_cast<llvm::StructType>(ty)) {
         for (unsigned i = 0; i < st->getNumElements(); ++i) {
-          if (TypeResolver::isString(st->getElementType(i)) ||
-              TypeResolver::isArray(st->getElementType(i))) {
+          if (hasHeapFields(st->getElementType(i))) {
             vi.ownsHeap = true;
             break;
           }
@@ -3028,21 +3137,14 @@ Value *CodeGenerator::visitWhileStmt(const WhileStmt &s) {
 }
 
 /**
- * Generates IR for a Match statement.
+ * Generates IR for a match statement.
  *
- * Reads the tag field of the subject enum, then dispatches to the
- * appropriate arm via an LLVM switch instruction. For arms with payload
- * bindings, the variant struct is looked up using the mangled name
- * (enumName$typeArg_VariantName) so generic enums like Option<Animal>
- * resolve correctly.
- *
- * FIX (Bug 2): The variant struct lookup now tries both the plain name
- * (EnumName_Variant) and the mangled generic name (EnumName$T_Variant)
- * so that bindings inside match arms work for instantiated generic enums.
- *
- * FIX (Bug 4): The tag value search now checks ed->name == arm.enumName
- * before accepting a variant match, preventing wrong tag assignment when
- * multiple enums share a variant name.
+ * The subject is evaluated once and its tag field (always the first i32
+ * member of the enum struct) is loaded. A single LLVM switch instruction
+ * dispatches to the appropriate arm via an LLVM switch instruction. For
+ * arms with payload bindings, the variant struct is looked up using the
+ * mangled name (enumName$typeArg_VariantName) so generic enums like
+ * Option<Animal> resolve correctly.
  *
  * @param s the Match statement AST node
  * @return always nullptr
@@ -3056,13 +3158,11 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
   llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "");
 
-  llvm::BasicBlock *defaultBB = exitBB; // fall-through when no wildcard
+  llvm::BasicBlock *defaultBB = exitBB;
   std::vector<std::pair<llvm::ConstantInt *, llvm::BasicBlock *>> cases;
   std::vector<std::pair<const MatchArm *, llvm::BasicBlock *>> armBlocks;
 
   for (const auto &arm : s.arms) {
-    std::string label =
-        arm.isWildcard ? "match.wildcard" : "match.arm." + arm.variantName;
     auto *bb = llvm::BasicBlock::Create(context, "", fn);
     armBlocks.push_back({&arm, bb});
 
@@ -3071,7 +3171,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
     } else {
       int tagVal = -1;
 
-      // First try the enumTagValues cache keyed by "EnumName::VariantName".
       {
         std::string key = arm.enumName + "::" + arm.variantName;
         auto tvIt = enumTagValues.find(key);
@@ -3079,9 +3178,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
           tagVal = static_cast<int>(tvIt->second);
       }
 
-      // FIX (Bug 4): If not cached, search by matching both the enum name
-      // and the variant name — do NOT accept a match on variant name alone,
-      // as that picks the wrong tag when two enums share a variant name.
       if (tagVal < 0) {
         for (const auto &ed : currentProgram->enums) {
           if (ed->name != arm.enumName)
@@ -3118,28 +3214,30 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
   for (auto &[val, bb] : cases)
     sw->addCase(val, bb);
 
+  llvm::StructType *subjectSt = nullptr;
+  if (auto *subjectAI = llvm::dyn_cast<llvm::AllocaInst>(subjectPtr))
+    subjectSt = llvm::dyn_cast<llvm::StructType>(subjectAI->getAllocatedType());
+
   for (auto &[arm, bb] : armBlocks) {
     fn->insert(fn->end(), bb);
     builder.SetInsertPoint(bb);
 
+    scopeMgr.pushScope();
+
     if (!arm->isWildcard && !arm->bindings.empty()) {
-      // FIX (Bug 2): For generic enums (e.g. Option<Animal>), the per-variant
-      // struct is named "Option$Animal_Some", not "Option_Some". Try the plain
-      // name first, then scan all identified struct types for one whose name
-      // starts with the enum name (with either '_' or '$' separator) and ends
-      // with '_VariantName', to handle both concrete and instantiated enums.
-      std::string plainName = arm->enumName + "_" + arm->variantName;
-      llvm::StructType *variantSt =
-          llvm::StructType::getTypeByName(context, plainName);
+      llvm::StructType *variantSt = nullptr;
+
+      {
+        std::string plainName = arm->enumName + "_" + arm->variantName;
+        variantSt = llvm::StructType::getTypeByName(context, plainName);
+      }
 
       if (!variantSt) {
-        // Search for a mangled variant struct: EnumName$TypeArg_VariantName
         std::string suffix = "_" + arm->variantName;
+        std::string prefix = arm->enumName + "$";
         for (auto *st : module->getIdentifiedStructTypes()) {
           std::string stName = st->getName().str();
-          // Must start with the enum name and end with _VariantName.
-          if (stName.rfind(arm->enumName, 0) == 0 &&
-              stName.size() > suffix.size() &&
+          if (stName.rfind(prefix, 0) == 0 && stName.size() > suffix.size() &&
               stName.compare(stName.size() - suffix.size(), suffix.size(),
                              suffix) == 0) {
             variantSt = st;
@@ -3148,47 +3246,154 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
         }
       }
 
-      if (variantSt) {
-        // FIX (Bug 5): subjectPtr is the union alloca (e.g. Option$Animal)
-        // whose layout differs from the variant struct (e.g.
-        // Option$Animal_Some). GEP'ing the variant field offsets directly
-        // against the union alloca produces corrupt loads and causes the IR
-        // verifier to hang.
-        //
-        // Copy the union bytes into a fresh alloca typed as the variant struct,
-        // then GEP from that alloca instead.
-        AllocaInst *variantAlloca =
-            createEntryAlloca(variantSt, arm->enumName + ".variant");
-        llvm::TypeSize variantBytes =
-            module->getDataLayout().getTypeAllocSize(variantSt);
-        builder.CreateMemCpy(
-            variantAlloca, llvm::MaybeAlign(), subjectPtr, llvm::MaybeAlign(),
-            llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
-                                   variantBytes.getFixedValue()));
+      for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
+        unsigned fieldIdx = static_cast<unsigned>(fi) + 1;
 
-        for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
-          // Field 0 is the tag; payload starts at index 1.
-          unsigned fieldIdx = static_cast<unsigned>(fi) + 1;
-          if (fieldIdx >= variantSt->getNumElements())
-            break;
-          llvm::Type *fieldTy = variantSt->getElementType(fieldIdx);
-          Value *fieldPtr = builder.CreateStructGEP(
-              variantSt, variantAlloca, fieldIdx, arm->bindings[fi] + ".fptr");
-          AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
+        llvm::Type *fieldTy = nullptr;
+        Value *fieldPtr = nullptr;
+
+        if (subjectSt && fieldIdx < subjectSt->getNumElements()) {
+          fieldTy = subjectSt->getElementType(fieldIdx);
+          fieldPtr = builder.CreateStructGEP(subjectSt, subjectPtr, fieldIdx,
+                                             arm->bindings[fi] + ".src");
+        }
+
+        if (!fieldTy || !fieldPtr) {
+          logError(("match: cannot extract binding '" + arm->bindings[fi] +
+                    "' from variant '" + arm->variantName + "'")
+                       .c_str());
+          continue;
+        }
+
+        AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
+
+        if (auto *payloadSt = llvm::dyn_cast<llvm::StructType>(fieldTy)) {
+          llvm::TypeSize payloadBytes =
+              module->getDataLayout().getTypeAllocSize(payloadSt);
+          builder.CreateMemCpy(
+              alloca, llvm::MaybeAlign(), fieldPtr, llvm::MaybeAlign(),
+              llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
+                                     payloadBytes.getFixedValue()));
+
+          llvm::StructType *strTy = TypeResolver::getStringType(context);
+          for (unsigned si = 0; si < payloadSt->getNumElements(); ++si) {
+            llvm::Type *elemTy = payloadSt->getElementType(si);
+            if (TypeResolver::isString(elemTy)) {
+              Value *destFieldPtr = builder.CreateStructGEP(
+                  payloadSt, alloca, si,
+                  arm->bindings[fi] + ".sf" + std::to_string(si));
+              Value *srcStrFieldPtr = builder.CreateStructGEP(
+                  payloadSt, fieldPtr, si,
+                  arm->bindings[fi] + ".src.sf" + std::to_string(si));
+
+              llvm::BasicBlock *cloneBB =
+                  llvm::BasicBlock::Create(context, "", fn);
+              llvm::BasicBlock *skipCloneBB =
+                  llvm::BasicBlock::Create(context, "", fn);
+
+              Value *dataGep =
+                  builder.CreateStructGEP(strTy, srcStrFieldPtr, 0, "");
+              Value *dataVal = builder.CreateLoad(
+                  llvm::PointerType::get(context, 0), dataGep, "");
+              Value *isNull =
+                  builder.CreateICmpEQ(dataVal,
+                                       llvm::ConstantPointerNull::get(
+                                           llvm::PointerType::get(context, 0)),
+                                       "");
+              builder.CreateCondBr(isNull, skipCloneBB, cloneBB);
+
+              builder.SetInsertPoint(cloneBB);
+              Value *cloned = StringOps::clone(builder, context, module.get(),
+                                               srcStrFieldPtr);
+              Value *freshVal = builder.CreateLoad(elemTy, cloned, "");
+              builder.CreateStore(freshVal, destFieldPtr);
+              if (auto *cloneAI = llvm::dyn_cast<llvm::AllocaInst>(cloned)) {
+                Value *cloneDataGep =
+                    builder.CreateStructGEP(strTy, cloneAI, 0, "");
+                builder.CreateStore(llvm::ConstantPointerNull::get(
+                                        llvm::PointerType::get(context, 0)),
+                                    cloneDataGep);
+              }
+              Value *srcDataGep = builder.CreateStructGEP(
+                  strTy, srcStrFieldPtr, 0, arm->bindings[fi] + ".src.dp");
+              builder.CreateStore(llvm::ConstantPointerNull::get(
+                                      llvm::PointerType::get(context, 0)),
+                                  srcDataGep);
+              builder.CreateBr(skipCloneBB);
+
+              fn->insert(fn->end(), skipCloneBB);
+              builder.SetInsertPoint(skipCloneBB);
+            } else if (TypeResolver::isArray(elemTy)) {
+              auto *arrSt = llvm::dyn_cast<llvm::StructType>(elemTy);
+              if (arrSt) {
+                llvm::Type *i64Ty = llvm::Type::getInt64Ty(context);
+                Value *srcArrPtr = builder.CreateStructGEP(
+                    payloadSt, fieldPtr, si,
+                    arm->bindings[fi] + ".src.arr" + std::to_string(si));
+                Value *srcLoaded = builder.CreateLoad(arrSt, srcArrPtr);
+                Value *srcLen = builder.CreateExtractValue(srcLoaded, {0});
+                Value *srcData = builder.CreateExtractValue(srcLoaded, {1});
+
+                Value *destArrPtr = builder.CreateStructGEP(
+                    payloadSt, alloca, si,
+                    arm->bindings[fi] + ".dest.arr" + std::to_string(si));
+
+                llvm::Type *innerTy = TypeResolver::elemType(context, arrSt);
+                Value *newData = ArrayEmitter::emitMalloc(
+                    builder, context, *module, innerTy, srcLen);
+
+                Value *lenGep = builder.CreateStructGEP(arrSt, destArrPtr, 0);
+                builder.CreateStore(srcLen, lenGep);
+                Value *dataGep2 = builder.CreateStructGEP(arrSt, destArrPtr, 1);
+                builder.CreateStore(newData, dataGep2);
+
+                builder.CreateMemCpy(
+                    newData, llvm::MaybeAlign(), srcData, llvm::MaybeAlign(),
+                    builder.CreateMul(
+                        srcLen,
+                        llvm::ConstantInt::get(
+                            i64Ty, module->getDataLayout().getTypeAllocSize(
+                                       innerTy))));
+
+                Value *srcDataGep2 =
+                    builder.CreateStructGEP(arrSt, srcArrPtr, 1);
+                builder.CreateStore(llvm::ConstantPointerNull::get(
+                                        llvm::PointerType::get(context, 0)),
+                                    srcDataGep2);
+              }
+            }
+          }
+
+          VarInfo vi(alloca, payloadSt, false, false, false, false);
+          vi.pointeeType = payloadSt;
+          vi.ownsHeap = true;
+          namedValues[arm->bindings[fi]] = vi;
+
+        } else {
           Value *loaded =
               builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
           builder.CreateStore(loaded, alloca);
-          namedValues[arm->bindings[fi]] =
-              VarInfo(alloca, fieldTy, false, false, false, false);
+
+          VarInfo vi(alloca, fieldTy, false, false, false, false);
+          vi.pointeeType = fieldTy;
+          vi.ownsHeap = false;
+          namedValues[arm->bindings[fi]] = vi;
         }
+
+        scopeMgr.declare(arm->bindings[fi]);
       }
     }
 
-    // Codegen the arm body statements.
-    for (const auto &stmt : arm->body->statements)
-      stmt->accept(*this);
+    codegen(*arm->body);
 
-    // Branch to exit if the arm didn't already terminate.
+    if (!arm->isWildcard) {
+      for (const auto &binding : arm->bindings)
+        namedValues.erase(binding);
+    }
+
+    if (!blockHasTerminator(builder))
+      scopeMgr.popScope();
+
     if (!blockHasTerminator(builder))
       builder.CreateBr(exitBB);
   }
@@ -3391,9 +3596,49 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   AllocaInst *idxAlloca = createEntryAlloca(i64, "__foreach_idx");
   builder.CreateStore(llvm::ConstantInt::get(i64, 0), idxAlloca);
 
+  // FIX (Bug 7): Store lenVal in an alloca so the condition block always
+  // reloads a memory-stable value.  When lenVal was an SSA extractvalue
+  // result computed in a predecessor block, mem2reg could not always prove
+  // the value was correct across the back-edge, leading to an infinite loop
+  // when iterating over arrays whose length field was 0 or unset.
+  AllocaInst *lenAlloca = createEntryAlloca(i64, "__foreach_len");
+  builder.CreateStore(lenVal, lenAlloca);
+
   AllocaInst *varAlloca = createEntryAlloca(elemTy, vname);
-  namedValues[vname] =
-      VarInfo(varAlloca, elemTy, false, false, false, s.varType.isConst);
+  {
+    // FIX (Bug 10): Mark the loop variable as non-owning (ownsHeap = false).
+    //
+    // Each iteration copies the element struct by value into varAlloca via a
+    // plain load+store.  For element types that contain string or array fields
+    // (e.g. Option<Animal> where Animal has str name/type fields), those inner
+    // data pointers alias directly into the source array's heap buffer — they
+    // are NOT independent copies.  If the scope manager were allowed to call
+    // free() on those data pointers at the end of each loop-body scope, it
+    // would corrupt the source array's heap allocation, causing a SEGV on the
+    // very next GEP into that buffer (or a double-free at program exit).
+    //
+    // The loop variable is a read-only view of the source element; ownership
+    // stays with the array that was allocated by 'new'.  Setting ownsHeap =
+    // false prevents the scope manager from emitting destructors for it.
+    VarInfo vi(varAlloca, elemTy, false, false, false, s.varType.isConst);
+    vi.ownsHeap = false;
+    namedValues[vname] = vi;
+  }
+
+  // Store a separate alloca for dataPtr so it can be reloaded inside bodyBB.
+  // For the pointer (isPtr) path the dataPtr is a load result computed before
+  // the loop; storing it in an alloca lets the body always read the current
+  // pointer even if the array were reallocated during iteration (defensive).
+  llvm::Type *ptrTy = llvm::PointerType::get(context, 0);
+  AllocaInst *dataPtrAlloca = createEntryAlloca(ptrTy, "__foreach_data");
+  if (isPtr) {
+    // dataPtr was already loaded above via GEP; store it for body reloads.
+    builder.CreateStore(dataPtr, dataPtrAlloca);
+  } else {
+    // For the aggregate path, extract and store the data pointer field.
+    // dataPtr here is an extractvalue SSA result — store it for body reloads.
+    builder.CreateStore(dataPtr, dataPtrAlloca);
+  }
 
   // ── basic blocks ──────────────────────────────────────────────────────────
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
@@ -3407,15 +3652,21 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   // ── condition: i < length ─────────────────────────────────────────────────
   builder.SetInsertPoint(condBB);
   Value *curIdx = builder.CreateLoad(i64, idxAlloca, "idx");
-  Value *cond = builder.CreateICmpSLT(curIdx, lenVal, "foreach.cond");
+  Value *reloadedLen = builder.CreateLoad(i64, lenAlloca, "arr.len.reload");
+  Value *cond = builder.CreateICmpSLT(curIdx, reloadedLen, "foreach.cond");
   builder.CreateCondBr(cond, bodyBB, exitBB);
 
   // ── body: load element, run user code ────────────────────────────────────
   fn->insert(fn->end(), bodyBB);
   builder.SetInsertPoint(bodyBB);
 
+  // Reload dataPtr from its alloca so the GEP always uses a memory-stable
+  // pointer value rather than an SSA result that LLVM might not track across
+  // the back-edge correctly in all optimisation configurations.
+  Value *bodyDataPtr = builder.CreateLoad(ptrTy, dataPtrAlloca, "data.reload");
+
   // GEP using the opaque data pointer; no bitcast needed with opaque pointers.
-  Value *elemPtr = builder.CreateGEP(elemTy, dataPtr, curIdx, "elem.ptr");
+  Value *elemPtr = builder.CreateGEP(elemTy, bodyDataPtr, curIdx, "elem.ptr");
   Value *elemVal = builder.CreateLoad(elemTy, elemPtr, vname + ".val");
   builder.CreateStore(elemVal, varAlloca);
 
@@ -3429,8 +3680,12 @@ Value *CodeGenerator::visitForEach(const ForEachStmt &s) {
   // ── step: ++i ─────────────────────────────────────────────────────────────
   fn->insert(fn->end(), stepBB);
   builder.SetInsertPoint(stepBB);
+  // Must reload from idxAlloca — curIdx is an SSA value from condBB and
+  // reusing it would always add 1 to the *original* index, freezing the
+  // counter and looping forever.
+  Value *stepIdx = builder.CreateLoad(i64, idxAlloca, "idx.step");
   Value *nextIdx =
-      builder.CreateAdd(curIdx, llvm::ConstantInt::get(i64, 1), "idx.next");
+      builder.CreateAdd(stepIdx, llvm::ConstantInt::get(i64, 1), "idx.next");
   builder.CreateStore(nextIdx, idxAlloca);
   builder.CreateBr(condBB);
 
@@ -3485,27 +3740,44 @@ Value *CodeGenerator::visitReturn(const Return &s) {
       Type *retTy = fn->getReturnType();
       retVal = builder.CreateLoad(retTy, ai, "ret.load");
 
-      for (unsigned i = 0; i < st->getNumElements(); ++i) {
-        llvm::Type *elemTy = st->getElementType(i);
-        if (TypeResolver::isString(elemTy) || TypeResolver::isArray(elemTy)) {
-          llvm::StructType *innerSt =
-              TypeResolver::isString(elemTy)
-                  ? TypeResolver::getStringType(context)
-                  : llvm::dyn_cast<llvm::StructType>(elemTy);
-          if (innerSt) {
-            Value *fieldGep = builder.CreateStructGEP(
-                st, ai, i, "ret.field." + std::to_string(i));
+      std::function<void(llvm::StructType *, llvm::Value *)> nullStringFields =
+          [&](llvm::StructType *cursT, llvm::Value *curPtr) {
+            for (unsigned i = 0; i < cursT->getNumElements(); ++i) {
+              llvm::Type *elemTy = cursT->getElementType(i);
 
-            unsigned dataMemberIdx = TypeResolver::isString(elemTy) ? 0 : 1;
+              if (TypeResolver::isString(elemTy)) {
+                llvm::StructType *strSt = TypeResolver::getStringType(context);
+                Value *fieldGep =
+                    builder.CreateStructGEP(cursT, curPtr, i, "ret.null.sf");
+                Value *dataGep =
+                    builder.CreateStructGEP(strSt, fieldGep, 0, "ret.null.dp");
+                builder.CreateStore(llvm::ConstantPointerNull::get(
+                                        llvm::PointerType::get(context, 0)),
+                                    dataGep);
 
-            Value *dataGep = builder.CreateStructGEP(
-                innerSt, fieldGep, dataMemberIdx, "ret.null.data");
-            builder.CreateStore(llvm::ConstantPointerNull::get(
-                                    llvm::PointerType::get(context, 0)),
-                                dataGep);
-          }
-        }
-      }
+              } else if (TypeResolver::isArray(elemTy)) {
+                auto *arrSt = llvm::dyn_cast<llvm::StructType>(elemTy);
+                if (arrSt) {
+                  Value *fieldGep =
+                      builder.CreateStructGEP(cursT, curPtr, i, "ret.null.af");
+                  Value *dataGep = builder.CreateStructGEP(arrSt, fieldGep, 1,
+                                                           "ret.null.adp");
+                  builder.CreateStore(llvm::ConstantPointerNull::get(
+                                          llvm::PointerType::get(context, 0)),
+                                      dataGep);
+                }
+
+              } else if (auto *nestedSt =
+                             llvm::dyn_cast<llvm::StructType>(elemTy)) {
+                Value *fieldGep =
+                    builder.CreateStructGEP(cursT, curPtr, i, "ret.null.ns");
+                nullStringFields(nestedSt, fieldGep);
+              }
+            }
+          };
+
+      nullStringFields(st, ai);
+
     } else {
       for (auto &kv : namedValues) {
         if (kv.second.allocaInst == ai) {
@@ -3539,7 +3811,6 @@ Value *CodeGenerator::visitReturn(const Return &s) {
 
   return nullptr;
 }
-
 /*---------------------------------------*/
 /*          Function code generation     */
 /*---------------------------------------*/

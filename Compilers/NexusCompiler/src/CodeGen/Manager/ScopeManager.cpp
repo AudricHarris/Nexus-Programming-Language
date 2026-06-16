@@ -153,37 +153,11 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
   if (!ty)
     return;
 
+  // Plain struct (not a string or array wrapper): recursively walk all fields.
+  // This handles arbitrarily deep nesting, e.g. Option<Animal> → Animal → str.
   if (ty->isStructTy() && !TypeResolver::isString(ty) &&
       !TypeResolver::isArray(ty)) {
-    StructType *st = cast<StructType>(ty);
-    for (unsigned i = 0; i < st->getNumElements(); i++) {
-      Type *fieldTy = st->getElementType(i);
-      if (!TypeResolver::isString(fieldTy) && !TypeResolver::isArray(fieldTy))
-        continue;
-
-      Value *fieldPtr = B_.CreateStructGEP(st, vi.allocaInst, i,
-                                           "field.dtor." + std::to_string(i));
-
-      if (TypeResolver::isString(fieldTy)) {
-        Value *load = B_.CreateLoad(cast<StructType>(fieldTy), fieldPtr);
-        Value *data = B_.CreateExtractValue(load, {0});
-        llvm::Function *fn = B_.GetInsertBlock()->getParent();
-        std::string uid = std::to_string(bbCounter_++);
-        BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free" + uid, fn);
-        BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip" + uid, fn);
-        Value *isNull = B_.CreateICmpEQ(
-            data, ConstantPointerNull::get(PointerType::get(ctx_, 0)),
-            "is.null");
-
-        B_.CreateCondBr(isNull, skipBB, freeBB);
-        B_.SetInsertPoint(freeBB);
-        B_.CreateCall(getFree(), {data});
-        B_.CreateBr(skipBB);
-        B_.SetInsertPoint(skipBB);
-      } else if (TypeResolver::isArray(fieldTy)) {
-        emitArrayFree(fieldPtr, cast<StructType>(fieldTy), 0);
-      }
-    }
+    emitStructFieldDestructors(cast<StructType>(ty), vi.allocaInst);
     return;
   }
 
@@ -216,6 +190,65 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
     if (vi.allocaInst)
       emitArrayFree(vi.allocaInst, cast<StructType>(ty), 0);
     return;
+  }
+}
+
+// Recursively emits null-guarded free() calls for all heap-owning fields of a
+// struct, descending into nested structs so that deeply-nested strings and
+// arrays (e.g. Option<Animal> → Animal → str name) are always cleaned up.
+// Called both from emitDestructor (for named variables) and from emitArrayFree
+// (for struct elements stored inside an array).
+void ScopeManager::emitStructFieldDestructors(llvm::StructType *st,
+                                              llvm::Value *ptr) {
+  for (unsigned i = 0; i < st->getNumElements(); ++i) {
+    if (blockHasTerminator(B_))
+      return;
+
+    Type *fieldTy = st->getElementType(i);
+    Value *fieldPtr =
+        B_.CreateStructGEP(st, ptr, i, "field.dtor." + std::to_string(i));
+
+    if (TypeResolver::isString(fieldTy)) {
+      Value *load = B_.CreateLoad(cast<StructType>(fieldTy), fieldPtr);
+      Value *data = B_.CreateExtractValue(load, {0});
+      llvm::Function *fn = B_.GetInsertBlock()->getParent();
+      std::string uid = std::to_string(bbCounter_++);
+      BasicBlock *freeBB = BasicBlock::Create(ctx_, "str.free" + uid, fn);
+      BasicBlock *skipBB = BasicBlock::Create(ctx_, "str.skip" + uid, fn);
+      Value *isNull = B_.CreateICmpEQ(
+          data, ConstantPointerNull::get(PointerType::get(ctx_, 0)), "is.null");
+      B_.CreateCondBr(isNull, skipBB, freeBB);
+      B_.SetInsertPoint(freeBB);
+      B_.CreateCall(getFree(), {data});
+      B_.CreateBr(skipBB);
+      B_.SetInsertPoint(skipBB);
+
+    } else if (TypeResolver::isArray(fieldTy)) {
+      emitArrayFree(fieldPtr, cast<StructType>(fieldTy), 0);
+
+    } else if (auto *nestedSt = llvm::dyn_cast<llvm::StructType>(fieldTy)) {
+      if (nestedSt->getNumElements() >= 1 &&
+          nestedSt->getElementType(0)->isIntegerTy(32)) {
+        Value *tagPtr = B_.CreateStructGEP(nestedSt, fieldPtr, 0, "tag.ptr");
+        Value *tag = B_.CreateLoad(Type::getInt32Ty(ctx_), tagPtr, "tag");
+        Value *isSome = B_.CreateICmpEQ(
+            tag, ConstantInt::get(Type::getInt32Ty(ctx_), 1), "is.some");
+
+        llvm::Function *fn = B_.GetInsertBlock()->getParent();
+        std::string uid = std::to_string(bbCounter_++);
+        BasicBlock *someBB = BasicBlock::Create(ctx_, "some" + uid, fn);
+        BasicBlock *skipBB = BasicBlock::Create(ctx_, "skip" + uid, fn);
+        B_.CreateCondBr(isSome, someBB, skipBB);
+
+        B_.SetInsertPoint(someBB);
+        emitStructFieldDestructors(nestedSt, fieldPtr);
+        B_.CreateBr(skipBB);
+
+        B_.SetInsertPoint(skipBB);
+      } else {
+        emitStructFieldDestructors(nestedSt, fieldPtr);
+      }
+    }
   }
 }
 
@@ -274,16 +307,25 @@ void ScopeManager::emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt,
              !TypeResolver::isString(elemTy)) {
     StructType *elemSt = cast<StructType>(elemTy);
 
-    bool elemHasHeap = false;
-    for (unsigned i = 0; i < elemSt->getNumElements(); ++i) {
-      Type *ft = elemSt->getElementType(i);
-      if (TypeResolver::isString(ft) || TypeResolver::isArray(ft)) {
-        elemHasHeap = true;
-        break;
+    // Recursively check whether any field at any nesting depth owns heap
+    // memory. The old flat scan only looked one level deep and missed cases
+    // like Option<Animal> where strings live two levels down (Option$Animal ->
+    // Animal
+    // -> str name/type).
+    std::function<bool(llvm::StructType *)> structHasHeap =
+        [&](llvm::StructType *s) -> bool {
+      for (unsigned i = 0; i < s->getNumElements(); ++i) {
+        Type *ft = s->getElementType(i);
+        if (TypeResolver::isString(ft) || TypeResolver::isArray(ft))
+          return true;
+        if (auto *nested = llvm::dyn_cast<llvm::StructType>(ft))
+          if (structHasHeap(nested))
+            return true;
       }
-    }
+      return false;
+    };
 
-    if (elemHasHeap) {
+    if (structHasHeap(elemSt)) {
       BasicBlock *loopBB = BasicBlock::Create(ctx_, "sfree.loop" + sfx, fn);
       BasicBlock *bodyBB = BasicBlock::Create(ctx_, "sfree.body" + sfx, fn);
       BasicBlock *afterBB = BasicBlock::Create(ctx_, "sfree.after" + sfx, fn);
@@ -299,32 +341,26 @@ void ScopeManager::emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt,
 
       B_.SetInsertPoint(bodyBB);
       Value *elemPtr = B_.CreateGEP(elemSt, dataPtr, cur, "sslot" + sfx);
+      if (elemSt->getNumElements() >= 1 &&
+          elemSt->getElementType(0)->isIntegerTy(32)) {
+        Value *tagPtr = B_.CreateStructGEP(elemSt, elemPtr, 0, "tag.ptr");
+        Value *tag = B_.CreateLoad(Type::getInt32Ty(ctx_), tagPtr, "tag");
+        Value *isSome = B_.CreateICmpEQ(
+            tag, ConstantInt::get(Type::getInt32Ty(ctx_), 1), "is.some");
 
-      for (unsigned i = 0; i < elemSt->getNumElements(); ++i) {
-        Type *fieldTy = elemSt->getElementType(i);
-        Value *fieldPtr =
-            B_.CreateStructGEP(elemSt, elemPtr, i, "sf." + std::to_string(i));
+        llvm::Function *fn2 = B_.GetInsertBlock()->getParent();
+        std::string uid = std::to_string(bbCounter_++);
+        BasicBlock *someBB = BasicBlock::Create(ctx_, "some" + uid, fn2);
+        BasicBlock *skipBB = BasicBlock::Create(ctx_, "skip" + uid, fn2);
+        B_.CreateCondBr(isSome, someBB, skipBB);
 
-        if (TypeResolver::isString(fieldTy)) {
-          StructType *strSt = cast<StructType>(fieldTy);
-          Value *strVal = B_.CreateLoad(strSt, fieldPtr);
-          Value *data = B_.CreateExtractValue(strVal, {0}, "str.data");
+        B_.SetInsertPoint(someBB);
+        emitStructFieldDestructors(elemSt, elemPtr);
+        B_.CreateBr(skipBB);
 
-          std::string fuid = std::to_string(bbCounter_++);
-          BasicBlock *freeBB = BasicBlock::Create(ctx_, "sf.sfree" + fuid, fn);
-          BasicBlock *skipBB = BasicBlock::Create(ctx_, "sf.sskip" + fuid, fn);
-          Value *isNull = B_.CreateICmpEQ(
-              data, ConstantPointerNull::get(PointerType::get(ctx_, 0)),
-              "sf.null");
-          B_.CreateCondBr(isNull, skipBB, freeBB);
-          B_.SetInsertPoint(freeBB);
-          B_.CreateCall(getFree(), {data});
-          B_.CreateBr(skipBB);
-          B_.SetInsertPoint(skipBB);
-
-        } else if (TypeResolver::isArray(fieldTy)) {
-          emitArrayFree(fieldPtr, cast<StructType>(fieldTy), depth + 1);
-        }
+        B_.SetInsertPoint(skipBB);
+      } else {
+        emitStructFieldDestructors(elemSt, elemPtr);
       }
 
       Value *next = B_.CreateAdd(cur, ConstantInt::get(i64, 1));
