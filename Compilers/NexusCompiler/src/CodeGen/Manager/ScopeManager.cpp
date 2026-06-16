@@ -209,7 +209,6 @@ void ScopeManager::emitStructFieldDestructors(llvm::StructType *st,
         B_.CreateStructGEP(st, ptr, i, "field.dtor." + std::to_string(i));
 
     if (TypeResolver::isString(fieldTy)) {
-      // Null-guarded free of the string's heap data buffer.
       Value *load = B_.CreateLoad(cast<StructType>(fieldTy), fieldPtr);
       Value *data = B_.CreateExtractValue(load, {0});
       llvm::Function *fn = B_.GetInsertBlock()->getParent();
@@ -228,8 +227,27 @@ void ScopeManager::emitStructFieldDestructors(llvm::StructType *st,
       emitArrayFree(fieldPtr, cast<StructType>(fieldTy), 0);
 
     } else if (auto *nestedSt = llvm::dyn_cast<llvm::StructType>(fieldTy)) {
-      // Recurse into nested struct (e.g. Animal inside Option<Animal>).
-      emitStructFieldDestructors(nestedSt, fieldPtr);
+      if (nestedSt->getNumElements() >= 1 &&
+          nestedSt->getElementType(0)->isIntegerTy(32)) {
+        Value *tagPtr = B_.CreateStructGEP(nestedSt, fieldPtr, 0, "tag.ptr");
+        Value *tag = B_.CreateLoad(Type::getInt32Ty(ctx_), tagPtr, "tag");
+        Value *isSome = B_.CreateICmpEQ(
+            tag, ConstantInt::get(Type::getInt32Ty(ctx_), 1), "is.some");
+
+        llvm::Function *fn = B_.GetInsertBlock()->getParent();
+        std::string uid = std::to_string(bbCounter_++);
+        BasicBlock *someBB = BasicBlock::Create(ctx_, "some" + uid, fn);
+        BasicBlock *skipBB = BasicBlock::Create(ctx_, "skip" + uid, fn);
+        B_.CreateCondBr(isSome, someBB, skipBB);
+
+        B_.SetInsertPoint(someBB);
+        emitStructFieldDestructors(nestedSt, fieldPtr);
+        B_.CreateBr(skipBB);
+
+        B_.SetInsertPoint(skipBB);
+      } else {
+        emitStructFieldDestructors(nestedSt, fieldPtr);
+      }
     }
   }
 }
@@ -323,9 +341,27 @@ void ScopeManager::emitArrayFree(llvm::Value *arrPtr, llvm::StructType *arrSt,
 
       B_.SetInsertPoint(bodyBB);
       Value *elemPtr = B_.CreateGEP(elemSt, dataPtr, cur, "sslot" + sfx);
-      // Delegate to the recursive helper so nested structs (e.g. Animal inside
-      // Option<Animal>) are fully walked rather than only the top level.
-      emitStructFieldDestructors(elemSt, elemPtr);
+      if (elemSt->getNumElements() >= 1 &&
+          elemSt->getElementType(0)->isIntegerTy(32)) {
+        Value *tagPtr = B_.CreateStructGEP(elemSt, elemPtr, 0, "tag.ptr");
+        Value *tag = B_.CreateLoad(Type::getInt32Ty(ctx_), tagPtr, "tag");
+        Value *isSome = B_.CreateICmpEQ(
+            tag, ConstantInt::get(Type::getInt32Ty(ctx_), 1), "is.some");
+
+        llvm::Function *fn2 = B_.GetInsertBlock()->getParent();
+        std::string uid = std::to_string(bbCounter_++);
+        BasicBlock *someBB = BasicBlock::Create(ctx_, "some" + uid, fn2);
+        BasicBlock *skipBB = BasicBlock::Create(ctx_, "skip" + uid, fn2);
+        B_.CreateCondBr(isSome, someBB, skipBB);
+
+        B_.SetInsertPoint(someBB);
+        emitStructFieldDestructors(elemSt, elemPtr);
+        B_.CreateBr(skipBB);
+
+        B_.SetInsertPoint(skipBB);
+      } else {
+        emitStructFieldDestructors(elemSt, elemPtr);
+      }
 
       Value *next = B_.CreateAdd(cur, ConstantInt::get(i64, 1));
       B_.CreateStore(next, idx);

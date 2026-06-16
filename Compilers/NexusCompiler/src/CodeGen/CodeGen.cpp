@@ -1209,12 +1209,6 @@ Value *CodeGenerator::visitIndexedLength(const IndexedLengthExpr &e) {
  * Generates IR to allocate a new heap array with the given dimensions.
  * Delegates to ArrayEmitter::makeND which handles both 1-D and N-D cases.
  *
- * FIX: Generic element types (e.g. Option<Animal>) were previously unresolved
- * because only the base name ("Option") was looked up, ignoring typeArgs.
- * The fix mirrors the generic instantiation logic already used in visitVarDecl:
- * when the plain-name lookup fails and typeArgs are present, attempt to
- * instantiate the type as a generic enum first, then as a generic struct.
- *
  * @param e the new-array expression AST node
  * @return an AllocaInst* pointing to the initialised array struct, or nullptr
  */
@@ -1224,11 +1218,6 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
   if (!elemType)
     elemType = llvm::StructType::getTypeByName(context, typeName);
 
-  // Handle generic element types such as Option<Animal>.
-  // TypeResolver::fromName and a plain name lookup both fail for these because
-  // the instantiated struct is registered under a mangled name like
-  // "Option$Animal", not "Option".  Instantiate it now the same way
-  // visitVarDecl does for generic variable types.
   if (!elemType && !e.arrayType.typeArgs.empty()) {
     std::vector<llvm::Type *> concreteArgs;
     std::vector<std::string> argNames;
@@ -1242,7 +1231,6 @@ Value *CodeGenerator::visitNewArray(const NewArrayExpr &e) {
       }
     }
     if (!concreteArgs.empty()) {
-      // Try as a generic enum first (e.g. Option<T>), then as a generic struct.
       elemType = instantiateGenericEnum(typeName, concreteArgs, argNames);
       if (!elemType)
         elemType = instantiateGenericStruct(e.arrayType);
@@ -3258,41 +3246,13 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
         }
       }
 
-      if (variantSt) {
-        if (variantSt->getNumElements() < arm->bindings.size() + 1) {
-          variantSt = nullptr;
-        } else if (subjectSt) {
-          for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
-            unsigned idx = static_cast<unsigned>(fi) + 1;
-            if (idx < subjectSt->getNumElements() &&
-                subjectSt->getElementType(idx)->isStructTy() &&
-                !variantSt->getElementType(idx)->isStructTy()) {
-              variantSt = nullptr;
-              break;
-            }
-          }
-        }
-      }
-
       for (size_t fi = 0; fi < arm->bindings.size(); ++fi) {
         unsigned fieldIdx = static_cast<unsigned>(fi) + 1;
 
         llvm::Type *fieldTy = nullptr;
         Value *fieldPtr = nullptr;
 
-        if (variantSt && fieldIdx < variantSt->getNumElements()) {
-          fieldTy = variantSt->getElementType(fieldIdx);
-          AllocaInst *variantAlloca =
-              createEntryAlloca(variantSt, arm->enumName + ".variant");
-          llvm::TypeSize variantBytes =
-              module->getDataLayout().getTypeAllocSize(variantSt);
-          builder.CreateMemCpy(
-              variantAlloca, llvm::MaybeAlign(), subjectPtr, llvm::MaybeAlign(),
-              llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
-                                     variantBytes.getFixedValue()));
-          fieldPtr = builder.CreateStructGEP(variantSt, variantAlloca, fieldIdx,
-                                             arm->bindings[fi] + ".fptr");
-        } else if (subjectSt && fieldIdx < subjectSt->getNumElements()) {
+        if (subjectSt && fieldIdx < subjectSt->getNumElements()) {
           fieldTy = subjectSt->getElementType(fieldIdx);
           fieldPtr = builder.CreateStructGEP(subjectSt, subjectPtr, fieldIdx,
                                              arm->bindings[fi] + ".src");
@@ -3322,6 +3282,9 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
               Value *destFieldPtr = builder.CreateStructGEP(
                   payloadSt, alloca, si,
                   arm->bindings[fi] + ".sf" + std::to_string(si));
+              Value *srcStrFieldPtr = builder.CreateStructGEP(
+                  payloadSt, fieldPtr, si,
+                  arm->bindings[fi] + ".src.sf" + std::to_string(si));
 
               llvm::BasicBlock *cloneBB =
                   llvm::BasicBlock::Create(context, "", fn);
@@ -3329,7 +3292,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
                   llvm::BasicBlock::Create(context, "", fn);
 
               Value *dataGep =
-                  builder.CreateStructGEP(strTy, destFieldPtr, 0, "");
+                  builder.CreateStructGEP(strTy, srcStrFieldPtr, 0, "");
               Value *dataVal = builder.CreateLoad(
                   llvm::PointerType::get(context, 0), dataGep, "");
               Value *isNull =
@@ -3341,7 +3304,7 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
 
               builder.SetInsertPoint(cloneBB);
               Value *cloned = StringOps::clone(builder, context, module.get(),
-                                               destFieldPtr);
+                                               srcStrFieldPtr);
               Value *freshVal = builder.CreateLoad(elemTy, cloned, "");
               builder.CreateStore(freshVal, destFieldPtr);
               if (auto *cloneAI = llvm::dyn_cast<llvm::AllocaInst>(cloned)) {
@@ -3351,17 +3314,6 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
                                         llvm::PointerType::get(context, 0)),
                                     cloneDataGep);
               }
-              // Null the original string data pointer in the subject (bob) so
-              // that bob's scope destructor does not free the buffer a second
-              // time. ani now owns the cloned copy; bob must relinquish the
-              // original. This mirrors the null-out done everywhere else
-              // (visitReturn::nullStringFields, visitAssign, etc.).
-              Value *srcPayloadPtr =
-                  builder.CreateStructGEP(subjectSt, subjectPtr, fieldIdx,
-                                          arm->bindings[fi] + ".src.payload");
-              Value *srcStrFieldPtr = builder.CreateStructGEP(
-                  payloadSt, srcPayloadPtr, si,
-                  arm->bindings[fi] + ".src.sf" + std::to_string(si));
               Value *srcDataGep = builder.CreateStructGEP(
                   strTy, srcStrFieldPtr, 0, arm->bindings[fi] + ".src.dp");
               builder.CreateStore(llvm::ConstantPointerNull::get(
@@ -3371,23 +3323,43 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
 
               fn->insert(fn->end(), skipCloneBB);
               builder.SetInsertPoint(skipCloneBB);
-            }
-          }
+            } else if (TypeResolver::isArray(elemTy)) {
+              auto *arrSt = llvm::dyn_cast<llvm::StructType>(elemTy);
+              if (arrSt) {
+                llvm::Type *i64Ty = llvm::Type::getInt64Ty(context);
+                Value *srcArrPtr = builder.CreateStructGEP(
+                    payloadSt, fieldPtr, si,
+                    arm->bindings[fi] + ".src.arr" + std::to_string(si));
+                Value *srcLoaded = builder.CreateLoad(arrSt, srcArrPtr);
+                Value *srcLen = builder.CreateExtractValue(srcLoaded, {0});
+                Value *srcData = builder.CreateExtractValue(srcLoaded, {1});
 
-          if (!payloadSt->getName().empty()) {
-            std::string stName = payloadSt->getName().str();
-            bool inDefs = false;
-            for (const auto *sd : structDefs)
-              if (sd->name == stName) {
-                inDefs = true;
-                break;
-              }
-            if (!inDefs) {
-              for (const auto &sd : currentProgram->structs) {
-                if (sd->name == stName) {
-                  structDefs.push_back(sd.get());
-                  break;
-                }
+                Value *destArrPtr = builder.CreateStructGEP(
+                    payloadSt, alloca, si,
+                    arm->bindings[fi] + ".dest.arr" + std::to_string(si));
+
+                llvm::Type *innerTy = TypeResolver::elemType(context, arrSt);
+                Value *newData = ArrayEmitter::emitMalloc(
+                    builder, context, *module, innerTy, srcLen);
+
+                Value *lenGep = builder.CreateStructGEP(arrSt, destArrPtr, 0);
+                builder.CreateStore(srcLen, lenGep);
+                Value *dataGep2 = builder.CreateStructGEP(arrSt, destArrPtr, 1);
+                builder.CreateStore(newData, dataGep2);
+
+                builder.CreateMemCpy(
+                    newData, llvm::MaybeAlign(), srcData, llvm::MaybeAlign(),
+                    builder.CreateMul(
+                        srcLen,
+                        llvm::ConstantInt::get(
+                            i64Ty, module->getDataLayout().getTypeAllocSize(
+                                       innerTy))));
+
+                Value *srcDataGep2 =
+                    builder.CreateStructGEP(arrSt, srcArrPtr, 1);
+                builder.CreateStore(llvm::ConstantPointerNull::get(
+                                        llvm::PointerType::get(context, 0)),
+                                    srcDataGep2);
               }
             }
           }
@@ -3402,29 +3374,8 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
               builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
           builder.CreateStore(loaded, alloca);
 
-          llvm::StructType *payloadSt2 = nullptr;
-          for (const auto &sd : currentProgram->structs) {
-            llvm::StructType *candidate =
-                llvm::StructType::getTypeByName(context, sd->name);
-            if (candidate && (candidate == fieldTy ||
-                              candidate == alloca->getAllocatedType())) {
-              payloadSt2 = candidate;
-              bool inDefs = false;
-              for (const auto *existing : structDefs)
-                if (existing->name == sd->name) {
-                  inDefs = true;
-                  break;
-                }
-              if (!inDefs)
-                structDefs.push_back(sd.get());
-              break;
-            }
-          }
-
-          llvm::Type *bindingTy =
-              payloadSt2 ? static_cast<llvm::Type *>(payloadSt2) : fieldTy;
-          VarInfo vi(alloca, bindingTy, false, false, false, false);
-          vi.pointeeType = payloadSt2;
+          VarInfo vi(alloca, fieldTy, false, false, false, false);
+          vi.pointeeType = fieldTy;
           vi.ownsHeap = false;
           namedValues[arm->bindings[fi]] = vi;
         }
@@ -3860,7 +3811,6 @@ Value *CodeGenerator::visitReturn(const Return &s) {
 
   return nullptr;
 }
-
 /*---------------------------------------*/
 /*          Function code generation     */
 /*---------------------------------------*/
