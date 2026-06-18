@@ -1381,12 +1381,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (!enumType)
         enumType = llvm::StructType::getTypeByName(context, enumName);
 
-      // For generic enums (e.g. Option<Animal>), the union struct is
-      // registered under a mangled name like "Option$Animal" — not "Option".
-      // Infer the concrete type args from the call arguments by inspecting the
-      // namedValues table (no IR is emitted here), then call
-      // instantiateGenericEnum which is idempotent and returns the existing
-      // struct if it was already created by the forward-declaration pass.
       if (!enumType && currentProgram) {
         const EnumDecl *tmpl = nullptr;
         for (const auto &ed : currentProgram->enums) {
@@ -1397,8 +1391,27 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         }
 
         if (tmpl) {
-          // Map each type parameter to its concrete LLVM type by looking at
-          // the type of the corresponding call argument in namedValues.
+          std::function<llvm::Type *(const Expression *)> inferArgStaticType =
+              [&](const Expression *argExpr) -> llvm::Type * {
+            if (auto *argId = dynamic_cast<const IdentExpr *>(argExpr)) {
+              auto it = namedValues.find(argId->name.token.getWord());
+              return it != namedValues.end() ? it->second.type : nullptr;
+            }
+            if (dynamic_cast<const StrLitExpr *>(argExpr))
+              return TypeResolver::getStringType(context);
+            if (dynamic_cast<const IntLitExpr *>(argExpr))
+              return llvm::Type::getInt32Ty(context);
+            if (dynamic_cast<const FloatLitExpr *>(argExpr))
+              return llvm::Type::getFloatTy(context);
+            if (dynamic_cast<const BoolLitExpr *>(argExpr))
+              return llvm::Type::getInt1Ty(context);
+            if (dynamic_cast<const CharLitExpr *>(argExpr))
+              return llvm::Type::getInt8Ty(context);
+            if (auto *un = dynamic_cast<const UnaryExpr *>(argExpr))
+              return inferArgStaticType(un->operand.get()); // e.g. -5
+            return nullptr;
+          };
+
           std::unordered_map<std::string, llvm::Type *> typeSubst;
           for (const auto &v : tmpl->variants) {
             if (v.name != variantName)
@@ -1409,12 +1422,8 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
               for (const auto &tp : tmpl->typeParams) {
                 if (tp != fieldTypeName)
                   continue;
-                if (auto *argId =
-                        dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
-                  auto it = namedValues.find(argId->name.token.getWord());
-                  if (it != namedValues.end())
-                    typeSubst[tp] = it->second.type;
-                }
+                if (llvm::Type *t = inferArgStaticType(e.arguments[i].get()))
+                  typeSubst[tp] = t;
                 break;
               }
             }
@@ -1493,17 +1502,10 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         llvm::Value *payloadPtr = builder.CreateStructGEP(
             enumType, enumAlloca, fieldIdx, "payload.ptr");
 
-        // Aggregate arguments (structs, strings, arrays) are returned as
-        // AllocaInst* pointers by codegen — load the value before storing
-        // it into the enum's payload slot.
         if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(argVal)) {
           llvm::Type *allocTy = ai->getAllocatedType();
           if (allocTy == fieldTy) {
             argVal = builder.CreateLoad(allocTy, ai, "payload.val");
-            // The payload is now owned by the enum. Null out any string/array
-            // data pointers in the source alloca so scopeMgr doesn't free them
-            // at scope exit (which would be a use-after-free from the caller's
-            // perspective).
             if (auto *srcSt = llvm::dyn_cast<llvm::StructType>(allocTy)) {
               for (unsigned si = 0; si < srcSt->getNumElements(); ++si) {
                 llvm::Type *elemTy = srcSt->getElementType(si);
@@ -1535,24 +1537,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         builder.CreateStore(argVal, payloadPtr);
       }
 
-      // FIX: Return the alloca directly instead of pre-loading it.
-      //
-      // The original code returned builder.CreateLoad(enumType, enumAlloca),
-      // producing a LoadInst SSA value. When this is used as a return value,
-      // visitReturn's dyn_cast<AllocaInst> fails on a LoadInst, so the
-      // null-out-before-free logic is entirely skipped. scopeMgr then frees
-      // the string fields (e.g. Animal.name/type inside Option<Animal>), but
-      // the already-loaded SSA struct still holds those pointers. The caller
-      // receives a by-value struct with dangling string data pointers and the
-      // first memcpy of those fields is a heap-use-after-free.
-      //
-      // Returning the alloca (like visitStructLit does) means visitReturn sees
-      // an AllocaInst, runs nullStringFields to clear the data pointers before
-      // scopeMgr frees them, then loads a clean null-data-pointer value for
-      // the ret instruction. The caller receives valid data. Callers that
-      // assign the result (e.g. Option<Animal> bob = CreateAnimal(...)) already
-      // handle AllocaInst returns correctly via visitVarDecl's struct copy
-      // path.
       return enumAlloca;
     }
 
