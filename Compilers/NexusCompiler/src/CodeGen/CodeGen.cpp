@@ -1506,7 +1506,32 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
           llvm::Type *allocTy = ai->getAllocatedType();
           if (allocTy == fieldTy) {
             argVal = builder.CreateLoad(allocTy, ai, "payload.val");
-            if (auto *srcSt = llvm::dyn_cast<llvm::StructType>(allocTy)) {
+
+            // The value has been loaded and is about to be stored into the
+            // enum alloca, which now owns the heap buffer.  Null the source
+            // alloca's data pointer so the scope-manager destructor (which
+            // still holds a reference to `ai`) does not free the same buffer
+            // a second time.
+            if (TypeResolver::isString(allocTy)) {
+              // Direct string argument: null its data pointer.
+              llvm::StructType *strSt = TypeResolver::getStringType(context);
+              Value *dataGep =
+                  builder.CreateStructGEP(strSt, ai, 0, "src.null.dp");
+              builder.CreateStore(llvm::ConstantPointerNull::get(
+                                      llvm::PointerType::get(context, 0)),
+                                  dataGep);
+            } else if (TypeResolver::isArray(allocTy)) {
+              // Direct array argument: null its data pointer.
+              if (auto *arrSt = llvm::dyn_cast<llvm::StructType>(allocTy)) {
+                Value *dataGep =
+                    builder.CreateStructGEP(arrSt, ai, 1, "src.null.adp");
+                builder.CreateStore(llvm::ConstantPointerNull::get(
+                                        llvm::PointerType::get(context, 0)),
+                                    dataGep);
+              }
+            } else if (auto *srcSt =
+                           llvm::dyn_cast<llvm::StructType>(allocTy)) {
+              // Struct argument: null data pointers of any string/array fields.
               for (unsigned si = 0; si < srcSt->getNumElements(); ++si) {
                 llvm::Type *elemTy = srcSt->getElementType(si);
                 if (TypeResolver::isString(elemTy)) {
