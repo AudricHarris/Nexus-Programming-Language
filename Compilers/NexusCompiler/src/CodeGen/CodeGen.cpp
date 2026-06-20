@@ -1381,12 +1381,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
       if (!enumType)
         enumType = llvm::StructType::getTypeByName(context, enumName);
 
-      // For generic enums (e.g. Option<Animal>), the union struct is
-      // registered under a mangled name like "Option$Animal" — not "Option".
-      // Infer the concrete type args from the call arguments by inspecting the
-      // namedValues table (no IR is emitted here), then call
-      // instantiateGenericEnum which is idempotent and returns the existing
-      // struct if it was already created by the forward-declaration pass.
       if (!enumType && currentProgram) {
         const EnumDecl *tmpl = nullptr;
         for (const auto &ed : currentProgram->enums) {
@@ -1397,8 +1391,27 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         }
 
         if (tmpl) {
-          // Map each type parameter to its concrete LLVM type by looking at
-          // the type of the corresponding call argument in namedValues.
+          std::function<llvm::Type *(const Expression *)> inferArgStaticType =
+              [&](const Expression *argExpr) -> llvm::Type * {
+            if (auto *argId = dynamic_cast<const IdentExpr *>(argExpr)) {
+              auto it = namedValues.find(argId->name.token.getWord());
+              return it != namedValues.end() ? it->second.type : nullptr;
+            }
+            if (dynamic_cast<const StrLitExpr *>(argExpr))
+              return TypeResolver::getStringType(context);
+            if (dynamic_cast<const IntLitExpr *>(argExpr))
+              return llvm::Type::getInt32Ty(context);
+            if (dynamic_cast<const FloatLitExpr *>(argExpr))
+              return llvm::Type::getFloatTy(context);
+            if (dynamic_cast<const BoolLitExpr *>(argExpr))
+              return llvm::Type::getInt1Ty(context);
+            if (dynamic_cast<const CharLitExpr *>(argExpr))
+              return llvm::Type::getInt8Ty(context);
+            if (auto *un = dynamic_cast<const UnaryExpr *>(argExpr))
+              return inferArgStaticType(un->operand.get()); // e.g. -5
+            return nullptr;
+          };
+
           std::unordered_map<std::string, llvm::Type *> typeSubst;
           for (const auto &v : tmpl->variants) {
             if (v.name != variantName)
@@ -1409,12 +1422,8 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
               for (const auto &tp : tmpl->typeParams) {
                 if (tp != fieldTypeName)
                   continue;
-                if (auto *argId =
-                        dynamic_cast<const IdentExpr *>(e.arguments[i].get())) {
-                  auto it = namedValues.find(argId->name.token.getWord());
-                  if (it != namedValues.end())
-                    typeSubst[tp] = it->second.type;
-                }
+                if (llvm::Type *t = inferArgStaticType(e.arguments[i].get()))
+                  typeSubst[tp] = t;
                 break;
               }
             }
@@ -1493,18 +1502,36 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         llvm::Value *payloadPtr = builder.CreateStructGEP(
             enumType, enumAlloca, fieldIdx, "payload.ptr");
 
-        // Aggregate arguments (structs, strings, arrays) are returned as
-        // AllocaInst* pointers by codegen — load the value before storing
-        // it into the enum's payload slot.
         if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(argVal)) {
           llvm::Type *allocTy = ai->getAllocatedType();
           if (allocTy == fieldTy) {
             argVal = builder.CreateLoad(allocTy, ai, "payload.val");
-            // The payload is now owned by the enum. Null out any string/array
-            // data pointers in the source alloca so scopeMgr doesn't free them
-            // at scope exit (which would be a use-after-free from the caller's
-            // perspective).
-            if (auto *srcSt = llvm::dyn_cast<llvm::StructType>(allocTy)) {
+
+            // The value has been loaded and is about to be stored into the
+            // enum alloca, which now owns the heap buffer.  Null the source
+            // alloca's data pointer so the scope-manager destructor (which
+            // still holds a reference to `ai`) does not free the same buffer
+            // a second time.
+            if (TypeResolver::isString(allocTy)) {
+              // Direct string argument: null its data pointer.
+              llvm::StructType *strSt = TypeResolver::getStringType(context);
+              Value *dataGep =
+                  builder.CreateStructGEP(strSt, ai, 0, "src.null.dp");
+              builder.CreateStore(llvm::ConstantPointerNull::get(
+                                      llvm::PointerType::get(context, 0)),
+                                  dataGep);
+            } else if (TypeResolver::isArray(allocTy)) {
+              // Direct array argument: null its data pointer.
+              if (auto *arrSt = llvm::dyn_cast<llvm::StructType>(allocTy)) {
+                Value *dataGep =
+                    builder.CreateStructGEP(arrSt, ai, 1, "src.null.adp");
+                builder.CreateStore(llvm::ConstantPointerNull::get(
+                                        llvm::PointerType::get(context, 0)),
+                                    dataGep);
+              }
+            } else if (auto *srcSt =
+                           llvm::dyn_cast<llvm::StructType>(allocTy)) {
+              // Struct argument: null data pointers of any string/array fields.
               for (unsigned si = 0; si < srcSt->getNumElements(); ++si) {
                 llvm::Type *elemTy = srcSt->getElementType(si);
                 if (TypeResolver::isString(elemTy)) {
@@ -1535,24 +1562,6 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
         builder.CreateStore(argVal, payloadPtr);
       }
 
-      // FIX: Return the alloca directly instead of pre-loading it.
-      //
-      // The original code returned builder.CreateLoad(enumType, enumAlloca),
-      // producing a LoadInst SSA value. When this is used as a return value,
-      // visitReturn's dyn_cast<AllocaInst> fails on a LoadInst, so the
-      // null-out-before-free logic is entirely skipped. scopeMgr then frees
-      // the string fields (e.g. Animal.name/type inside Option<Animal>), but
-      // the already-loaded SSA struct still holds those pointers. The caller
-      // receives a by-value struct with dangling string data pointers and the
-      // first memcpy of those fields is a heap-use-after-free.
-      //
-      // Returning the alloca (like visitStructLit does) means visitReturn sees
-      // an AllocaInst, runs nullStringFields to clear the data pointers before
-      // scopeMgr frees them, then loads a clean null-data-pointer value for
-      // the ret instruction. The caller receives valid data. Callers that
-      // assign the result (e.g. Option<Animal> bob = CreateAnimal(...)) already
-      // handle AllocaInst returns correctly via visitVarDecl's struct copy
-      // path.
       return enumAlloca;
     }
 
@@ -2928,10 +2937,81 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
                              : init;
       builder.CreateStore(structVal, alloca);
 
+      // Determine whether the source needs deep-copying of string fields.
+      //   (a) Source is a named owning variable: both it and the new variable
+      //       will run destructors, so strings must be cloned for independence.
+      //   (b) Source is a GEP (field access into a live struct or heap array):
+      //       a shallow copy aliases the live buffer — always clone.
+      // Temporaries (call results, struct literals) are not in namedValues and
+      // are not GEPs, so they transfer ownership as-is with no clone needed.
+      bool sourceNeedsClone = false;
+      if (auto *srcAI = llvm::dyn_cast<llvm::AllocaInst>(init)) {
+        for (auto &kv : namedValues)
+          if (kv.second.allocaInst == srcAI && kv.second.ownsHeap) {
+            sourceNeedsClone = true;
+            break;
+          }
+      } else if (llvm::isa<llvm::GetElementPtrInst>(init)) {
+        // Field access or array element pointer — source is a GEP into live
+        // memory that we do not own, so we must clone to get our own buffer.
+        sourceNeedsClone = true;
+      }
+
+      if (sourceNeedsClone) {
+        if (auto *st = llvm::dyn_cast<llvm::StructType>(ty)) {
+          std::function<void(llvm::StructType *, llvm::Value *, llvm::Value *)>
+              deepCopyStrings = [&](llvm::StructType *cursT,
+                                    llvm::Value *srcPtr, llvm::Value *dstPtr) {
+                for (unsigned i = 0; i < cursT->getNumElements(); ++i) {
+                  llvm::Type *fieldTy = cursT->getElementType(i);
+                  if (TypeResolver::isString(fieldTy)) {
+                    Value *srcField =
+                        builder.CreateStructGEP(cursT, srcPtr, i, "cp.src.sf");
+                    Value *dstField =
+                        builder.CreateStructGEP(cursT, dstPtr, i, "cp.dst.sf");
+                    Value *cloned = StringOps::clone(builder, context,
+                                                     module.get(), srcField);
+                    Value *freshVal =
+                        builder.CreateLoad(fieldTy, cloned, "cp.fresh");
+                    builder.CreateStore(freshVal, dstField);
+                    // Null the clone temp so its scope destructor skips it.
+                    if (auto *cloneAI =
+                            llvm::dyn_cast<llvm::AllocaInst>(cloned)) {
+                      llvm::StructType *strSt =
+                          TypeResolver::getStringType(context);
+                      Value *nullGep =
+                          builder.CreateStructGEP(strSt, cloneAI, 0, "cp.null");
+                      builder.CreateStore(
+                          llvm::ConstantPointerNull::get(
+                              llvm::PointerType::get(context, 0)),
+                          nullGep);
+                    }
+                  } else if (auto *nestedSt =
+                                 llvm::dyn_cast<llvm::StructType>(fieldTy)) {
+                    if (!TypeResolver::isArray(fieldTy)) {
+                      Value *srcNested = builder.CreateStructGEP(
+                          cursT, srcPtr, i, "cp.src.ns");
+                      Value *dstNested = builder.CreateStructGEP(
+                          cursT, dstPtr, i, "cp.dst.ns");
+                      deepCopyStrings(nestedSt, srcNested, dstNested);
+                    }
+                  }
+                }
+              };
+
+          // Ensure we have a pointer to the source struct to GEP into.
+          Value *srcPtr =
+              init->getType()->isPointerTy() ? init : [&]() -> Value * {
+            AllocaInst *tmp = createEntryAlloca(ty, "");
+            builder.CreateStore(structVal, tmp);
+            return tmp;
+          }();
+          deepCopyStrings(st, srcPtr, alloca);
+        }
+      }
+
       // Recursively check whether the struct (or any nested struct) contains
-      // heap-owning string or array fields. The old flat scan only checked
-      // one level and missed cases like Option<Animal> where strings live two
-      // levels deep (Option$Animal → Animal → str name/type).
+      // heap-owning string or array fields.
       std::function<bool(llvm::Type *)> hasHeapFields =
           [&](llvm::Type *t) -> bool {
         if (TypeResolver::isString(t) || TypeResolver::isArray(t))
@@ -2953,6 +3033,7 @@ Value *CodeGenerator::visitVarDecl(const VarDecl &d) {
           }
         }
       }
+
     } else {
       // Enum-to-integer implicit conversion: if the target is an integer type
       // and the source is an enum struct (first field is an i32 tag), extract
@@ -3154,6 +3235,16 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
   if (!subjectPtr)
     return nullptr;
 
+  // A match subject can be a non-owning alias (e.g. a foreach loop variable,
+  // see Bug 10 in visitForEach). Bindings extracted from such a subject must
+  // stay non-owning too, or they'll free memory the real owner also frees.
+  bool subjectOwnsHeap = true;
+  if (auto *idExpr = dynamic_cast<const IdentExpr *>(s.subject.get())) {
+    auto subjIt = namedValues.find(idExpr->name.token.getWord());
+    if (subjIt != namedValues.end())
+      subjectOwnsHeap = subjIt->second.ownsHeap;
+  }
+
   llvm::Type *i32 = Type::getInt32Ty(context);
   llvm::Function *fn = builder.GetInsertBlock()->getParent();
   llvm::BasicBlock *exitBB = llvm::BasicBlock::Create(context, "");
@@ -3267,7 +3358,54 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
 
         AllocaInst *alloca = createEntryAlloca(fieldTy, arm->bindings[fi]);
 
-        if (auto *payloadSt = llvm::dyn_cast<llvm::StructType>(fieldTy)) {
+        // For string fields: MOVE ownership from source to binding
+        if (TypeResolver::isString(fieldTy)) {
+          // Load the string from the source
+          Value *srcStr =
+              builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi] + ".src");
+
+          // Store it in the destination alloca
+          builder.CreateStore(srcStr, alloca);
+
+          // NULL out the source pointer to prevent double-free
+          llvm::StructType *strTy = TypeResolver::getStringType(context);
+          Value *srcDataGep = builder.CreateStructGEP(
+              strTy, fieldPtr, 0, arm->bindings[fi] + ".src.null");
+          builder.CreateStore(llvm::ConstantPointerNull::get(
+                                  llvm::PointerType::get(context, 0)),
+                              srcDataGep);
+
+          // The binding only owns the string if the subject did too —
+          // otherwise the real owner (e.g. the source array) will free it.
+          VarInfo vi(alloca, fieldTy, false, false, false, false);
+          vi.ownsHeap = subjectOwnsHeap;
+          vi.pointeeType = fieldTy;
+          namedValues[arm->bindings[fi]] = vi;
+
+        } else if (TypeResolver::isArray(fieldTy)) {
+          // For array fields: MOVE ownership
+          Value *srcArr =
+              builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi] + ".src");
+          builder.CreateStore(srcArr, alloca);
+
+          auto *arrSt = llvm::dyn_cast<llvm::StructType>(fieldTy);
+          if (arrSt) {
+            Value *srcDataGep = builder.CreateStructGEP(
+                arrSt, fieldPtr, 1, arm->bindings[fi] + ".src.null");
+            builder.CreateStore(llvm::ConstantPointerNull::get(
+                                    llvm::PointerType::get(context, 0)),
+                                srcDataGep);
+          }
+
+          VarInfo vi(alloca, fieldTy, false, false, false, false);
+          vi.ownsHeap = subjectOwnsHeap;
+          vi.pointeeType = fieldTy;
+          namedValues[arm->bindings[fi]] = vi;
+
+        } else if (auto *payloadSt =
+                       llvm::dyn_cast<llvm::StructType>(fieldTy)) {
+          // For struct types: recursively move string/array fields
+          // First, do a shallow copy of the struct
           llvm::TypeSize payloadBytes =
               module->getDataLayout().getTypeAllocSize(payloadSt);
           builder.CreateMemCpy(
@@ -3275,101 +3413,64 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
               llvm::ConstantInt::get(llvm::Type::getInt64Ty(context),
                                      payloadBytes.getFixedValue()));
 
-          llvm::StructType *strTy = TypeResolver::getStringType(context);
-          for (unsigned si = 0; si < payloadSt->getNumElements(); ++si) {
-            llvm::Type *elemTy = payloadSt->getElementType(si);
-            if (TypeResolver::isString(elemTy)) {
-              Value *destFieldPtr = builder.CreateStructGEP(
-                  payloadSt, alloca, si,
-                  arm->bindings[fi] + ".sf" + std::to_string(si));
-              Value *srcStrFieldPtr = builder.CreateStructGEP(
-                  payloadSt, fieldPtr, si,
-                  arm->bindings[fi] + ".src.sf" + std::to_string(si));
+          // Then, recursively move ownership of string/array fields
+          std::function<void(llvm::StructType *, llvm::Value *, llvm::Value *)>
+              moveStringFields = [&](llvm::StructType *cursT,
+                                     llvm::Value *srcPtr, llvm::Value *dstPtr) {
+                for (unsigned i = 0; i < cursT->getNumElements(); ++i) {
+                  llvm::Type *elemTy = cursT->getElementType(i);
 
-              llvm::BasicBlock *cloneBB =
-                  llvm::BasicBlock::Create(context, "", fn);
-              llvm::BasicBlock *skipCloneBB =
-                  llvm::BasicBlock::Create(context, "", fn);
+                  if (TypeResolver::isString(elemTy)) {
+                    // NULL out the source pointer to prevent double-free
+                    llvm::StructType *strTy =
+                        TypeResolver::getStringType(context);
+                    Value *srcFieldPtr = builder.CreateStructGEP(
+                        cursT, srcPtr, i, "mv.src.sf" + std::to_string(i));
+                    Value *srcDataGep = builder.CreateStructGEP(
+                        strTy, srcFieldPtr, 0, "mv.src.null");
+                    builder.CreateStore(llvm::ConstantPointerNull::get(
+                                            llvm::PointerType::get(context, 0)),
+                                        srcDataGep);
 
-              Value *dataGep =
-                  builder.CreateStructGEP(strTy, srcStrFieldPtr, 0, "");
-              Value *dataVal = builder.CreateLoad(
-                  llvm::PointerType::get(context, 0), dataGep, "");
-              Value *isNull =
-                  builder.CreateICmpEQ(dataVal,
-                                       llvm::ConstantPointerNull::get(
-                                           llvm::PointerType::get(context, 0)),
-                                       "");
-              builder.CreateCondBr(isNull, skipCloneBB, cloneBB);
+                  } else if (TypeResolver::isArray(elemTy)) {
+                    auto *arrSt = llvm::dyn_cast<llvm::StructType>(elemTy);
+                    if (arrSt) {
+                      Value *srcFieldPtr = builder.CreateStructGEP(
+                          cursT, srcPtr, i, "mv.src.af" + std::to_string(i));
+                      Value *srcDataGep = builder.CreateStructGEP(
+                          arrSt, srcFieldPtr, 1, "mv.src.anull");
+                      builder.CreateStore(
+                          llvm::ConstantPointerNull::get(
+                              llvm::PointerType::get(context, 0)),
+                          srcDataGep);
+                    }
+                  } else if (auto *nestedSt =
+                                 llvm::dyn_cast<llvm::StructType>(elemTy)) {
+                    // Recursively handle nested structs
+                    if (!TypeResolver::isArray(elemTy)) {
+                      Value *srcNested = builder.CreateStructGEP(
+                          cursT, srcPtr, i, "mv.src.ns");
+                      Value *dstNested = builder.CreateStructGEP(
+                          cursT, dstPtr, i, "mv.dst.ns");
+                      moveStringFields(nestedSt, srcNested, dstNested);
+                    }
+                  }
+                }
+              };
 
-              builder.SetInsertPoint(cloneBB);
-              Value *cloned = StringOps::clone(builder, context, module.get(),
-                                               srcStrFieldPtr);
-              Value *freshVal = builder.CreateLoad(elemTy, cloned, "");
-              builder.CreateStore(freshVal, destFieldPtr);
-              if (auto *cloneAI = llvm::dyn_cast<llvm::AllocaInst>(cloned)) {
-                Value *cloneDataGep =
-                    builder.CreateStructGEP(strTy, cloneAI, 0, "");
-                builder.CreateStore(llvm::ConstantPointerNull::get(
-                                        llvm::PointerType::get(context, 0)),
-                                    cloneDataGep);
-              }
-              Value *srcDataGep = builder.CreateStructGEP(
-                  strTy, srcStrFieldPtr, 0, arm->bindings[fi] + ".src.dp");
-              builder.CreateStore(llvm::ConstantPointerNull::get(
-                                      llvm::PointerType::get(context, 0)),
-                                  srcDataGep);
-              builder.CreateBr(skipCloneBB);
+          moveStringFields(payloadSt, fieldPtr, alloca);
 
-              fn->insert(fn->end(), skipCloneBB);
-              builder.SetInsertPoint(skipCloneBB);
-            } else if (TypeResolver::isArray(elemTy)) {
-              auto *arrSt = llvm::dyn_cast<llvm::StructType>(elemTy);
-              if (arrSt) {
-                llvm::Type *i64Ty = llvm::Type::getInt64Ty(context);
-                Value *srcArrPtr = builder.CreateStructGEP(
-                    payloadSt, fieldPtr, si,
-                    arm->bindings[fi] + ".src.arr" + std::to_string(si));
-                Value *srcLoaded = builder.CreateLoad(arrSt, srcArrPtr);
-                Value *srcLen = builder.CreateExtractValue(srcLoaded, {0});
-                Value *srcData = builder.CreateExtractValue(srcLoaded, {1});
-
-                Value *destArrPtr = builder.CreateStructGEP(
-                    payloadSt, alloca, si,
-                    arm->bindings[fi] + ".dest.arr" + std::to_string(si));
-
-                llvm::Type *innerTy = TypeResolver::elemType(context, arrSt);
-                Value *newData = ArrayEmitter::emitMalloc(
-                    builder, context, *module, innerTy, srcLen);
-
-                Value *lenGep = builder.CreateStructGEP(arrSt, destArrPtr, 0);
-                builder.CreateStore(srcLen, lenGep);
-                Value *dataGep2 = builder.CreateStructGEP(arrSt, destArrPtr, 1);
-                builder.CreateStore(newData, dataGep2);
-
-                builder.CreateMemCpy(
-                    newData, llvm::MaybeAlign(), srcData, llvm::MaybeAlign(),
-                    builder.CreateMul(
-                        srcLen,
-                        llvm::ConstantInt::get(
-                            i64Ty, module->getDataLayout().getTypeAllocSize(
-                                       innerTy))));
-
-                Value *srcDataGep2 =
-                    builder.CreateStructGEP(arrSt, srcArrPtr, 1);
-                builder.CreateStore(llvm::ConstantPointerNull::get(
-                                        llvm::PointerType::get(context, 0)),
-                                    srcDataGep2);
-              }
-            }
-          }
-
+          // Only take ownership if the subject itself owned the data.
+          // If the subject was a non-owning alias (e.g. a foreach loop
+          // variable), the real owner will free this memory already —
+          // claiming ownership here too would double-free it.
           VarInfo vi(alloca, payloadSt, false, false, false, false);
+          vi.ownsHeap = subjectOwnsHeap;
           vi.pointeeType = payloadSt;
-          vi.ownsHeap = true;
           namedValues[arm->bindings[fi]] = vi;
 
         } else {
+          // Scalar values: just copy
           Value *loaded =
               builder.CreateLoad(fieldTy, fieldPtr, arm->bindings[fi]);
           builder.CreateStore(loaded, alloca);
@@ -3386,16 +3487,28 @@ Value *CodeGenerator::visitMatchStmt(const MatchStmt &s) {
 
     codegen(*arm->body);
 
-    if (!arm->isWildcard) {
-      for (const auto &binding : arm->bindings)
-        namedValues.erase(binding);
+    // Pop scope first - this emits destructors for all bindings while their
+    // VarInfo entries are still present in namedValues. (Erasing the entries
+    // before this point would leave the scope manager with nothing to look
+    // up, silently skipping the destructors and leaking the memory.)
+    if (!blockHasTerminator(builder)) {
+      scopeMgr.popScope();
+      builder.CreateBr(exitBB);
+    } else {
+      // If there's a terminator, we still need to pop the scope.
+      // But we can't emit code after a terminator, so we just pop without
+      // emitting destructors. The destructors will be emitted when the
+      // function returns.
+      scopeMgr.popScope();
     }
 
-    if (!blockHasTerminator(builder))
-      scopeMgr.popScope();
-
-    if (!blockHasTerminator(builder))
-      builder.CreateBr(exitBB);
+    // Now it's safe to remove the bindings from namedValues so they don't
+    // leak into sibling arms or code after the match statement.
+    if (!arm->isWildcard) {
+      for (const auto &binding : arm->bindings) {
+        namedValues.erase(binding);
+      }
+    }
   }
 
   fn->insert(fn->end(), exitBB);
@@ -3735,11 +3848,35 @@ Value *CodeGenerator::visitReturn(const Return &s) {
   if (auto *ai = llvm::dyn_cast_or_null<llvm::AllocaInst>(retVal)) {
     llvm::Type *allocTy = ai->getAllocatedType();
 
-    if (auto *st = llvm::dyn_cast<llvm::StructType>(allocTy)) {
+    if (TypeResolver::isArray(allocTy)) {
+      // Array return: load the value first, then null the alloca's data pointer
+      // so the scope manager's emitArrayFree sees null and skips freeing it.
+      // This transfers ownership of the heap buffer to the caller.
       llvm::Function *fn = builder.GetInsertBlock()->getParent();
       Type *retTy = fn->getReturnType();
       retVal = builder.CreateLoad(retTy, ai, "ret.load");
 
+      auto *arrSt = llvm::cast<llvm::StructType>(allocTy);
+      Value *dataGep = builder.CreateStructGEP(arrSt, ai, 1, "ret.arr.null");
+      builder.CreateStore(
+          llvm::ConstantPointerNull::get(llvm::PointerType::get(context, 0)),
+          dataGep);
+
+      for (auto &kv : namedValues) {
+        if (kv.second.allocaInst == ai) {
+          kv.second.isMoved = true;
+          kv.second.ownsHeap = false;
+          break;
+        }
+      }
+
+    } else if (auto *st = llvm::dyn_cast<llvm::StructType>(allocTy)) {
+      llvm::Function *fn = builder.GetInsertBlock()->getParent();
+      Type *retTy = fn->getReturnType();
+      retVal = builder.CreateLoad(retTy, ai, "ret.load");
+
+      // Null all string/array data pointers in the alloca so the scope
+      // manager's destructor skips them — the returned value now owns them.
       std::function<void(llvm::StructType *, llvm::Value *)> nullStringFields =
           [&](llvm::StructType *cursT, llvm::Value *curPtr) {
             for (unsigned i = 0; i < cursT->getNumElements(); ++i) {
@@ -3811,6 +3948,7 @@ Value *CodeGenerator::visitReturn(const Return &s) {
 
   return nullptr;
 }
+
 /*---------------------------------------*/
 /*          Function code generation     */
 /*---------------------------------------*/
