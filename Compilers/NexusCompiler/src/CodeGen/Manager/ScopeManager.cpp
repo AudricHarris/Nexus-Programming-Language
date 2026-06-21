@@ -200,9 +200,50 @@ void ScopeManager::emitDestructor(VarInfo &vi) {
 // (for struct elements stored inside an array).
 void ScopeManager::emitStructFieldDestructors(llvm::StructType *st,
                                               llvm::Value *ptr) {
-  for (unsigned i = 0; i < st->getNumElements(); ++i) {
+  // Detect whether `st` itself is an enum/tagged-union layout: field 0 is an
+  // i32 tag, and at least one *payload* field (index >= 1) owns heap memory
+  // (string or array, possibly nested). Such payload fields are only valid
+  // when the active variant is the "has payload" one (tag == 1, e.g. Some).
+  // For other variants (e.g. None) those bytes are uninitialized/leftover
+  // stack garbage and must never be read as a pointer and freed.
+  bool selfIsEnum = false;
+  if (st->getNumElements() >= 1 && st->getElementType(0)->isIntegerTy(32)) {
+    std::function<bool(llvm::Type *)> ownsHeap = [&](llvm::Type *t) -> bool {
+      if (TypeResolver::isString(t) || TypeResolver::isArray(t))
+        return true;
+      if (auto *nested = llvm::dyn_cast<llvm::StructType>(t)) {
+        for (unsigned j = 0; j < nested->getNumElements(); ++j)
+          if (ownsHeap(nested->getElementType(j)))
+            return true;
+      }
+      return false;
+    };
+    for (unsigned i = 1; i < st->getNumElements(); ++i) {
+      if (ownsHeap(st->getElementType(i))) {
+        selfIsEnum = true;
+        break;
+      }
+    }
+  }
+
+  llvm::BasicBlock *enumSkipBB = nullptr;
+  if (selfIsEnum) {
+    Value *tagPtr = B_.CreateStructGEP(st, ptr, 0, "self.tag.ptr");
+    Value *tag = B_.CreateLoad(Type::getInt32Ty(ctx_), tagPtr, "self.tag");
+    Value *isSome = B_.CreateICmpEQ(
+        tag, ConstantInt::get(Type::getInt32Ty(ctx_), 1), "self.is.some");
+
+    llvm::Function *fn = B_.GetInsertBlock()->getParent();
+    std::string uid = std::to_string(bbCounter_++);
+    llvm::BasicBlock *someBB = BasicBlock::Create(ctx_, "self.some" + uid, fn);
+    enumSkipBB = BasicBlock::Create(ctx_, "self.skip" + uid, fn);
+    B_.CreateCondBr(isSome, someBB, enumSkipBB);
+    B_.SetInsertPoint(someBB);
+  }
+
+  for (unsigned i = selfIsEnum ? 1 : 0; i < st->getNumElements(); ++i) {
     if (blockHasTerminator(B_))
-      return;
+      break;
 
     Type *fieldTy = st->getElementType(i);
     Value *fieldPtr =
@@ -249,6 +290,12 @@ void ScopeManager::emitStructFieldDestructors(llvm::StructType *st,
         emitStructFieldDestructors(nestedSt, fieldPtr);
       }
     }
+  }
+
+  if (selfIsEnum) {
+    if (!blockHasTerminator(B_))
+      B_.CreateBr(enumSkipBB);
+    B_.SetInsertPoint(enumSkipBB);
   }
 }
 

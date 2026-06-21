@@ -146,12 +146,8 @@ std::unique_ptr<Program> Parser::parse() {
       bool nextIsConst = check(TokenKind::CONST);
       const Token &typeCheck = nextIsConst ? peekAt(1) : peek();
       if (looksLikeType(typeCheck)) {
-        // Skip past the full type: base + optional <...> + optional [][]
-        // to check whether what follows is a variable name (global decl)
-        // rather than a function name (fn decl).
-        size_t off = nextIsConst ? 1 : 0; // points at base type identifier
-        ++off;                            // step past base identifier
-        // skip generic args <...>
+        size_t off = nextIsConst ? 1 : 0;
+        ++off;
         if (peekAt(off).getKind() == TokenKind::LT) {
           size_t depth = 1;
           ++off;

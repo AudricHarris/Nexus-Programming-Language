@@ -110,10 +110,18 @@ Value *CodeGenerator::visitStrLit(const StrLitExpr &e) {
 
   // --- Interpolated string ---
   // Temporaries produced here are registered for destruction at scope exit.
+  // Guard: skip registration if the alloca is already owned by a named
+  // variable — registering it again would cause a double-free at scope exit.
+  auto isNamedVar = [&](llvm::AllocaInst *ai) -> bool {
+    for (auto &kv : namedValues)
+      if (kv.second.allocaInst == ai)
+        return true;
+    return false;
+  };
   auto registerTmp = [&](Value *v) {
     if (auto *ai = llvm::dyn_cast<llvm::AllocaInst>(v)) {
       llvm::Function *currentFn = builder.GetInsertBlock()->getParent();
-      if (ai->getParent()->getParent() == currentFn)
+      if (ai->getParent()->getParent() == currentFn && !isNamedVar(ai))
         scopeMgr.declareTmp(ai, TypeResolver::getStringType(context));
     }
   };
@@ -1507,13 +1515,11 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
           if (allocTy == fieldTy) {
             argVal = builder.CreateLoad(allocTy, ai, "payload.val");
 
-            // The value has been loaded and is about to be stored into the
-            // enum alloca, which now owns the heap buffer.  Null the source
-            // alloca's data pointer so the scope-manager destructor (which
-            // still holds a reference to `ai`) does not free the same buffer
-            // a second time.
             if (TypeResolver::isString(allocTy)) {
-              // Direct string argument: null its data pointer.
+              // The payload field IS a string (not a struct containing one).
+              // Null the source alloca's own data pointer so the source's
+              // scope destructor doesn't free the buffer we just copied by
+              // value into the payload — ownership transfers to the enum.
               llvm::StructType *strSt = TypeResolver::getStringType(context);
               Value *dataGep =
                   builder.CreateStructGEP(strSt, ai, 0, "src.null.dp");
@@ -1521,7 +1527,7 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
                                       llvm::PointerType::get(context, 0)),
                                   dataGep);
             } else if (TypeResolver::isArray(allocTy)) {
-              // Direct array argument: null its data pointer.
+              // Same idea, but the payload field IS an array.
               if (auto *arrSt = llvm::dyn_cast<llvm::StructType>(allocTy)) {
                 Value *dataGep =
                     builder.CreateStructGEP(arrSt, ai, 1, "src.null.adp");
@@ -1531,7 +1537,8 @@ Value *CodeGenerator::visitCall(const CallExpr &e) {
               }
             } else if (auto *srcSt =
                            llvm::dyn_cast<llvm::StructType>(allocTy)) {
-              // Struct argument: null data pointers of any string/array fields.
+              // The payload field is a struct that CONTAINS string/array
+              // sub-fields (e.g. a nested struct) — null each of those.
               for (unsigned si = 0; si < srcSt->getNumElements(); ++si) {
                 llvm::Type *elemTy = srcSt->getElementType(si);
                 if (TypeResolver::isString(elemTy)) {
