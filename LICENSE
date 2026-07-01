@@ -1,21 +1,27 @@
-MIT License
+HARRIS AI-Restricted License
 
-Copyright (c) 2026 Audric Harris
+Copyright © 2026 Audric HARRIS
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Grant of Rights to Humans
+Permission is hereby granted, free of charge, to any human natural person obtaining a copy of this software and associated documentation files (the "Software"), to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software without restriction, subject to the following condition:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+The original copyright notice and this permission notice must be included in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. Artificial Intelligence & Machine Learning Restrictions
+Notwithstanding Section 1, no rights are granted to automated systems, artificial intelligence (AI) models, large language models (LLMs), machine learning algorithms, or the organizations developing them. Specifically, it is strictly prohibited to:
+
+Train & Develop: Use this Software, its source code, or its outputs to train, fine-tune, align, validate, or test any AI or machine learning models.
+
+Commercialize: Generate direct or indirect financial profit from any AI-driven applications or outputs that utilize, mimic, or adapt this Software.
+
+3. Commercial AI Licensing & Revenue Sharing
+Any entity wishing to utilize this Software for machine learning, data mining, commercial AI generation, or model development must secure a separate, formal licensing agreement from the copyright holder prior to use.
+
+Any such agreement will require:
+
+A mandatory revenue-sharing or fund-split structure.
+
+Explicit, public attribution acknowledging the author's work.
+
+4. Disclaimer of Warranty
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
