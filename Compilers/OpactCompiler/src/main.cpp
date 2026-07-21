@@ -6,6 +6,8 @@
 // External packages
 #include <cstdlib>
 #include <filesystem>
+#include <string>
+#include <vector>
 
 // Check if Code is windows or not
 
@@ -37,19 +39,19 @@ std::string getHomeDirectory() {
 fs::path getConfigDir() {
   std::string home = getHomeDirectory();
   if (home.empty()) {
-    return fs::current_path() / "nexus_config";
+    return fs::current_path() / "opact_config";
   }
 
 #ifdef _WIN32
   // Windows: %APPDATA%\nexus
   const char *appdata = std::getenv("APPDATA");
   if (appdata) {
-    return fs::path(appdata) / "nexus";
+    return fs::path(appdata) / "opact";
   }
-  return fs::path(home) / "AppData" / "Roaming" / "nexus";
+  return fs::path(home) / "AppData" / "Roaming" / "opact";
 #else
-  // Linux/macOS: ~/.config/nexus
-  return fs::path(home) / ".config" / "nexus";
+  // Linux/macOS: ~/.config/opact
+  return fs::path(home) / ".config" / "opact";
 #endif
 }
 
@@ -79,4 +81,24 @@ std::string getOutputName(const std::string &file) {
 
 // Main function
 
-int main(int argc, char *argv[]) { return EXIT_SUCCESS; }
+int main(int argc, char *argv[]) {
+  if (argc < 2) {
+    std::cerr << "Usage: opact [options] [files...]\n";
+    std::cerr << "Options:\n";
+    std::cerr << "  --version     Show version information\n";
+    return EXIT_FAILURE;
+  }
+
+  std::string firstArg = argv[1];
+
+  if (firstArg == "--version") {
+    std::cout << "opact [2026.07.20]\n";
+    return 0;
+  }
+
+  std::vector<std::string> inputs;
+  for (int i = 1; i < argc; i++)
+    inputs.push_back(argv[i]);
+
+  return EXIT_SUCCESS;
+}
