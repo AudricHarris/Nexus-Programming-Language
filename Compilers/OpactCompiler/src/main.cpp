@@ -6,6 +6,7 @@
 // External packages
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -98,7 +99,11 @@ int main(int argc, char *argv[]) {
 
   std::vector<std::string> inputs;
   for (int i = 1; i < argc; i++)
-    inputs.push_back(argv[i]);
+    if (hasValidExt(argv[i])) {
+      std::cout << "Correct file extension [" << argv[i] << "]\n";
+      inputs.push_back(argv[i]);
+    } else
+      std::cerr << "Invalid file extension\n";
 
   return EXIT_SUCCESS;
 }
