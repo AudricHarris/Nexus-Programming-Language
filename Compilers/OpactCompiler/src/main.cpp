@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -99,11 +100,29 @@ int main(int argc, char *argv[]) {
 
   std::vector<std::string> inputs;
   for (int i = 1; i < argc; i++)
-    if (hasValidExt(argv[i])) {
-      std::cout << "Correct file extension [" << argv[i] << "]\n";
+    if (hasValidExt(argv[i]))
       inputs.push_back(argv[i]);
-    } else
-      std::cerr << "Invalid file extension\n";
+
+  for (const std::string &file : inputs) {
+    std::cout << "Compiling : " << file.c_str() << "\n";
+
+    std::optional<std::string> source = readFile(file.c_str());
+    if (!source.has_value() || source.value() == "") {
+      std::cout << "Failed to read the content of the file\n";
+      continue;
+    }
+
+    // Tokenization step
+    std::string code = source.value();
+    Lexer lexer(code);
+    std::vector<Token> tokens = lexer.Tokenize();
+
+    /*for (Token &token : tokens) {
+      std::cout << token.toString();
+    }*/
+
+    // Parser step
+  }
 
   return EXIT_SUCCESS;
 }
