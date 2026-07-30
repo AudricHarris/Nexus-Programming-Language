@@ -2,13 +2,33 @@
 #define AST_HPP
 
 #include "../Token/TokenType.hpp"
+#include <memory>
+#include <optional>
+#include <vector>
+
+// Type representation :
+
+enum class DataType { Int, Float, Bool, Char, Str, Void, Custom };
+
+struct TypeDesc {
+  DataType type;
+  Token customName;
+  std::vector<int> dim;
+
+  bool isArray() const { return !dim.empty(); }
+};
+
+// Base nodes :
 
 // Expressions -> This is everything that returns a type (Example : [1+5]
 // returns int, FunctionCalls(), string concat, etc...)
-
 struct Expression {
   virtual ~Expression() = default;
 };
+
+// all the code that results in an action I believe
+// Avoids writing std::unique_ptr makes things cleaner
+using ExprPtr = std::unique_ptr<Expression>;
 
 // ALl the different default litterals :
 // int, float, bool, char, str
@@ -23,10 +43,80 @@ struct LiteralExpr : Expression {
   NumericBase base = NumericBase::Decimal;
 };
 
-// Statements  -> This is
-// all the code that results in an action I believe
-struct Statement {
-  virtual ~Statement() = default;
+// Operation
+enum class BinaryOp {
+  Add,
+  Sub,
+  Mul,
+  Div,
+  Mod,
+  Eq,
+  Ne,
+  Lt,
+  Gt,
+  Le,
+  Ge,
+  And,
+  BitAnd,
+  Or
+};
+
+enum class UnaryOp { Negate, Not };
+
+struct BinaryExpr : Expression {
+  BinaryOp op;
+  ExprPtr left;
+  ExprPtr right;
+};
+
+struct UnaryExpr : Expression {
+  UnaryOp op;
+  ExprPtr expr;
+};
+
+struct CallExpr : Expression {
+  ExprPtr callee;
+  std::vector<ExprPtr> arguments;
+};
+
+struct GenericCallExpr : Expression {
+  ExprPtr callee;
+  std::vector<TypeDesc> typeArgs;
+  std::vector<ExprPtr> arguments;
+};
+
+struct CastExpr : Expression {
+  ExprPtr expr;
+  TypeDesc castType;
+};
+
+enum class AssignKind { Assign, Move, Borrow };
+
+struct AssignExpr : Expression {
+  Token target;
+  ExprPtr value;
+  AssignKind kind;
+};
+
+struct VarDeclExpr : Expression {
+  Token name;
+  TypeDesc type;
+  ExprPtr expr;
+};
+
+struct Block : Expression {
+  std::vector<ExprPtr> expr;
+};
+
+struct IfExpr : Expression {
+  ExprPtr condition;
+  std::unique_ptr<Block> ifBranch;
+  std::optional<std::unique_ptr<Block>> elseBranch;
+};
+
+struct WhileExpr : Expression {
+  ExprPtr condition;
+  std::unique_ptr<Block> loopBranch;
 };
 
 #endif // AST_H
