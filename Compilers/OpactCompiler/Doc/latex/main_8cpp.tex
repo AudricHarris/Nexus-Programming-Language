@@ -1,0 +1,65 @@
+\doxysection{src/\+main.cpp File Reference}
+\hypertarget{main_8cpp}{}\label{main_8cpp}\index{src/main.cpp@{src/main.cpp}}
+
+
+Starting script and main manager for compiler.  
+
+
+{\ttfamily \+\#include "{}Parser/\+\+Compiler\+Pipeline.\+hpp"{}}\newline
+{\ttfamily \+\#include $<$cstdlib$>$}\newline
+{\ttfamily \+\#include $<$filesystem$>$}\newline
+{\ttfamily \+\#include $<$iostream$>$}\newline
+{\ttfamily \+\#include $<$string$>$}\newline
+{\ttfamily \+\#include $<$vector$>$}\newline
+\doxysubsubsection*{Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{main_8cpp_a7007c1e439369ac599ebe014de249392}\label{main_8cpp_a7007c1e439369ac599ebe014de249392} 
+std::\+string {\bfseries get\+Home\+Directory} ()
+\item 
+\Hypertarget{main_8cpp_a292ed4cafa60e6c29e81b435e518c957}\label{main_8cpp_a292ed4cafa60e6c29e81b435e518c957} 
+fs::\+path {\bfseries get\+Config\+Dir} ()
+\item 
+\Hypertarget{main_8cpp_a713373507ec8485d5466e3f4fcdaefa1}\label{main_8cpp_a713373507ec8485d5466e3f4fcdaefa1} 
+bool {\bfseries ends\+With} (const std::\+string \&str, const std::\+string \&suffix)
+\item 
+\Hypertarget{main_8cpp_a88d0087c615a374ea33e8f79645ea376}\label{main_8cpp_a88d0087c615a374ea33e8f79645ea376} 
+bool {\bfseries has\+Valid\+Ext} (const std::\+string \&f)
+\item 
+\Hypertarget{main_8cpp_a7f9ffb726bac1fb201915cc04d8e5888}\label{main_8cpp_a7f9ffb726bac1fb201915cc04d8e5888} 
+std::\+string {\bfseries get\+Output\+Name} (const std::\+string \&file)
+\item 
+int \doxymbox{\hyperlink{main_8cpp_a0ddf1224851353fc92bfbff6f499fa97}{main}} (int argc, char \texorpdfstring{$\ast$}{*}argv\+[$\,$]\+)
+\begin{DoxyCompactList}\small\item\em Start of the compiler. \end{DoxyCompactList}\end{DoxyCompactItemize}
+
+
+\doxysubsection{Detailed Description}
+Starting script and main manager for compiler. 
+
+
+
+\label{doc-func-members}
+\Hypertarget{main_8cpp_doc-func-members}
+\doxysubsection{Function Documentation}
+\Hypertarget{main_8cpp_a0ddf1224851353fc92bfbff6f499fa97}\index{main.cpp@{main.cpp}!main@{main}}
+\index{main@{main}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{main()}{main()}}
+{\footnotesize\ttfamily \label{main_8cpp_a0ddf1224851353fc92bfbff6f499fa97} 
+int main (\begin{DoxyParamCaption}\item[{int}]{argc}{, }\item[{char \texorpdfstring{$\ast$}{*}}]{argv}{\+[$\,$]\+}\end{DoxyParamCaption})}
+
+
+
+Start of the compiler. 
+
+This allows to do different commands and modes for the compiler. Example :\+ version, project file. This also does a check if the file is valid correct extension and exist.
+
+
+\begin{DoxyParams}{Parameters}
+{\em argc} & number of arguments. \\
+\hline
+{\em argv} & list of arguments \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+success or not of the compiler 
+\end{DoxyReturn}

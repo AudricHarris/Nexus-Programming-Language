@@ -1,0 +1,164 @@
+\doxysection{Ast.\+hpp}
+\hypertarget{Ast_8hpp_source}{}\label{Ast_8hpp_source}\index{src/Parser/Ast.hpp@{src/Parser/Ast.hpp}}
+
+\begin{DoxyCode}{0}
+\DoxyCodeLine{00001\ \textcolor{preprocessor}{\#ifndef\ AST\_HPP}}
+\DoxyCodeLine{00002\ \textcolor{preprocessor}{\#define\ AST\_HPP}}
+\DoxyCodeLine{00003\ }
+\DoxyCodeLine{00004\ \textcolor{preprocessor}{\#include\ "{}../Token/TokenType.hpp"{}}}
+\DoxyCodeLine{00005\ \textcolor{preprocessor}{\#include\ <memory>}}
+\DoxyCodeLine{00006\ \textcolor{preprocessor}{\#include\ <optional>}}
+\DoxyCodeLine{00007\ \textcolor{preprocessor}{\#include\ <vector>}}
+\DoxyCodeLine{00008\ }
+\DoxyCodeLine{00009\ \textcolor{comment}{//\ Type\ representation\ :}}
+\DoxyCodeLine{00010\ }
+\DoxyCodeLine{00011\ \textcolor{keyword}{enum\ class}\ DataType\ \{\ Int,\ Float,\ Bool,\ Char,\ Str,\ Void,\ Custom\ \};}
+\DoxyCodeLine{00012\ }
+\DoxyCodeLine{00013\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structTypeDesc}{TypeDesc}}\ \{}
+\DoxyCodeLine{00014\ \ \ DataType\ type;}
+\DoxyCodeLine{00015\ \ \ std::optional<Token>\ customName;}
+\DoxyCodeLine{00016\ \ \ std::vector<int>\ dim;}
+\DoxyCodeLine{00017\ }
+\DoxyCodeLine{00018\ \ \ \textcolor{keywordtype}{bool}\ isArray()\textcolor{keyword}{\ const\ }\{\ \textcolor{keywordflow}{return}\ !dim.empty();\ \}}
+\DoxyCodeLine{00019\ \};}
+\DoxyCodeLine{00020\ }
+\DoxyCodeLine{00021\ \textcolor{comment}{//\ Base\ nodes\ :}}
+\DoxyCodeLine{00022\ }
+\DoxyCodeLine{00023\ \textcolor{comment}{//\ Expressions\ -\/>\ This\ is\ everything\ that\ returns\ a\ type\ (Example\ :\ [1+5]}}
+\DoxyCodeLine{00024\ \textcolor{comment}{//\ returns\ int,\ FunctionCalls(),\ string\ concat,\ etc...)}}
+\DoxyCodeLine{00025\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00026\ \ \ \textcolor{keyword}{virtual}\ \doxymbox{\hyperlink{structExpression}{\string~Expression}}()\ =\ \textcolor{keywordflow}{default};}
+\DoxyCodeLine{00027\ \};}
+\DoxyCodeLine{00028\ }
+\DoxyCodeLine{00029\ \textcolor{comment}{//\ all\ the\ code\ that\ results\ in\ an\ action\ I\ believe}}
+\DoxyCodeLine{00030\ \textcolor{comment}{//\ Avoids\ writing\ std::unique\_ptr\ makes\ things\ cleaner}}
+\DoxyCodeLine{00031\ \textcolor{keyword}{using\ }ExprPtr\ =\ std::unique\_ptr<Expression>;}
+\DoxyCodeLine{00032\ }
+\DoxyCodeLine{00033\ \textcolor{comment}{//\ ALl\ the\ different\ default\ litterals\ :}}
+\DoxyCodeLine{00034\ \textcolor{comment}{//\ int,\ float,\ bool,\ char,\ str}}
+\DoxyCodeLine{00035\ }
+\DoxyCodeLine{00036\ \textcolor{keyword}{enum\ class}\ LiteralKind\ \{\ Int,\ Float,\ Bool,\ Char,\ Str\ \};}
+\DoxyCodeLine{00037\ \textcolor{keyword}{enum\ class}\ NumericBase\ \{\ Decimal,\ Hexadecimal,\ Octal,\ Binary\ \};}
+\DoxyCodeLine{00038\ }
+\DoxyCodeLine{00039\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structLiteralExpr}{LiteralExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00040\ \ \ LiteralKind\ kind;}
+\DoxyCodeLine{00041\ \ \ \doxymbox{\hyperlink{classToken}{Token}}\ lit;}
+\DoxyCodeLine{00042\ }
+\DoxyCodeLine{00043\ \ \ NumericBase\ base\ =\ NumericBase::Decimal;}
+\DoxyCodeLine{00044\ \};}
+\DoxyCodeLine{00045\ }
+\DoxyCodeLine{00046\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structIdentifierExpr}{IdentifierExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00047\ \ \ \doxymbox{\hyperlink{classToken}{Token}}\ name;}
+\DoxyCodeLine{00048\ \};}
+\DoxyCodeLine{00049\ }
+\DoxyCodeLine{00050\ \textcolor{comment}{//\ Operation}}
+\DoxyCodeLine{00051\ \textcolor{keyword}{enum\ class}\ BinaryOp\ \{}
+\DoxyCodeLine{00052\ \ \ Add,}
+\DoxyCodeLine{00053\ \ \ Sub,}
+\DoxyCodeLine{00054\ \ \ Mul,}
+\DoxyCodeLine{00055\ \ \ Div,}
+\DoxyCodeLine{00056\ \ \ Mod,}
+\DoxyCodeLine{00057\ \ \ Eq,}
+\DoxyCodeLine{00058\ \ \ Ne,}
+\DoxyCodeLine{00059\ \ \ Lt,}
+\DoxyCodeLine{00060\ \ \ Gt,}
+\DoxyCodeLine{00061\ \ \ Le,}
+\DoxyCodeLine{00062\ \ \ Ge,}
+\DoxyCodeLine{00063\ \ \ And,}
+\DoxyCodeLine{00064\ \ \ BitAnd,}
+\DoxyCodeLine{00065\ \ \ Or}
+\DoxyCodeLine{00066\ \};}
+\DoxyCodeLine{00067\ }
+\DoxyCodeLine{00068\ \textcolor{keyword}{enum\ class}\ UnaryOp\ \{\ Negate,\ Not\ \};}
+\DoxyCodeLine{00069\ }
+\DoxyCodeLine{00070\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structBinaryExpr}{BinaryExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00071\ \ \ BinaryOp\ op;}
+\DoxyCodeLine{00072\ \ \ ExprPtr\ left;}
+\DoxyCodeLine{00073\ \ \ ExprPtr\ right;}
+\DoxyCodeLine{00074\ \};}
+\DoxyCodeLine{00075\ }
+\DoxyCodeLine{00076\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structUnaryExpr}{UnaryExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00077\ \ \ UnaryOp\ op;}
+\DoxyCodeLine{00078\ \ \ ExprPtr\ expr;}
+\DoxyCodeLine{00079\ \};}
+\DoxyCodeLine{00080\ }
+\DoxyCodeLine{00081\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structCallExpr}{CallExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00082\ \ \ ExprPtr\ callee;}
+\DoxyCodeLine{00083\ \ \ std::vector<ExprPtr>\ arguments;}
+\DoxyCodeLine{00084\ \};}
+\DoxyCodeLine{00085\ }
+\DoxyCodeLine{00086\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structGenericCallExpr}{GenericCallExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00087\ \ \ ExprPtr\ callee;}
+\DoxyCodeLine{00088\ \ \ std::vector<TypeDesc>\ typeArgs;}
+\DoxyCodeLine{00089\ \ \ std::vector<ExprPtr>\ arguments;}
+\DoxyCodeLine{00090\ \};}
+\DoxyCodeLine{00091\ }
+\DoxyCodeLine{00092\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structCastExpr}{CastExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00093\ \ \ ExprPtr\ expr;}
+\DoxyCodeLine{00094\ \ \ \doxymbox{\hyperlink{structTypeDesc}{TypeDesc}}\ castType;}
+\DoxyCodeLine{00095\ \};}
+\DoxyCodeLine{00096\ }
+\DoxyCodeLine{00097\ \textcolor{keyword}{enum\ class}\ AssignKind\ \{\ Assign,\ Move,\ Borrow\ \};}
+\DoxyCodeLine{00098\ }
+\DoxyCodeLine{00099\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structAssignExpr}{AssignExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00100\ \ \ ExprPtr\ target;}
+\DoxyCodeLine{00101\ \ \ ExprPtr\ value;}
+\DoxyCodeLine{00102\ \ \ AssignKind\ kind;}
+\DoxyCodeLine{00103\ \};}
+\DoxyCodeLine{00104\ }
+\DoxyCodeLine{00105\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structVarDeclExpr}{VarDeclExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00106\ \ \ \doxymbox{\hyperlink{classToken}{Token}}\ name;}
+\DoxyCodeLine{00107\ \ \ std::optional<TypeDesc>\ type;}
+\DoxyCodeLine{00108\ \ \ ExprPtr\ expr;}
+\DoxyCodeLine{00109\ \};}
+\DoxyCodeLine{00110\ }
+\DoxyCodeLine{00111\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structYieldExpr}{YieldExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00112\ \ \ ExprPtr\ expr;}
+\DoxyCodeLine{00113\ \};}
+\DoxyCodeLine{00114\ }
+\DoxyCodeLine{00115\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structBlock}{Block}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00116\ \ \ std::vector<ExprPtr>\ expressions;}
+\DoxyCodeLine{00117\ \};}
+\DoxyCodeLine{00118\ }
+\DoxyCodeLine{00119\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structIfExpr}{IfExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00120\ \ \ ExprPtr\ condition;}
+\DoxyCodeLine{00121\ \ \ std::unique\_ptr<Block>\ ifBranch;}
+\DoxyCodeLine{00122\ \ \ std::optional<std::unique\_ptr<Block>>\ elseBranch;}
+\DoxyCodeLine{00123\ \};}
+\DoxyCodeLine{00124\ }
+\DoxyCodeLine{00125\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structWhileExpr}{WhileExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00126\ \ \ ExprPtr\ condition;}
+\DoxyCodeLine{00127\ \ \ std::unique\_ptr<Block>\ loopBranch;}
+\DoxyCodeLine{00128\ \};}
+\DoxyCodeLine{00129\ }
+\DoxyCodeLine{00130\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structMemberAccessExpr}{MemberAccessExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00131\ \ \ ExprPtr\ object;}
+\DoxyCodeLine{00132\ \ \ \doxymbox{\hyperlink{classToken}{Token}}\ memberName;}
+\DoxyCodeLine{00133\ \};}
+\DoxyCodeLine{00134\ }
+\DoxyCodeLine{00135\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structIndexExpr}{IndexExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00136\ \ \ ExprPtr\ array;}
+\DoxyCodeLine{00137\ \ \ ExprPtr\ index;}
+\DoxyCodeLine{00138\ \};}
+\DoxyCodeLine{00139\ }
+\DoxyCodeLine{00140\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structArrayLiteralExpr}{ArrayLiteralExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00141\ \ \ std::vector<ExprPtr>\ elements;}
+\DoxyCodeLine{00142\ \};}
+\DoxyCodeLine{00143\ }
+\DoxyCodeLine{00144\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structTupleLiteralExpr}{TupleLiteralExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00145\ \ \ std::vector<ExprPtr>\ elements;}
+\DoxyCodeLine{00146\ \};}
+\DoxyCodeLine{00147\ }
+\DoxyCodeLine{00148\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structBreakExpr}{BreakExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00149\ \ \ std::optional<ExprPtr>\ value;}
+\DoxyCodeLine{00150\ \};}
+\DoxyCodeLine{00151\ }
+\DoxyCodeLine{00152\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structReturnExpr}{ReturnExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{}
+\DoxyCodeLine{00153\ \ \ std::optional<ExprPtr>\ value;}
+\DoxyCodeLine{00154\ \};}
+\DoxyCodeLine{00155\ }
+\DoxyCodeLine{00156\ \textcolor{keyword}{struct\ }\doxymbox{\hyperlink{structContinueExpr}{ContinueExpr}}\ :\ \doxymbox{\hyperlink{structExpression}{Expression}}\ \{\};}
+\DoxyCodeLine{00157\ }
+\DoxyCodeLine{00158\ \textcolor{preprocessor}{\#endif\ }\textcolor{comment}{//\ AST\_HPP}}
+
+\end{DoxyCode}
