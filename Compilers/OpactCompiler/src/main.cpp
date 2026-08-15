@@ -1,17 +1,16 @@
-// My Packages
-#include "FileReader/FileReader.hpp"
-#include "Lexer/Lexer.hpp"
-#include "Token/TokenType.hpp"
+/**
+ * @file main.cpp
+ * @brief Starting script and main manager for compiler.
+ */
+
+#include "Parser/CompilerPipeline.hpp"
 
 // External packages
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
-#include <optional>
 #include <string>
 #include <vector>
-
-// Check if Code is windows or not
 
 namespace fs = std::filesystem;
 
@@ -45,7 +44,7 @@ fs::path getConfigDir() {
   }
 
 #ifdef _WIN32
-  // Windows: %APPDATA%\nexus
+  // Windows: %APPDATA%\opact
   const char *appdata = std::getenv("APPDATA");
   if (appdata) {
     return fs::path(appdata) / "opact";
@@ -81,48 +80,59 @@ std::string getOutputName(const std::string &file) {
 #endif
 }
 
-// Main function
-
+// ------------------ //
+// Main function      //
+// ------------------ //
+//
+/**
+ * @brief Start of the compiler.
+ *
+ * This allows to do different commands and modes for the compiler. Example : version, project file.
+ * This also does a check if the file is valid correct extension and exist.
+ * 
+ * @param argc number of arguments.
+ * @param argv list of arguments
+ * @return success or not of the compiler
+ */
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     std::cerr << "Usage: opact [options] [files...]\n";
     std::cerr << "Options:\n";
-    std::cerr << "  --version     Show version information\n";
+    std::cerr << "  --version      Show version information\n";
     return EXIT_FAILURE;
   }
 
   std::string firstArg = argv[1];
 
   if (firstArg == "--version") {
-    std::cout << "opact [2026.07.20]\n";
-    return 0;
+    std::cout << "opact [2026.08.16]\n";
+    return EXIT_SUCCESS;
   }
 
   std::vector<std::string> inputs;
-  for (int i = 1; i < argc; i++)
-    if (hasValidExt(argv[i]))
+  for (int i = 1; i < argc; i++) {
+    if (hasValidExt(argv[i])) {
       inputs.push_back(argv[i]);
-
-  for (const std::string &file : inputs) {
-    std::cout << "Compiling : " << file.c_str() << "\n";
-
-    std::optional<std::string> source = readFile(file.c_str());
-    if (!source.has_value() || source.value() == "") {
-      std::cout << "Failed to read the content of the file\n";
-      continue;
     }
-
-    // Tokenization step
-    std::string code = source.value();
-    Lexer lexer(code);
-    std::vector<Token> tokens = lexer.Tokenize();
-
-    /*for (Token &token : tokens) {
-      std::cout << token.toString();
-    }*/
-
-    // Parser step
   }
+
+  if (inputs.empty()) {
+    std::cerr << "Error: No valid '.op' source files provided.\n";
+    return EXIT_FAILURE;
+  }
+
+  // Initialize the thread-safe compiler orchestrator
+  CompilerPipeline pipeline;
+
+  // Enqueue initial entry files supplied via command-line arguments
+  for (const std::string &file : inputs) {
+    std::cout << "Starting compilation entry point: " << file << "\n";
+    pipeline.enqueueFile(file);
+  }
+
+  pipeline.runPipeline();
+
+  std::cout << "Multi-threaded parsing phase complete.\n";
 
   return EXIT_SUCCESS;
 }

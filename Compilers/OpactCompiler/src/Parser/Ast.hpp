@@ -12,7 +12,7 @@ enum class DataType { Int, Float, Bool, Char, Str, Void, Custom };
 
 struct TypeDesc {
   DataType type;
-  Token customName;
+  std::optional<Token> customName;
   std::vector<int> dim;
 
   bool isArray() const { return !dim.empty(); }
@@ -41,6 +41,10 @@ struct LiteralExpr : Expression {
   Token lit;
 
   NumericBase base = NumericBase::Decimal;
+};
+
+struct IdentifierExpr : Expression {
+  Token name;
 };
 
 // Operation
@@ -93,19 +97,23 @@ struct CastExpr : Expression {
 enum class AssignKind { Assign, Move, Borrow };
 
 struct AssignExpr : Expression {
-  Token target;
+  ExprPtr target;
   ExprPtr value;
   AssignKind kind;
 };
 
 struct VarDeclExpr : Expression {
   Token name;
-  TypeDesc type;
+  std::optional<TypeDesc> type;
+  ExprPtr expr;
+};
+
+struct YieldExpr : Expression {
   ExprPtr expr;
 };
 
 struct Block : Expression {
-  std::vector<ExprPtr> expr;
+  std::vector<ExprPtr> expressions;
 };
 
 struct IfExpr : Expression {
@@ -119,4 +127,32 @@ struct WhileExpr : Expression {
   std::unique_ptr<Block> loopBranch;
 };
 
-#endif // AST_H
+struct MemberAccessExpr : Expression {
+  ExprPtr object;
+  Token memberName;
+};
+
+struct IndexExpr : Expression {
+  ExprPtr array;
+  ExprPtr index;
+};
+
+struct ArrayLiteralExpr : Expression {
+  std::vector<ExprPtr> elements;
+};
+
+struct TupleLiteralExpr : Expression {
+  std::vector<ExprPtr> elements;
+};
+
+struct BreakExpr : Expression {
+  std::optional<ExprPtr> value;
+};
+
+struct ReturnExpr : Expression {
+  std::optional<ExprPtr> value;
+};
+
+struct ContinueExpr : Expression {};
+
+#endif // AST_HPP
