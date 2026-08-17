@@ -4,10 +4,12 @@
 #include "Ast.hpp"
 #include "FileReader/FileReader.hpp"
 #include "Lexer/Lexer.hpp"
+#include "Parser/Parser.hpp"
 #include <cstddef>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <queue>
 #include <mutex>
@@ -93,9 +95,11 @@ class CompilerPipeline {
             for (Token t : codeTokenized)
                 std::cout << t.toString();
 
-            // Run your Parser -> ExprPtr ast
+            // Run Parser -> ExprPtr ast
+            Parser p(std::move(codeTokenized), path, this);
+            ExprPtr file = p.parseModule();
             // Whenever parser finds an `ImportExpr`, call: enqueueFile(importedPath);
-            return Module{ path, nullptr }; 
+            return Module{ path, std::move(file)}; 
         }
 };
 

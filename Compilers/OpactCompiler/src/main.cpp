@@ -18,6 +18,14 @@ namespace fs = std::filesystem;
 // Windows & unix check //
 // -------------------- //
 
+/**
+ * @brief get'sthe correct home directory depending on the OS
+ *
+ * The actual function uses a check for win32 and returns the path of the home env
+ * if it's linux we just get the home path directly with getenv
+ * 
+ * @return string :the path of home directory 
+ * */
 std::string getHomeDirectory() {
   const char *home = nullptr;
 
@@ -105,7 +113,7 @@ int main(int argc, char *argv[]) {
   std::string firstArg = argv[1];
 
   if (firstArg == "--version") {
-    std::cout << "opact [2026.08.16]\n";
+    std::cout << "opact [2026.08.18]\n";
     return EXIT_SUCCESS;
   }
 

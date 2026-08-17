@@ -155,4 +155,29 @@ struct ReturnExpr : Expression {
 
 struct ContinueExpr : Expression {};
 
+// Import
+struct ImportExpr : Expression {
+    std::string modulePath;
+    std::vector<std::string> importedSymbols;
+    bool isSelectiveImport;
+};
+
+// Functions & params
+struct Parameter {
+    std::string name;
+    std::string typeName;
+    bool isMutable = false;
+    bool isReference = false;
+    std::optional<ExprPtr> defaultVal = nullptr;
+};
+
+struct FunctionDeclExpr : Expression {
+    std::string name;
+    std::vector<Parameter> params;
+    std::string returnTypeName;
+    ExprPtr body;
+    bool isPublic = true;
+    bool isStatic = false;
+};
+
 #endif // AST_HPP
