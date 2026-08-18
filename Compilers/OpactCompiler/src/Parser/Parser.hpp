@@ -5,6 +5,7 @@
 #include "Token/TokenType.hpp"
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 
@@ -25,6 +26,7 @@ class Parser {
         bool match(TokenKind Kind);
         bool check(TokenKind kind) const;
         bool isAtEnd() const;
+        Token expect(TokenKind kind, std::string_view errorMsg);
 
     protected:
         void synchronize();
@@ -37,6 +39,7 @@ class Parser {
         // Methods
         ExprPtr parseModule();
         ExprPtr parseTopLevel();
+        ExprPtr parseImport();
 };
 
 

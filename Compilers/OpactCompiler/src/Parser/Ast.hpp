@@ -4,6 +4,7 @@
 #include "../Token/TokenType.hpp"
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 // Type representation :
@@ -156,8 +157,14 @@ struct ReturnExpr : Expression {
 struct ContinueExpr : Expression {};
 
 // Import
+
+struct ImportPath {
+    std::vector<std::string> segments;
+    bool isStdLib;
+};
+
 struct ImportExpr : Expression {
-    std::string modulePath;
+    ImportPath path; 
     std::vector<std::string> importedSymbols;
     bool isSelectiveImport;
 };

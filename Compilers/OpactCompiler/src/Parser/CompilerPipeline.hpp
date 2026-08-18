@@ -5,7 +5,6 @@
 #include "FileReader/FileReader.hpp"
 #include "Lexer/Lexer.hpp"
 #include "Parser/Parser.hpp"
-#include <cstddef>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>

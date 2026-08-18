@@ -55,6 +55,25 @@ bool Parser::isAtEnd() const {
 //--------------------//
 //-- Error handling --//
 //--------------------//
+Token Parser::expect(TokenKind kind, std::string_view errorMsg) {
+    if (peek().getKind() == kind)
+        return consume();
+    std::string msg;
+    if (errorMsg.empty()) {
+        Token tmp(kind, "", 0, 0);
+        msg = "Expected: " + tmp.toString() + ", got: `" + peek().getWord() + "`";
+    } else {
+        msg = std::string(errorMsg);
+    }
+
+    std::string formattedError = "\033[31m[Parse Error] Line " + 
+        std::to_string(peek().getLine()) + ":" + 
+        std::to_string(peek().getColumn()) + 
+        " - " + msg + "\033[0m";
+
+    std::cout << formattedError << "\n";
+    throw std::runtime_error(formattedError);
+}
 
 void Parser::synchronize() {
     consume();
@@ -110,12 +129,12 @@ ExprPtr Parser::parseTopLevel()
     std::optional<Token> visibility;
     if (this->check(TokenKind::PUBLIC) || this->check(TokenKind::PRIVATE))
         visibility = this->consume();
-    
+
     // Detect keyword Import
     if (this->check(TokenKind::IMPORT))
     {
         std::cout << "It's a import\n";
-        this->consume();
+        this->parseImport();
         return nullptr;
     }
     // Detect keyword function
@@ -137,4 +156,49 @@ ExprPtr Parser::parseTopLevel()
 
     this->consume();
     return nullptr;
+}
+
+ExprPtr Parser::parseImport()
+{
+    // Import keyword
+    this->consume();
+
+    auto importDecl = std::make_unique<ImportExpr>();
+
+    Token first = this->expect(TokenKind::IDENTIFIER, "Expected Module name");
+    importDecl->path.segments.push_back(first.getWord());
+    importDecl->path.isStdLib = (first.getWord() == "Opact" || first.getWord() == "Std");
+
+    // While we Have more colons meaning extra path or symbols
+    while ( this->check(TokenKind::COLON_COLON))
+    {
+        this->consume();
+        // Either Symbol if brace or segment of path
+        if (this->check(TokenKind::LBRACE))
+        {
+            this->consume();
+            importDecl->isSelectiveImport = true;
+            if (!this->check(TokenKind::RBRACE))
+            {
+                do {
+                  Token sym = this->expect(TokenKind::IDENTIFIER, "Expected symbol name");
+                  importDecl->importedSymbols.push_back(sym.getWord());
+                } while (this->match(TokenKind::COMMA));
+                
+            }
+                this->expect(TokenKind::RBRACE, "Expeced '}'");
+                break;
+        }
+
+        // Concluded this was part of the path not symbol
+
+        Token seg = this->expect(TokenKind::IDENTIFIER, "Expected module path segment");
+        importDecl->path.segments.push_back(seg.getWord());
+    }
+    
+    // This Will call a function that adds it to the module queue
+    // TODO: Atm I didn't implement it  so I need to
+
+    this->expect(TokenKind::SEMI, "Expected ';' after import");
+    return importDecl;
 }
