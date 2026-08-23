@@ -183,7 +183,7 @@ struct FunctionDeclExpr : Expression {
     std::vector<Parameter> params;
     std::string returnTypeName;
     ExprPtr body;
-    bool isPublic = true;
+    bool isPublic = false;
     bool isStatic = false;
 };
 

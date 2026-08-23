@@ -40,6 +40,7 @@ class Parser {
         ExprPtr parseModule();
         ExprPtr parseTopLevel();
         ExprPtr parseImport();
+        ExprPtr parseFunction(std::optional<Token> visib);
 };
 
 

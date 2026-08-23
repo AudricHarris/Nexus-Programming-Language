@@ -142,12 +142,7 @@ ExprPtr Parser::parseTopLevel()
     // Detect keyword function
     if (this->check(TokenKind::FN))
     {
-        this->consume();
-        if (visibility.has_value())
-        {
-            Token t = visibility.value();
-            Token name = this->consume();
-        }
+        this->parseFunction(visibility); 
         return nullptr;
     }
     // Detect keyword Class/Struct
@@ -169,7 +164,7 @@ void Parser::addModule(std::vector<std::string> path)
         actualPath.append(word);
         actualPath.append("/");
     }
-    
+
     actualPath.erase(actualPath.size() - 1 );
     actualPath.append(".op");
 
@@ -199,13 +194,13 @@ ExprPtr Parser::parseImport()
             if (!this->check(TokenKind::RBRACE))
             {
                 do {
-                  Token sym = this->expect(TokenKind::IDENTIFIER, "Expected symbol name");
-                  importDecl->importedSymbols.push_back(sym.getWord());
+                    Token sym = this->expect(TokenKind::IDENTIFIER, "Expected symbol name");
+                    importDecl->importedSymbols.push_back(sym.getWord());
                 } while (this->match(TokenKind::COMMA));
-                
+
             }
-                this->expect(TokenKind::RBRACE, "Expeced '}'");
-                break;
+            this->expect(TokenKind::RBRACE, "Expeced '}'");
+            break;
         }
 
         // Concluded this was part of the path not symbol
@@ -213,7 +208,7 @@ ExprPtr Parser::parseImport()
         Token seg = this->expect(TokenKind::IDENTIFIER, "Expected module path segment");
         importDecl->path.segments.push_back(seg.getWord());
     }
-    
+
     // This Will call a function that adds it to the module queue
     this->addModule(importDecl->path.segments);
 
@@ -225,4 +220,67 @@ ExprPtr Parser::parseImport()
 //-- Parsing Function --//
 //----------------------//
 
+ExprPtr Parser::parseFunction(std::optional<Token> visib)
+{
+    // Process 
+    auto fnDecl = std::make_unique<FunctionDeclExpr>();
+    // 1st keyword fn 
+    this->consume();
+    if (visib.has_value())
+    {
+        Token t = visib.value();
+        if (t.getKind() == TokenKind::PUBLIC)
+            fnDecl->isPublic = true;
+    }
 
+    // 2nd name
+    Token name = this->expect(TokenKind::IDENTIFIER, "Expected identifier as name");
+    fnDecl->name = name.getWord();
+
+    // Then we do the params
+    this->expect(TokenKind::LPAREN, "Expected a '(' for opening functions params");
+    if (!this->check(TokenKind::RPAREN))
+    {
+        do
+        {
+            // Check for mutable and reference
+            bool isMut = false, isRef = false;
+            if (this->check(TokenKind::AND))
+            {
+                isRef = true;
+                this->consume();
+                if (this->check(TokenKind::MUT))
+                {
+                    isMut = true;
+                    this->consume();
+                }
+            }
+            // Type (for now we will consider a type as a identifier
+            // In the long run this won't be true bc of arguments like Array<T>
+            Token ptype = this->expect(TokenKind::IDENTIFIER, "Expected type for the param");
+            // IDENTIFIER
+            Token pname = this->expect(TokenKind::IDENTIFIER, "Expected name for the param");
+            //Default value
+            if (this->check(TokenKind::EQ))
+            {
+                this->consume();
+
+            }
+            Parameter p;
+
+            p.name = pname.getWord();
+            p.typeName = ptype.getWord();
+            p.isMutable = isMut;
+            p.isReference = isRef;
+
+
+            fnDecl->params.push_back(p);
+        }
+        while (this->check(TokenKind::COMMA));
+    }
+
+    this->expect(TokenKind::RPAREN, "Expected a ')' for closing functions params");
+    // Finally return type (optional)
+
+    return fnDecl;
+}
