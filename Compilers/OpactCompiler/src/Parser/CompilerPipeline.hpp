@@ -14,97 +14,128 @@
 #include <queue>
 #include <mutex>
 #include <thread>
+#include <atomic>
+#include <filesystem>
+#include <condition_variable>
 
-// Represents a fully parsed file module
+namespace fs = std::filesystem;
+
 struct Module {
     std::string filePath;
     ExprPtr astRoot;
 };
 
 class CompilerPipeline {
-    private:
-        std::mutex queueMutex;
-        std::queue<std::string> workQueue;
-        std::unordered_set<std::string> visitedFiles;
+private:
+    std::mutex queueMutex;
+    std::condition_variable cv;
+    std::queue<std::string> workQueue;
+    std::unordered_set<std::string> visitedFiles;
+    int activeWorkers = 0;
 
-        std::mutex astMutex;
-        std::unordered_map<std::string, Module> parsedModules;
+    std::mutex astMutex;
+    std::unordered_map<std::string, Module> parsedModules;
 
-    public:
-        int nbtokens = 0;
-        void enqueueFile(const std::string& path) {
+public:
+    std::atomic<int> nbtokens{0};
+
+    // Accepts imported path and optional parent file path to resolve relative imports
+    void enqueueFile(const std::string& path, const std::string& parentPath = "") {
+        fs::path targetPath(path);
+
+        // Resolve path relative to the directory of the parent file
+        if (!parentPath.empty() && targetPath.is_relative()) {
+            fs::path parentDir = fs::path(parentPath).parent_path();
+            targetPath = (parentDir / targetPath).lexically_normal();
+        } else {
+            targetPath = targetPath.lexically_normal();
+        }
+
+        std::string canonicalString = targetPath.string();
+
+        {
             std::lock_guard<std::mutex> lock(this->queueMutex);
-            if (this->visitedFiles.find(path) == this->visitedFiles.end()) {
-                this->visitedFiles.insert(path);
-                this->workQueue.push(path);
-            }
-            else {
-                std::cerr << "\033[31m\033[1m[Import Error]\033[0m\033[31m Tried to import already imported file '" << path << "': cannot perform circular import.\033[0m\n";
-            }
-        }
-
-        // Process everything in the queue using hardware worker threads
-        void runPipeline() {
-            unsigned int threadCount = std::thread::hardware_concurrency();
-            if (threadCount == 0) threadCount = 2; // Fallback
-
-            std::vector<std::thread> workers;
-            for (unsigned int i = 0; i < threadCount; ++i) {
-                workers.emplace_back(&CompilerPipeline::workerLoop, this);
-            }
-
-            // Wait for all worker threads to finish draining the queue
-            for (auto& t : workers) {
-                if (t.joinable()) t.join();
+            if (this->visitedFiles.find(canonicalString) == this->visitedFiles.end()) {
+                this->visitedFiles.insert(canonicalString);
+                this->workQueue.push(canonicalString);
+                this->cv.notify_one();
+            } else {
+                std::cerr << "\033[31m\033[1m[Import Error]\033[0m\033[31m Tried to import already imported file '" 
+                          << canonicalString << "': circular import detected or already queued.\033[0m\n";
             }
         }
+    }
 
-    private:
-        void workerLoop() {
-            while (true) {
-                std::string fileToParse;
+    void runPipeline() {
+        unsigned int threadCount = std::thread::hardware_concurrency();
+        if (threadCount == 0) threadCount = 2;
 
-                {
-                    std::lock_guard<std::mutex> lock(this->queueMutex);
-                    if (this->workQueue.empty()) return;
-                    fileToParse = this->workQueue.front();
-                    this->workQueue.pop();
-                }
-                Module module = this->parseSingleFile(fileToParse);
-
-                {
-                    std::lock_guard<std::mutex> lock(this->astMutex);
-                    this->parsedModules[fileToParse] = std::move(module);
-                }
-            }
+        std::vector<std::thread> workers;
+        for (unsigned int i = 0; i < threadCount; ++i) {
+            workers.emplace_back(&CompilerPipeline::workerLoop, this);
         }
 
-        Module parseSingleFile(const std::string& path) {
-            // Read file from disk
-            std::optional<std::string> content = readFile(path.c_str());
-            if (!content.has_value())
+        for (auto& t : workers) {
+            if (t.joinable()) t.join();
+        }
+    }
+
+private:
+    void workerLoop() {
+        while (true) {
+            std::string fileToParse;
+
             {
-                std::cerr << "File : " << path << " was not found\n";
+                std::unique_lock<std::mutex> lock(this->queueMutex);
+                
+                // Wait until there is work available OR all workers are idle (queue drained)
+                this->cv.wait(lock, [this]() {
+                    return !this->workQueue.empty() || this->activeWorkers == 0;
+                });
 
-                return Module{ path, nullptr }; 
+                if (this->workQueue.empty() && this->activeWorkers == 0) {
+                    this->cv.notify_all(); // Wake up any remaining threads so they can exit
+                    return;
+                }
+
+                fileToParse = this->workQueue.front();
+                this->workQueue.pop();
+                this->activeWorkers++;
             }
 
-            const std::string &code = content.value();
+            Module module = this->parseSingleFile(fileToParse);
 
-            //std::cout << "File parsed : " << path << "\n";
-            // Running the Lexer 
-            Lexer l(code);
-            std::vector<Token> codeTokenized = l.Tokenize();
-            this->nbtokens += codeTokenized.size(); 
-            //for (Token t : codeTokenized)
-                //std::cout << t.toString();
+            {
+                std::lock_guard<std::mutex> lock(this->astMutex);
+                this->parsedModules[fileToParse] = std::move(module);
+            }
 
-            // Run Parser -> ExprPtr ast
-            Parser p(std::move(codeTokenized), path, this);
-            ExprPtr file = p.parseModule();
-            // Whenever parser finds an `ImportExpr`, call: enqueueFile(importedPath);
-            return Module{ path, std::move(file)}; 
+            {
+                std::lock_guard<std::mutex> lock(this->queueMutex);
+                this->activeWorkers--;
+                this->cv.notify_all();
+            }
         }
+    }
+
+    Module parseSingleFile(const std::string& path) {
+        std::optional<std::string> content = readFile(path.c_str());
+        if (!content.has_value()) {
+            std::cerr << "File : " << path << " was not found\n";
+            return Module{ path, nullptr }; 
+        }
+
+        const std::string &code = content.value();
+
+        Lexer l(code);
+        std::vector<Token> codeTokenized = l.Tokenize();
+        this->nbtokens += static_cast<int>(codeTokenized.size()); 
+
+        Parser p(std::move(codeTokenized), path, this);
+        ExprPtr file = p.parseModule();
+
+        return Module{ path, std::move(file) }; 
+    }
 };
 
 #endif // COMPILER_PIPELINE_HPP

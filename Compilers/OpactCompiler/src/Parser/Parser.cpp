@@ -173,7 +173,7 @@ void Parser::addModule(std::vector<std::string> path)
     actualPath.erase(actualPath.size() - 1 );
     actualPath.append(".op");
 
-    this->pipeline->enqueueFile(actualPath);
+    this->pipeline->enqueueFile(actualPath, this->filePath);
 }
 
 ExprPtr Parser::parseImport()
