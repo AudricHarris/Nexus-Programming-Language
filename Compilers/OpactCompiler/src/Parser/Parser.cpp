@@ -1,3 +1,4 @@
+#include "CompilerPipeline.hpp"
 #include "Parser/Parser.hpp"
 #include "Parser/Ast.hpp"
 #include "Token/TokenType.hpp"
@@ -5,6 +6,8 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 
 //----------------------//
 //-- Token Navigation --//
@@ -133,21 +136,17 @@ ExprPtr Parser::parseTopLevel()
     // Detect keyword Import
     if (this->check(TokenKind::IMPORT))
     {
-        std::cout << "It's a import\n";
         this->parseImport();
         return nullptr;
     }
     // Detect keyword function
     if (this->check(TokenKind::FN))
     {
-        std::cout << "It's a function\n";
         this->consume();
         if (visibility.has_value())
         {
             Token t = visibility.value();
             Token name = this->consume();
-            std::cout << "\tVisibility : " << t.toString() << "\n";
-            std::cout << "\tName : " << name.getWord() << "\n";
         }
         return nullptr;
     }
@@ -156,6 +155,25 @@ ExprPtr Parser::parseTopLevel()
 
     this->consume();
     return nullptr;
+}
+
+//--------------------//
+//-- Parsing Import --//
+//--------------------//
+
+void Parser::addModule(std::vector<std::string> path)
+{
+    std::string actualPath = "";
+    for (std::string word : path)
+    {
+        actualPath.append(word);
+        actualPath.append("/");
+    }
+    
+    actualPath.erase(actualPath.size() - 1 );
+    actualPath.append(".op");
+
+    this->pipeline->enqueueFile(actualPath);
 }
 
 ExprPtr Parser::parseImport()
@@ -197,8 +215,14 @@ ExprPtr Parser::parseImport()
     }
     
     // This Will call a function that adds it to the module queue
-    // TODO: Atm I didn't implement it  so I need to
+    this->addModule(importDecl->path.segments);
 
     this->expect(TokenKind::SEMI, "Expected ';' after import");
     return importDecl;
 }
+
+//----------------------//
+//-- Parsing Function --//
+//----------------------//
+
+

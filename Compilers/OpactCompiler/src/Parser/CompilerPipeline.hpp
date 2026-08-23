@@ -5,6 +5,7 @@
 #include "FileReader/FileReader.hpp"
 #include "Lexer/Lexer.hpp"
 #include "Parser/Parser.hpp"
+#include <iostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -30,11 +31,15 @@ class CompilerPipeline {
         std::unordered_map<std::string, Module> parsedModules;
 
     public:
+        int nbtokens = 0;
         void enqueueFile(const std::string& path) {
             std::lock_guard<std::mutex> lock(this->queueMutex);
             if (this->visitedFiles.find(path) == this->visitedFiles.end()) {
                 this->visitedFiles.insert(path);
                 this->workQueue.push(path);
+            }
+            else {
+                std::cerr << "\033[31m\033[1m[Import Error]\033[0m\033[31m Tried to import already imported file '" << path << "': cannot perform circular import.\033[0m\n";
             }
         }
 
@@ -65,7 +70,6 @@ class CompilerPipeline {
                     fileToParse = this->workQueue.front();
                     this->workQueue.pop();
                 }
-
                 Module module = this->parseSingleFile(fileToParse);
 
                 {
@@ -87,12 +91,13 @@ class CompilerPipeline {
 
             const std::string &code = content.value();
 
+            //std::cout << "File parsed : " << path << "\n";
             // Running the Lexer 
             Lexer l(code);
             std::vector<Token> codeTokenized = l.Tokenize();
-            
-            for (Token t : codeTokenized)
-                std::cout << t.toString();
+            this->nbtokens += codeTokenized.size(); 
+            //for (Token t : codeTokenized)
+                //std::cout << t.toString();
 
             // Run Parser -> ExprPtr ast
             Parser p(std::move(codeTokenized), path, this);

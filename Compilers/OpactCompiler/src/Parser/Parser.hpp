@@ -27,7 +27,7 @@ class Parser {
         bool check(TokenKind kind) const;
         bool isAtEnd() const;
         Token expect(TokenKind kind, std::string_view errorMsg);
-
+        void addModule(std::vector<std::string> path);
     protected:
         void synchronize();
 
