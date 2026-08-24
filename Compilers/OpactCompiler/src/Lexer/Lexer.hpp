@@ -8,21 +8,21 @@
 #include <vector>
 
 class Lexer {
-public:
-  explicit Lexer(const std::string &source)
-      : src(source.data()), srcLen(source.size()) {}
+	public:
+		explicit Lexer(const std::string &source)
+			: src(source.data()), srcLen(source.size()) {}
 
-  std::vector<Token> Tokenize();
+		std::vector<Token> Tokenize();
 
-private:
-  const char *src;
-  size_t srcLen;
-  size_t pos = 0;
-  size_t line = 1;
-  size_t col = 1;
+	private:
+		const char *src;
+		size_t srcLen;
+		size_t pos = 0;
+		size_t line = 1;
+		size_t col = 1;
 
-  void skipWhitespace();
-  Token makeToken(TokenKind k, std::string_view spelling) const;
+		void skipWhitespace();
+		Token makeToken(TokenKind k, std::string_view spelling) const;
 };
 
 #endif // LEXER_H
