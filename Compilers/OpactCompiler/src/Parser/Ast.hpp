@@ -12,11 +12,11 @@
 enum class DataType { Int, Float, Bool, Char, Str, Void, Custom };
 
 struct TypeDesc {
-  DataType type;
-  std::optional<Token> customName;
-  std::vector<int> dim;
+	DataType type;
+	std::optional<Token> customName;
+	std::vector<int> dim;
 
-  bool isArray() const { return !dim.empty(); }
+	bool isArray() const { return !dim.empty(); }
 };
 
 // Base nodes :
@@ -24,7 +24,7 @@ struct TypeDesc {
 // Expressions -> This is everything that returns a type (Example : [1+5]
 // returns int, FunctionCalls(), string concat, etc...)
 struct Expression {
-  virtual ~Expression() = default;
+	virtual ~Expression() = default;
 };
 
 // all the code that results in an action I believe
@@ -38,120 +38,120 @@ enum class LiteralKind { Int, Float, Bool, Char, Str };
 enum class NumericBase { Decimal, Hexadecimal, Octal, Binary };
 
 struct LiteralExpr : Expression {
-  LiteralKind kind;
-  Token lit;
+	LiteralKind kind;
+	Token lit;
 
-  NumericBase base = NumericBase::Decimal;
+	NumericBase base = NumericBase::Decimal;
 };
 
 struct IdentifierExpr : Expression {
-  Token name;
+	Token name;
 };
 
 // Operation
 enum class BinaryOp {
-  Add,
-  Sub,
-  Mul,
-  Div,
-  Mod,
-  Eq,
-  Ne,
-  Lt,
-  Gt,
-  Le,
-  Ge,
-  And,
-  BitAnd,
-  Or
+	Add,
+	Sub,
+	Mul,
+	Div,
+	Mod,
+	Eq,
+	Ne,
+	Lt,
+	Gt,
+	Le,
+	Ge,
+	And,
+	BitAnd,
+	Or
 };
 
 enum class UnaryOp { Negate, Not };
 
 struct BinaryExpr : Expression {
-  BinaryOp op;
-  ExprPtr left;
-  ExprPtr right;
+	BinaryOp op;
+	ExprPtr left;
+	ExprPtr right;
 };
 
 struct UnaryExpr : Expression {
-  UnaryOp op;
-  ExprPtr expr;
+	UnaryOp op;
+	ExprPtr expr;
 };
 
 struct CallExpr : Expression {
-  ExprPtr callee;
-  std::vector<ExprPtr> arguments;
+	ExprPtr callee;
+	std::vector<ExprPtr> arguments;
 };
 
 struct GenericCallExpr : Expression {
-  ExprPtr callee;
-  std::vector<TypeDesc> typeArgs;
-  std::vector<ExprPtr> arguments;
+	ExprPtr callee;
+	std::vector<TypeDesc> typeArgs;
+	std::vector<ExprPtr> arguments;
 };
 
 struct CastExpr : Expression {
-  ExprPtr expr;
-  TypeDesc castType;
+	ExprPtr expr;
+	TypeDesc castType;
 };
 
 enum class AssignKind { Assign, Move, Borrow };
 
 struct AssignExpr : Expression {
-  ExprPtr target;
-  ExprPtr value;
-  AssignKind kind;
+	ExprPtr target;
+	ExprPtr value;
+	AssignKind kind;
 };
 
 struct VarDeclExpr : Expression {
-  Token name;
-  std::optional<TypeDesc> type;
-  ExprPtr expr;
+	Token name;
+	std::optional<TypeDesc> type;
+	ExprPtr expr;
 };
 
 struct YieldExpr : Expression {
-  ExprPtr expr;
+	ExprPtr expr;
 };
 
 struct Block : Expression {
-  std::vector<ExprPtr> expressions;
+	std::vector<ExprPtr> expressions;
 };
 
 struct IfExpr : Expression {
-  ExprPtr condition;
-  std::unique_ptr<Block> ifBranch;
-  std::optional<std::unique_ptr<Block>> elseBranch;
+	ExprPtr condition;
+	std::unique_ptr<Block> ifBranch;
+	std::optional<std::unique_ptr<Block>> elseBranch;
 };
 
 struct WhileExpr : Expression {
-  ExprPtr condition;
-  std::unique_ptr<Block> loopBranch;
+	ExprPtr condition;
+	std::unique_ptr<Block> loopBranch;
 };
 
 struct MemberAccessExpr : Expression {
-  ExprPtr object;
-  Token memberName;
+	ExprPtr object;
+	Token memberName;
 };
 
 struct IndexExpr : Expression {
-  ExprPtr array;
-  ExprPtr index;
+	ExprPtr array;
+	ExprPtr index;
 };
 
 struct ArrayLiteralExpr : Expression {
-  std::vector<ExprPtr> elements;
+	std::vector<ExprPtr> elements;
 };
 
 struct TupleLiteralExpr : Expression {
-  std::vector<ExprPtr> elements;
+	std::vector<ExprPtr> elements;
 };
 
 struct BreakExpr : Expression {
-  std::optional<ExprPtr> value;
+	std::optional<ExprPtr> value;
 };
 
 struct ReturnExpr : Expression {
-  std::optional<ExprPtr> value;
+	std::optional<ExprPtr> value;
 };
 
 struct ContinueExpr : Expression {};
@@ -159,32 +159,32 @@ struct ContinueExpr : Expression {};
 // Import
 
 struct ImportPath {
-    std::vector<std::string> segments;
-    bool isStdLib;
+	std::vector<std::string> segments;
+	bool isStdLib;
 };
 
 struct ImportExpr : Expression {
-    ImportPath path; 
-    std::vector<std::string> importedSymbols;
-    bool isSelectiveImport;
+	ImportPath path; 
+	std::vector<std::string> importedSymbols;
+	bool isSelectiveImport;
 };
 
 // Functions & params
 struct Parameter {
-    std::string name;
-    std::string typeName;
-    bool isMutable = false;
-    bool isReference = false;
-    std::optional<ExprPtr> defaultVal = nullptr;
+	std::string name;
+	std::string typeName;
+	bool isMutable = false;
+	bool isReference = false;
+	std::optional<ExprPtr> defaultVal = nullptr;
 };
 
 struct FunctionDeclExpr : Expression {
-    std::string name;
-    std::vector<Parameter> params;
-    std::string returnTypeName;
-    ExprPtr body;
-    bool isPublic = false;
-    bool isStatic = false;
+	std::string name;
+	std::vector<Parameter> params;
+	std::string returnTypeName = "void";
+	ExprPtr body;
+	bool isPublic = false;
+	bool isStatic = false;
 };
 
 #endif // AST_HPP
