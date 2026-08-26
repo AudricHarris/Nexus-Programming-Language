@@ -6,7 +6,9 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 //----------------------//
@@ -58,6 +60,17 @@ bool Parser::isAtEnd() const {
 //--------------------//
 //-- Error handling --//
 //--------------------//
+
+std::string Parser::generateError(TokenKind kind, std::string errorMsg)
+{
+	std::string formattedError = "\033[31m[Parse Error] Line " + 
+		std::to_string(peek().getLine()) + ":" + 
+		std::to_string(peek().getColumn()) + 
+		" - " + errorMsg + "\033[0m";
+
+	return formattedError;
+}
+
 Token Parser::expect(TokenKind kind, std::string_view errorMsg) {
 	if (peek().getKind() == kind)
 		return consume();
@@ -69,10 +82,7 @@ Token Parser::expect(TokenKind kind, std::string_view errorMsg) {
 		msg = std::string(errorMsg);
 	}
 
-	std::string formattedError = "\033[31m[Parse Error] Line " + 
-		std::to_string(peek().getLine()) + ":" + 
-		std::to_string(peek().getColumn()) + 
-		" - " + msg + "\033[0m";
+	std::string formattedError = this->generateError(kind, msg); 
 
 	std::cout << formattedError << "\n";
 	throw std::runtime_error(formattedError);
@@ -280,7 +290,7 @@ ExprPtr Parser::parseFunction(std::optional<Token> visib)
 	}
 
 	this->expect(TokenKind::RPAREN, "Expected a ')' for closing functions params");
-	
+
 	// Finally return type (optional)
 	if (this->check(TokenKind::RETURN_TYPE))
 	{
@@ -288,7 +298,7 @@ ExprPtr Parser::parseFunction(std::optional<Token> visib)
 		Token returnType = this->expect(TokenKind::IDENTIFIER, "Expected a return type for the function");
 		fnDecl->returnTypeName = returnType.getWord();
 	}
-	
+
 	std::cout << "Function [" << fnDecl->name << "], visibile = " 
 		<< fnDecl->isPublic << "\n return type : " << fnDecl->returnTypeName << "\n";
 
@@ -301,4 +311,66 @@ ExprPtr Parser::parseFunction(std::optional<Token> visib)
 //-- Parsing body --//
 //------------------//
 
+ExprPtr Parser::parseBlock()
+{
+	auto block = std::make_unique<Block>();
 
+	// 2 cases either A it has braces so multiple expressions or b it doesn't
+	if ( this->check(TokenKind::LBRACE) )
+	{
+		// Multiple expression
+		this->consume();
+		while ( this->check(TokenKind::RBRACE))
+		{
+			// this is a block of stmt
+			try {
+				this->parseExpression();
+			} catch (std::exception e) {
+				std::cerr << e.what() << "\n";
+				this->synchronize();
+			}
+		}
+	}
+	else
+	{
+		// Single Expression
+		try {
+			this->parseExpression();
+		} catch (std::exception e) {
+			std::cerr << e.what() << "\n";
+			this->synchronize();
+		}
+	}
+
+	return block;
+}
+
+//------------------------//
+//-- Parsing expression --//
+//------------------------//
+
+ExprPtr Parser::parseExpression()
+{
+	ExprPtr expr;
+
+	return expr;
+}
+
+ExprPtr Parser::parsePrimary()
+{
+	Token tok = this->consume();
+
+	switch (tok.getKind()) {
+		case TokenKind::LIT_INT:
+			return std::make_unique<LiteralExpr>(LiteralKind::Int, tok);
+
+		default: {
+			std::string error = this->generateError(
+				tok.getKind(), 
+				"Unexpected token '" + tok.getWord() + "'"
+			);
+			std::cerr << error;
+			throw std::runtime_error(error);
+		}
+	}
+}

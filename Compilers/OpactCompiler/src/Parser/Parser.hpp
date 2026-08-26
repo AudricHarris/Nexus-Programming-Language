@@ -23,10 +23,15 @@ class Parser {
 		const Token &peek() const;
 		const Token &peekAt(size_t offset) const;
 		const Token consume();
+
 		bool match(TokenKind Kind);
 		bool check(TokenKind kind) const;
 		bool isAtEnd() const;
+		
+		std::string generateError(TokenKind kind, std::string errorMsg);
+		
 		Token expect(TokenKind kind, std::string_view errorMsg);
+		
 		void addModule(std::vector<std::string> path);
 	protected:
 		void synchronize();
@@ -41,6 +46,9 @@ class Parser {
 		ExprPtr parseTopLevel();
 		ExprPtr parseImport();
 		ExprPtr parseFunction(std::optional<Token> visib);
+		ExprPtr parseBlock();
+		ExprPtr parseExpression();
+		ExprPtr parsePrimary();
 };
 
 

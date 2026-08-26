@@ -42,6 +42,9 @@ struct LiteralExpr : Expression {
 	Token lit;
 
 	NumericBase base = NumericBase::Decimal;
+
+	LiteralExpr(LiteralKind kind, Token lit, NumericBase base = NumericBase::Decimal)
+		: kind(kind), lit(std::move(lit)), base(base) {}
 };
 
 struct IdentifierExpr : Expression {
