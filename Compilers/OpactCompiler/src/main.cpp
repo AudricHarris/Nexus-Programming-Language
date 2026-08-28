@@ -113,7 +113,8 @@ int main(int argc, char *argv[]) {
 	std::string firstArg = argv[1];
 
 	if (firstArg == "--version") {
-		std::cout << "opact [2026.08.27]\n";
+		std::cout << "opact "
+		             "[2026.08.27]\n";
 		return EXIT_SUCCESS;
 	}
 

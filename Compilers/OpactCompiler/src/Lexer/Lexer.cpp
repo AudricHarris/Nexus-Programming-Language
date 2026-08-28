@@ -2,45 +2,55 @@
 #include <cstdint>
 #include <emmintrin.h>
 #include <iostream>
+#include <vector>
 
 /*------------*/
 /* DFA states */
 /*------------*/
 
 enum class State : uint8_t {
-	S0,  // start
-	S1,  // after '+'
-	S2,  // after '-'
-	S3,  // after '/'
-	S4,  // integer digits
-	S5,  // digit(s) then '.', expects at least one more digit
-	S6,  // float digits after '.'
-	S7,  // identifier / keyword
-	S8,  // after '='
-	S9,  // after '<'
-	S10, // after '>'
-	S11, // after '&'
-	S12, // after '!'
-	S13, // after '|'
-	S14, // inside double-quoted string
-	S15, // single-quote open
-	S16, // single char body inside single-quotes
-	S17, // backslash escape inside single-quotes
-	S18, // character after escape sequence, awaiting closing quote
+	S0,    // start
+	S1,    // after '+'
+	S2,    // after '-'
+	S3,    // after '/'
+	S4,    // standard decimal integer digits
+	S5,    // digit(s) then '.', expects at least one more digit
+	S6,    // float digits after '.'
+	S7,    // identifier / keyword
+	S8,    // after '='
+	S9,    // after '<'
+	S10,   // after '>'
+	S11,   // after '&'
+	S12,   // after '!'
+	S13,   // after '|'
+	S14,   // inside double-quoted string
+	S15,   // single-quote open
+	S16,   // single char body inside single-quotes
+	S17,   // backslash escape inside single-quotes
+	S18,   // character after escape sequence, awaiting closing quote
+
+	// Prefixed Literal States
+	S4_ZERO,       // saw leading '0'
+	S4_BIN_PREFIX, // saw '0b' or '0B', expecting binary digits
+	S4_BIN,        // consuming binary digits
+	S4_OCT_PREFIX, // saw '0o' or '0O', expecting octal digits
+	S4_OCT,        // consuming octal digits
+	S4_HEX_PREFIX, // saw '0x' or '0X', expecting hex digits
+	S4_HEX,        // consuming hex digits
 
 	// Multi-character operator terminal states
-	S1_PLUS_PLUS,	// "++"
+	S1_PLUS_PLUS,   // "++"
 	S2_MINUS_MINUS, // "--"
-	S2_ARROW,		  // "->"
-	S8_FAT_ARROW,	// "=>"
-	S9_MOVE,		  // "<-"
-	S9_LE,		  // "<="
-	S10_GE,		  // ">="
-	S11_BORROW,	  // "&="
+	S2_ARROW,       // "->"
+	S8_FAT_ARROW,   // "=>"
+	S9_MOVE,        // "<-"
+	S9_LE,          // "<="
+	S10_GE,         // ">="
+	S11_BORROW,     // "&="
 	S11_DOUBLE_AND, // "&&"
-	S12_NE,		  // "!="
-	S8_EQ,		  // "=="
-	S13_OR,		  // "||"
+	S12_NE,         // "!="
+	S8_EQ,          // "=="
+	S13_OR,         // "||"
 
 	END,
 	ERR
@@ -50,321 +60,307 @@ enum class State : uint8_t {
 /* Input categories */
 /*------------------*/
 
-// IMPORTANT: BACKSLASH must stay just before OTHER so that all previously
-// established column indices (0..15) are unchanged.  Only the two new columns
-// BACKSLASH (16) and OTHER (17) are appended; existing table rows gain exactly
-// two cells at the end.
-
 enum class InputCat : uint8_t {
-	PLUS,			// 0
-	MINUS,		// 1
-	SLASH,		// 2
-	DIGIT,		// 3
-	DOT,			// 4
-	LETTER_UNDER, // 5
-	EQUAL,		// 6
-	LT,			// 7
-	GT,			// 8
-	AMP,			// 9
-	BANG,			// 10
-	PIPE,			// 11
-	QUOTE_D,		// 12
-	QUOTE_S,		// 13
-	BRACKET,		// 14
-	UNI_CHAR,		// 15
-	BACKSLASH,	// 16  ← new
-	OTHER,		// 17
+	PLUS,         // 0
+	MINUS,        // 1
+	SLASH,        // 2
+	DIGIT_01,     // 3  '0', '1'
+	DIGIT_27,     // 4  '2'-'7'
+	DIGIT_89,     // 5  '8', '9'
+	DOT,          // 6  '.'
+	PREFIX_B,     // 7  'b', 'B'
+	PREFIX_O,     // 8  'o', 'O'
+	PREFIX_X,     // 9  'x', 'X'
+	HEX_LETTER,   // 10 'a'-'f', 'A'-'F' (excluding b, o, x)
+	LETTER_UNDER, // 11 Other letters / '_'
+	EQUAL,        // 12 '='
+	LT,           // 13 '<'
+	GT,           // 14 '>'
+	AMP,          // 15 '&'
+	BANG,         // 16 '!'
+	PIPE,         // 17 '|'
+	QUOTE_D,      // 18 '"'
+	QUOTE_S,      // 19 '\''
+	BRACKET,      // 20
+	UNI_CHAR,     // 21
+	BACKSLASH,    // 22
+	OTHER,        // 23
 	COUNT
 };
 
-static constexpr int NSTATES = 31;
-static constexpr int NCATS = static_cast<int>(InputCat::COUNT); // 18
+static constexpr int NSTATES = 38;
+static constexpr int NCATS = static_cast<int>(InputCat::COUNT); // 24
 
 static constexpr State E = State::END;
 static constexpr State ER = State::ERR;
 
-/*-----------------------------------------------------------------------*/
-/* Transition table  T[state][inputCat]									 */
-/* Column order: +	-  /  0  .	a  =  <  >	&  !  |  "	'  []  ~  \  ? */
-/*-----------------------------------------------------------------------*/
+/*-------------------------------------------------------------------------------------------------*/
+/* Transition table  T[state][inputCat]                                                            */
+/* Column order:                                                                                   */
+/* +  -  / 01 27 89  .  b  o  x hex_let let_=  <  >  &  !  |  "  ' [] ~ \ ?                         */
+/*-------------------------------------------------------------------------------------------------*/
 
 static constexpr State T[NSTATES][NCATS] = {
 	/*S0 */
-	{State::S1, State::S2, State::S3, State::S4, E, State::S7, State::S8,
+	{State::S1, State::S2, State::S3, State::S4_ZERO, State::S4, State::S4, E,
+		State::S7, State::S7, State::S7, State::S7, State::S7, State::S8,
 		State::S9, State::S10, State::S11, State::S12, State::S13, State::S14,
-		State::S15, E, E, /*\*/ E, ER},
+		State::S15, E, E, E, ER},
 
 	/*S1  after '+' */
-	{State::S1_PLUS_PLUS, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	{State::S1_PLUS_PLUS, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
 
 	/*S2  after '-' */
-	{E, State::S2_MINUS_MINUS, E, E, E, E, E, E, State::S2_ARROW, E, E, E, E, E,
-		E, E, E, E},
+	{E, State::S2_MINUS_MINUS, E, E, E, E, E, E, E, E, E, E, E, State::S2_ARROW, E, E, E, E, E, E, E, E, E, E},
 
-	/*S3  after '/' — single slash, comments already stripped above */
-	{E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S3  after '/' */
+	{E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
 
 	/*S4  integer digits */
-	{E, E, E, State::S4, State::S5, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	{E, E, E, State::S4, State::S4, State::S4, State::S5, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
 
-	/*S5  after digit+dot — must be followed by at least one digit */
-	{ER, ER, ER, State::S6, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER,
-		ER},
+	/*S5  after digit+dot */
+	{ER, ER, ER, State::S6, State::S6, State::S6, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER},
 
 	/*S6  float digits after '.' */
-	{E, E, E, State::S6, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	{E, E, E, State::S6, State::S6, State::S6, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
 
 	/*S7  identifier / keyword */
-	{E, E, E, State::S7, E, State::S7, E, E, E, E, E, E, E, E, E, E, E, E},
+	{E, E, E, State::S7, State::S7, State::S7, E, State::S7, State::S7, State::S7, State::S7, State::S7, E, E, E, E, E, E, E, E, E, E, E, E},
 
 	/*S8  after '=' */
-	{E, E, E, E, E, E, State::S8_EQ, E, State::S8_FAT_ARROW, E, E, E, E, E, E,
-		E, E, E},
+	{E, E, E, E, E, E, E, E, E, E, E, E, State::S8_EQ, E, State::S8_FAT_ARROW, E, E, E, E, E, E, E, E, E},
 
 	/*S9  after '<' */
-	{E, State::S9_MOVE, E, E, E, E, State::S9_LE, E, E, E, E, E, E, E, E, E, E,
-		E},
+	{E, State::S9_MOVE, E, E, E, E, E, E, E, E, E, E, State::S9_LE, E, E, E, E, E, E, E, E, E, E, E},
 
 	/*S10 after '>' */
-	{E, E, E, E, E, E, State::S10_GE, E, E, E, E, E, E, E, E, E, E, E},
+	{E, E, E, E, E, E, E, E, E, E, E, E, State::S10_GE, E, E, E, E, E, E, E, E, E, E, E},
 
 	/*S11 after '&' */
-	{E, E, E, E, E, E, State::S11_BORROW, E, E, State::S11_DOUBLE_AND, E, E, E,
-		E, E, E, E, E},
+	{E, E, E, E, E, E, E, E, E, E, E, E, State::S11_BORROW, E, E, State::S11_DOUBLE_AND, E, E, E, E, E, E, E, E},
 
 	/*S12 after '!' */
-	{E, E, E, E, E, E, State::S12_NE, E, E, E, E, E, E, E, E, E, E, E},
+	{E, E, E, E, E, E, E, E, E, E, E, E, State::S12_NE, E, E, E, E, E, E, E, E, E, E, E},
 
-	/*S13 after '|' — only '||' is valid */
-	{ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, State::S13_OR, ER, ER, ER, ER,
-		ER, ER},
+	/*S13 after '|' */
+	{ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, State::S13_OR, ER, ER, ER, ER, ER, ER},
 
-	/*S14 inside double-quoted string — everything passes through except closing
-	  '"' */
-	{State::S14, State::S14, State::S14, State::S14, State::S14, State::S14,
-		State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, E,
-		State::S14, State::S14, State::S14,
-		/*\*/ State::S14, State::S14},
+	/*S14 double-quoted string */
+	{State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, State::S14, E, State::S14, State::S14, State::S14, State::S14, State::S14},
 
-	/*S15 opening single-quote — next char is the body (or start of escape) */
-	{State::S16, State::S16, State::S16, State::S16, State::S16, State::S16,
-		State::S16, State::S16, State::S16, State::S16, State::S16, State::S16,
-		State::S16, ER, State::S16, State::S16,
-		/*\*/ State::S17, State::S16},
+	/*S15 opening single-quote */
+	{State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, State::S16, ER, State::S16, State::S16, State::S17, State::S16},
 
-	/*S16 single char body — only closing '\'' is valid next */
-	{ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, E, ER, ER, ER, ER},
+	/*S16 single char body */
+	{ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, E, ER, ER, ER, ER},
 
-	/*S17 after '\' inside char literal — any char is a valid escape target */
-	{State::S18, State::S18, State::S18, State::S18, State::S18, State::S18,
-		State::S18, State::S18, State::S18, State::S18, State::S18, State::S18,
-		State::S18, State::S18, State::S18, State::S18,
-		/*\*/ State::S18, State::S18},
+	/*S17 escape sequence body */
+	{State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18, State::S18},
 
-	/*S18 after escape body — only closing '\'' is valid */
-	{ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, E, ER, ER, ER, ER},
+	/*S18 after escape body */
+	{ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, E, ER, ER, ER, ER},
 
-	// All multi-char terminal states are self-terminal; no further transitions.
-	/*S1_PLUS_PLUS	*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S2_MINUS_MINUS*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S2_ARROW		*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S8_FAT_ARROW	*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S9_MOVE		*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S9_LE			*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S10_GE		*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S11_BORROW	*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S11_DOUBLE_AND*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S12_NE		*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S8_EQ			*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
-	/*S13_OR		*/ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S4_ZERO: Saw initial '0' */
+	{E, E, E, State::S4, State::S4, State::S4, State::S5, State::S4_BIN_PREFIX, State::S4_OCT_PREFIX, State::S4_HEX_PREFIX, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+
+	/*S4_BIN_PREFIX: Saw '0b' */
+	{ER, ER, ER, State::S4_BIN, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER},
+
+	/*S4_BIN: Consuming binary digits */
+	{E, E, E, State::S4_BIN, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+
+	/*S4_OCT_PREFIX: Saw '0o' */
+	{ER, ER, ER, State::S4_OCT, State::S4_OCT, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER},
+
+	/*S4_OCT: Consuming octal digits */
+	{E, E, E, State::S4_OCT, State::S4_OCT, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+
+	/*S4_HEX_PREFIX: Saw '0x' */
+	{ER, ER, ER, State::S4_HEX, State::S4_HEX, State::S4_HEX, ER, State::S4_HEX, ER, ER, State::S4_HEX, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER, ER},
+
+	/*S4_HEX: Consuming hex digits */
+	{E, E, E, State::S4_HEX, State::S4_HEX, State::S4_HEX, E, State::S4_HEX, E, E, State::S4_HEX, E, E, E, E, E, E, E, E, E, E, E, E, E},
+
+	// Terminal states
+	/*S1_PLUS_PLUS   */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S2_MINUS_MINUS */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S2_ARROW       */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S8_FAT_ARROW   */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S9_MOVE        */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S9_LE          */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S10_GE         */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S11_BORROW     */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S11_DOUBLE_AND */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S12_NE         */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S8_EQ          */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
+	/*S13_OR         */ {E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E, E},
 };
 
 /*------------------------------*/
-/* State → TokenKind flat map	*/
+/* State -> TokenKind flat map  */
 /*------------------------------*/
 
 static constexpr TokenKind StateToToken[] = {
-	/* S0				*/ TokenKind::UNKNOWN,
-	/* S1				*/ TokenKind::ADD,
-	/* S2				*/ TokenKind::SUB,
-	/* S3				*/ TokenKind::DIV,
-	/* S4				*/ TokenKind::LIT_INT,
-	/* S5				*/ TokenKind::UNKNOWN,
-	/* S6				*/ TokenKind::LIT_FLOAT,
-	/* S7				*/ TokenKind::IDENTIFIER,
-	/* S8				*/ TokenKind::ASSIGN,
-	/* S9				*/ TokenKind::LT,
-	/* S10				*/ TokenKind::GT,
-	/* S11				*/ TokenKind::AND,
-	/* S12				*/ TokenKind::NOT,
-	/* S13				*/ TokenKind::UNKNOWN,
-	/* S14				*/ TokenKind::LIT_STRING,
-	/* S15				*/ TokenKind::LIT_CHAR,
-	/* S16				*/ TokenKind::LIT_CHAR,
-	/* S17				*/ TokenKind::LIT_CHAR,
-	/* S18				*/ TokenKind::LIT_CHAR,
-	/* S1_PLUS_PLUS		*/ TokenKind::INCREMENT,
-	/* S2_MINUS_MINUS	*/ TokenKind::DECREMENT,
-	/* S2_ARROW			*/ TokenKind::RETURN_TYPE,
-	/* S8_FAT_ARROW		*/ TokenKind::FAT_ARROW,
-	/* S9_MOVE			*/ TokenKind::MOVE,
-	/* S9_LE			*/ TokenKind::LE,
-	/* S10_GE			*/ TokenKind::GE,
-	/* S11_BORROW		*/ TokenKind::BORROW,
-	/* S11_DOUBLE_AND	*/ TokenKind::DOUBLE_AND,
-	/* S12_NE			*/ TokenKind::NE,
-	/* S8_EQ			*/ TokenKind::EQ,
-	/* S13_OR			*/ TokenKind::OR,
+	/* S0                */ TokenKind::UNKNOWN,
+	/* S1                */ TokenKind::ADD,
+	/* S2                */ TokenKind::SUB,
+	/* S3                */ TokenKind::DIV,
+	/* S4                */ TokenKind::LIT_INT,
+	/* S5                */ TokenKind::UNKNOWN,
+	/* S6                */ TokenKind::LIT_FLOAT,
+	/* S7                */ TokenKind::IDENTIFIER,
+	/* S8                */ TokenKind::ASSIGN,
+	/* S9                */ TokenKind::LT,
+	/* S10               */ TokenKind::GT,
+	/* S11               */ TokenKind::AND,
+	/* S12               */ TokenKind::NOT,
+	/* S13               */ TokenKind::UNKNOWN,
+	/* S14               */ TokenKind::LIT_STRING,
+	/* S15               */ TokenKind::LIT_CHAR,
+	/* S16               */ TokenKind::LIT_CHAR,
+	/* S17               */ TokenKind::LIT_CHAR,
+	/* S18               */ TokenKind::LIT_CHAR,
+	/* S4_ZERO           */ TokenKind::LIT_INT,
+	/* S4_BIN_PREFIX     */ TokenKind::UNKNOWN,
+	/* S4_BIN            */ TokenKind::LIT_INT,
+	/* S4_OCT_PREFIX     */ TokenKind::UNKNOWN,
+	/* S4_OCT            */ TokenKind::LIT_INT,
+	/* S4_HEX_PREFIX     */ TokenKind::UNKNOWN,
+	/* S4_HEX            */ TokenKind::LIT_INT,
+	/* S1_PLUS_PLUS      */ TokenKind::INCREMENT,
+	/* S2_MINUS_MINUS    */ TokenKind::DECREMENT,
+	/* S2_ARROW          */ TokenKind::RETURN_TYPE,
+	/* S8_FAT_ARROW      */ TokenKind::FAT_ARROW,
+	/* S9_MOVE           */ TokenKind::MOVE,
+	/* S9_LE             */ TokenKind::LE,
+	/* S10_GE            */ TokenKind::GE,
+	/* S11_BORROW        */ TokenKind::BORROW,
+	/* S11_DOUBLE_AND    */ TokenKind::DOUBLE_AND,
+	/* S12_NE            */ TokenKind::NE,
+	/* S8_EQ             */ TokenKind::EQ,
+	/* S13_OR            */ TokenKind::OR,
+	/* END               */ TokenKind::UNKNOWN,
+	/* ERR               */ TokenKind::UNKNOWN
 };
 
 /*------------------------------------------------------------------*/
-/* ASCII character → InputCat lookup (128 entries, index = codepoint) */
+/* ASCII character -> InputCat lookup (128 entries)                 */
 /*------------------------------------------------------------------*/
 
 static constexpr InputCat catTable[128] = {
-	// 0x00-0x1F  control characters
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER, // 00-03
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER, // 04-07
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER, // 08-0B
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER, // 0C-0F
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER, // 10-13
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER, // 14-17
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER, // 18-1B
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER,
-	InputCat::OTHER, // 1C-1F
+	// 0x00-0x1F control characters
+	InputCat::OTHER, InputCat::OTHER, InputCat::OTHER, InputCat::OTHER,
+	InputCat::OTHER, InputCat::OTHER, InputCat::OTHER, InputCat::OTHER,
+	InputCat::OTHER, InputCat::OTHER, InputCat::OTHER, InputCat::OTHER,
+	InputCat::OTHER, InputCat::OTHER, InputCat::OTHER, InputCat::OTHER,
+	InputCat::OTHER, InputCat::OTHER, InputCat::OTHER, InputCat::OTHER,
+	InputCat::OTHER, InputCat::OTHER, InputCat::OTHER, InputCat::OTHER,
+	InputCat::OTHER, InputCat::OTHER, InputCat::OTHER, InputCat::OTHER,
+	InputCat::OTHER, InputCat::OTHER, InputCat::OTHER, InputCat::OTHER,
 
-	// 0x20-0x2F  punctuation / operators
-	InputCat::OTHER,	// 0x20 ' '
-	InputCat::BANG,		// 0x21 '!'
-	InputCat::QUOTE_D,	// 0x22 '"'
-	InputCat::OTHER,	// 0x23 '#'
-	InputCat::OTHER,	// 0x24 '$'
-	InputCat::UNI_CHAR, // 0x25 '%'
-	InputCat::AMP,		// 0x26 '&'
-	InputCat::QUOTE_S,	// 0x27 '\''
-	InputCat::BRACKET,	// 0x28 '('
-	InputCat::BRACKET,	// 0x29 ')'
-	InputCat::UNI_CHAR, // 0x2A '*'
-	InputCat::PLUS,		// 0x2B '+'
-	InputCat::UNI_CHAR, // 0x2C ','
-	InputCat::MINUS,	// 0x2D '-'
-	InputCat::DOT,		// 0x2E '.'
-	InputCat::SLASH,	// 0x2F '/'
+	// 0x20-0x2F punctuation / operators
+	InputCat::OTHER,     // 0x20 ' '
+	InputCat::BANG,      // 0x21 '!'
+	InputCat::QUOTE_D,   // 0x22 '"'
+	InputCat::OTHER,     // 0x23 '#'
+	InputCat::OTHER,     // 0x24 '$'
+	InputCat::UNI_CHAR,  // 0x25 '%'
+	InputCat::AMP,       // 0x26 '&'
+	InputCat::QUOTE_S,   // 0x27 '\''
+	InputCat::BRACKET,   // 0x28 '('
+	InputCat::BRACKET,   // 0x29 ')'
+	InputCat::UNI_CHAR,  // 0x2A '*'
+	InputCat::PLUS,      // 0x2B '+'
+	InputCat::UNI_CHAR,  // 0x2C ','
+	InputCat::MINUS,     // 0x2D '-'
+	InputCat::DOT,       // 0x2E '.'
+	InputCat::SLASH,     // 0x2F '/'
 
-	// 0x30-0x39  '0'-'9'
-	InputCat::DIGIT,
-	InputCat::DIGIT,
-	InputCat::DIGIT,
-	InputCat::DIGIT,
-	InputCat::DIGIT,
-	InputCat::DIGIT,
-	InputCat::DIGIT,
-	InputCat::DIGIT,
-	InputCat::DIGIT,
-	InputCat::DIGIT,
+	// 0x30-0x39 '0'-'9'
+	InputCat::DIGIT_01, InputCat::DIGIT_01, // '0', '1'
+	InputCat::DIGIT_27, InputCat::DIGIT_27, InputCat::DIGIT_27, InputCat::DIGIT_27, InputCat::DIGIT_27, InputCat::DIGIT_27, // '2'-'7'
+	InputCat::DIGIT_89, InputCat::DIGIT_89, // '8', '9'
 
 	// 0x3A-0x40
-	InputCat::OTHER,	// 0x3A ':'
-	InputCat::UNI_CHAR, // 0x3B ';'
-	InputCat::LT,		// 0x3C '<'
-	InputCat::EQUAL,	// 0x3D '='
-	InputCat::GT,		// 0x3E '>'
-	InputCat::OTHER,	// 0x3F '?'
-	InputCat::OTHER,	// 0x40 '@'
+	InputCat::OTHER,     // 0x3A ':'
+	InputCat::UNI_CHAR,  // 0x3B ';'
+	InputCat::LT,        // 0x3C '<'
+	InputCat::EQUAL,     // 0x3D '='
+	InputCat::GT,        // 0x3E '>'
+	InputCat::OTHER,     // 0x3F '?'
+	InputCat::OTHER,     // 0x40 '@'
 
-	// 0x41-0x5A  'A'-'Z'
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
+	// 0x41-0x5A 'A'-'Z'
+	InputCat::HEX_LETTER,   // 'A'
+	InputCat::PREFIX_B,     // 'B'
+	InputCat::HEX_LETTER,   // 'C'
+	InputCat::HEX_LETTER,   // 'D'
+	InputCat::HEX_LETTER,   // 'E'
+	InputCat::HEX_LETTER,   // 'F'
+	InputCat::LETTER_UNDER, // 'G'
+	InputCat::LETTER_UNDER, // 'H'
+	InputCat::LETTER_UNDER, // 'I'
+	InputCat::LETTER_UNDER, // 'J'
+	InputCat::LETTER_UNDER, // 'K'
+	InputCat::LETTER_UNDER, // 'L'
+	InputCat::LETTER_UNDER, // 'M'
+	InputCat::LETTER_UNDER, // 'N'
+	InputCat::PREFIX_O,     // 'O'
+	InputCat::LETTER_UNDER, // 'P'
+	InputCat::LETTER_UNDER, // 'Q'
+	InputCat::LETTER_UNDER, // 'R'
+	InputCat::LETTER_UNDER, // 'S'
+	InputCat::LETTER_UNDER, // 'T'
+	InputCat::LETTER_UNDER, // 'U'
+	InputCat::LETTER_UNDER, // 'V'
+	InputCat::LETTER_UNDER, // 'W'
+	InputCat::PREFIX_X,     // 'X'
+	InputCat::LETTER_UNDER, // 'Y'
+	InputCat::LETTER_UNDER, // 'Z'
 
 	// 0x5B-0x60
-	InputCat::BRACKET,		// 0x5B '['
-	InputCat::BACKSLASH,	// 0x5C '\'  ← was OTHER, now BACKSLASH
-	InputCat::BRACKET,		// 0x5D ']'
-	InputCat::OTHER,		// 0x5E '^'
+	InputCat::BRACKET,   // 0x5B '['
+	InputCat::BACKSLASH, // 0x5C '\'
+	InputCat::BRACKET,   // 0x5D ']'
+	InputCat::OTHER,     // 0x5E '^'
 	InputCat::LETTER_UNDER, // 0x5F '_'
-	InputCat::OTHER,		// 0x60 '`'
+	InputCat::OTHER,     // 0x60 '`'
 
-	// 0x61-0x7A  'a'-'z'
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
-	InputCat::LETTER_UNDER,
+	// 0x61-0x7A 'a'-'z'
+	InputCat::HEX_LETTER,   // 'a'
+	InputCat::PREFIX_B,     // 'b'
+	InputCat::HEX_LETTER,   // 'c'
+	InputCat::HEX_LETTER,   // 'd'
+	InputCat::HEX_LETTER,   // 'e'
+	InputCat::HEX_LETTER,   // 'f'
+	InputCat::LETTER_UNDER, // 'g'
+	InputCat::LETTER_UNDER, // 'h'
+	InputCat::LETTER_UNDER, // 'i'
+	InputCat::LETTER_UNDER, // 'j'
+	InputCat::LETTER_UNDER, // 'k'
+	InputCat::LETTER_UNDER, // 'l'
+	InputCat::LETTER_UNDER, // 'm'
+	InputCat::LETTER_UNDER, // 'n'
+	InputCat::PREFIX_O,     // 'o'
+	InputCat::LETTER_UNDER, // 'p'
+	InputCat::LETTER_UNDER, // 'q'
+	InputCat::LETTER_UNDER, // 'r'
+	InputCat::LETTER_UNDER, // 's'
+	InputCat::LETTER_UNDER, // 't'
+	InputCat::LETTER_UNDER, // 'u'
+	InputCat::LETTER_UNDER, // 'v'
+	InputCat::LETTER_UNDER, // 'w'
+	InputCat::PREFIX_X,     // 'x'
+	InputCat::LETTER_UNDER, // 'y'
+	InputCat::LETTER_UNDER, // 'z'
 
 	// 0x7B-0x7F
-	InputCat::BRACKET, // 0x7B '{'
-	InputCat::PIPE,    // 0x7C '|'
-	InputCat::BRACKET, // 0x7D '}'
-	InputCat::OTHER,   // 0x7E '~'
-	InputCat::OTHER,   // 0x7F DEL
+	InputCat::BRACKET,   // 0x7B '{'
+	InputCat::PIPE,      // 0x7C '|'
+	InputCat::BRACKET,   // 0x7D '}'
+	InputCat::OTHER,     // 0x7E '~'
+	InputCat::OTHER,     // 0x7F DEL
 };
 
 static inline InputCat classify(char c) {
@@ -396,7 +392,7 @@ static inline TokenKind keywordOrIdent(std::string_view w) {
 			break;
 		case 4:
 			if (w == "else")
-				return TokenKind::ElSE;
+				return TokenKind::ELSE;
 			if (w == "true")
 				return TokenKind::LIT_BOOL;
 			if (w == "loop")
@@ -635,32 +631,43 @@ std::vector<Token> Lexer::Tokenize() {
 
 		// Compound assignment operators: +=  -=  *=  /=
 		// Checked before the DFA so they don't get split into two tokens.
-		if (pos + 1 < srcLen && src[pos + 1] == '=') {
-			TokenKind kind = TokenKind::UNKNOWN;
-			switch (c) {
-				case '+':
-					kind = TokenKind::ADD_ASSIGN;
-					break;
-				case '-':
-					kind = TokenKind::SUB_ASSIGN;
-					break;
-				case '*':
-					kind = TokenKind::MUL_ASSIGN;
-					break;
-				case '/':
-					kind = TokenKind::DIV_ASSIGN;
-					break;
-				default:
-					break;
-			}
-			if (kind != TokenKind::UNKNOWN) {
-				tokens.push_back(makeToken(kind, std::string_view(src + pos, 2)));
+		if (pos + 1 < srcLen) {
+			const char next = src[pos + 1];
+
+			// Flèche de type '->'
+			if (c == '-' && next == '>') {
+				tokens.push_back(makeToken(TokenKind::RETURN_TYPE, "->"));
 				pos += 2;
 				col += 2;
 				continue;
 			}
-		}
 
+			// Fat arrow '=>'
+			if (c == '=' && next == '>') {
+				tokens.push_back(makeToken(TokenKind::FAT_ARROW, "=>"));
+				pos += 2;
+				col += 2;
+				continue;
+			}
+
+			// Opérateurs d'affectation : +=  -=  *=  /=
+			if (next == '=') {
+				TokenKind kind = TokenKind::UNKNOWN;
+				switch (c) {
+					case '+': kind = TokenKind::ADD_ASSIGN; break;
+					case '-': kind = TokenKind::SUB_ASSIGN; break;
+					case '*': kind = TokenKind::MUL_ASSIGN; break;
+					case '/': kind = TokenKind::DIV_ASSIGN; break;
+					default: break;
+				}
+				if (kind != TokenKind::UNKNOWN) {
+					tokens.push_back(makeToken(kind, std::string_view(src + pos, 2)));
+					pos += 2;
+					col += 2;
+					continue;
+				}
+			}
+		}
 		/*------------------------*/
 		/* DFA-based tokenisation */
 		/*------------------------*/

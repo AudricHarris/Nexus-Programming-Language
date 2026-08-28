@@ -8,7 +8,7 @@ enum class TokenKind {
 	// KeyWords
 	IDENTIFIER,
 	IF,
-	ElSE,
+	ELSE,
 	WHILE,
 	LOOP,
 	FOR,

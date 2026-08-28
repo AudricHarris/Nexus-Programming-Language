@@ -34,7 +34,7 @@ std::string Token::toString() {
 			return "IDENTIFIER	";
 		case TokenKind::IF:
 			return "IF	";
-		case TokenKind::ElSE:
+		case TokenKind::ELSE:
 			return "ELSE  ";
 		case TokenKind::WHILE:
 			return "WHILE  ";

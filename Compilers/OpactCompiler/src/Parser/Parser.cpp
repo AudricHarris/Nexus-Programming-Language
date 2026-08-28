@@ -303,6 +303,7 @@ ExprPtr Parser::parseFunction(std::optional<Token> visib)
 		<< fnDecl->isPublic << "\n return type : " << fnDecl->returnTypeName << "\n";
 
 	// Most important part the body
+	this->parseBlock();
 
 	return fnDecl;
 }
@@ -352,7 +353,7 @@ ExprPtr Parser::parseBlock()
 ExprPtr Parser::parseExpression()
 {
 	ExprPtr expr;
-
+	this->parsePrimary();
 	return expr;
 }
 
@@ -362,15 +363,56 @@ ExprPtr Parser::parsePrimary()
 
 	switch (tok.getKind()) {
 		case TokenKind::LIT_INT:
-			return std::make_unique<LiteralExpr>(LiteralKind::Int, tok);
+			{
+				// Important step identify the numeral type
+				// Word contains first 2 leters Ox, 0b or 0o do the check
+				std::string number = tok.getWord();
+				std::cout << number << "\n";
+				NumericBase type = NumericBase::Decimal;
+				if (number.rfind("0x",0))
+				{
+					std::cout << "Hexadecimal\n";
+					type = NumericBase::Hexadecimal;
+				}
+				if (number.rfind("0b",0))
+					type = NumericBase::Binary;
+				if (number.rfind("0o",0))
+					type = NumericBase::Octal;
+				
+				return std::make_unique<LiteralExpr>(LiteralKind::Int, tok, type);
+			}
+
+		case TokenKind::LIT_CHAR:
+			return std::make_unique<LiteralExpr>(LiteralKind::Char, tok);
+
+		case TokenKind::LIT_FLOAT:
+			return std::make_unique<LiteralExpr>(LiteralKind::Float, tok);
+
+		case TokenKind::LIT_BOOL:
+			return std::make_unique<LiteralExpr>(LiteralKind::Bool, tok);
+
+		case TokenKind::LIT_STRING:
+			{
+				// Allowing Concatenation for string so "Hello, " "World!" as an example
+				std::string merged = tok.getWord();
+				while (this->check(TokenKind::LIT_STRING))
+				{
+					Token str = this->consume();
+					merged += str.getWord();
+				}
+
+				Token res{TokenKind::LIT_STRING, tok.getWord(),tok.getLine(), tok.getColumn()};
+
+				return std::make_unique<LiteralExpr>(LiteralKind::Str, res);
+			}
 
 		default: {
-			std::string error = this->generateError(
-				tok.getKind(), 
-				"Unexpected token '" + tok.getWord() + "'"
-			);
-			std::cerr << error;
-			throw std::runtime_error(error);
-		}
+					 std::string error = this->generateError(
+							 tok.getKind(), 
+							 "Unexpected token '" + tok.getWord() + "'"
+							 );
+					 std::cerr << error;
+					 throw std::runtime_error(error);
+				 }
 	}
 }
