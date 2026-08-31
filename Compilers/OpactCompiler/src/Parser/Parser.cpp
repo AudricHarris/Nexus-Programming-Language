@@ -315,14 +315,14 @@ ExprPtr Parser::parseFunction(std::optional<Token> visib)
 ExprPtr Parser::parseBlock()
 {
 	auto block = std::make_unique<Block>();
-
 	// 2 cases either A it has braces so multiple expressions or b it doesn't
 	if ( this->check(TokenKind::LBRACE) )
 	{
 		// Multiple expression
 		this->consume();
-		while ( this->check(TokenKind::RBRACE))
+		while (!this->check(TokenKind::RBRACE))
 		{
+			std::cout << "Testing block\n";
 			// this is a block of stmt
 			try {
 				this->parseExpression();
@@ -353,14 +353,72 @@ ExprPtr Parser::parseBlock()
 ExprPtr Parser::parseExpression()
 {
 	ExprPtr expr;
-	this->parsePrimary();
+	if (this->check(TokenKind::AND) || this->check(TokenKind::IDENTIFIER))
+		this->parseVarDecl();
+
 	return expr;
 }
+
+DataType determineType(const Token& t)
+{
+	const std::string& word = t.getWord();
+
+	if (word == "char") return DataType::Char;
+	if (word == "str")	return DataType::Str;
+	if (word == "bool") return DataType::Bool;
+
+	if (word == "int" || word == "uint" ||
+		word == "i8"  || word == "i16"	|| word == "i32" || word == "i64" ||
+		word == "u8"  || word == "u16"	|| word == "u32" || word == "u64") 
+	{
+		return DataType::Int;
+	}
+
+	if (word == "float" || word == "f32" || word == "f64") 
+	{
+		return DataType::Float;
+	}
+
+	if (word == "void") return DataType::Void;
+
+	return DataType::Custom;
+}
+
+ExprPtr Parser::parseVarDecl()
+{
+	TypeDesc desc;
+
+	// reference and mutability
+	if (this->check(TokenKind::AND))
+	{
+		desc.isReference = true;
+		this->consume();
+		if (this->check(TokenKind::MUT))
+		{
+			desc.isMutable = true;
+			this->consume();
+		}
+	}
+
+	// if we arrive at this point that means we have checked type;
+	Token type = this->consume(); // The type Token
+	Token name = this->expect(TokenKind::IDENTIFIER, "Expected 'Name' after type");
+
+	// Determining what type is, I'm thinking [i32, i64, f32, char, bool]
+
+	return nullptr;
+}
+
+ExprPtr Parser::parseAssignement()
+{
+	return nullptr;
+}
+
 
 ExprPtr Parser::parsePrimary()
 {
 	Token tok = this->consume();
-
+	std::cout << "Test Primary\n";
 	switch (tok.getKind()) {
 		case TokenKind::LIT_INT:
 			{

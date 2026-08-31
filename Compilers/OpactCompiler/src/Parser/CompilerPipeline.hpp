@@ -130,9 +130,8 @@ class CompilerPipeline {
 			Lexer l(code);
 			std::vector<Token> codeTokenized = l.Tokenize();
 			for (Token t : codeTokenized)
-			{
 				std::cout << t.toString();
-			}
+
 			this->nbtokens += static_cast<int>(codeTokenized.size()); 
 
 			Parser p(std::move(codeTokenized), path, this);

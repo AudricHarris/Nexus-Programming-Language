@@ -16,6 +16,10 @@ struct TypeDesc {
 	std::optional<Token> customName;
 	std::vector<int> dim;
 
+	bool isReference = false;
+	bool isMutable	 = false;
+	bool isDynamic	 = false;
+	
 	bool isArray() const { return !dim.empty(); }
 };
 
