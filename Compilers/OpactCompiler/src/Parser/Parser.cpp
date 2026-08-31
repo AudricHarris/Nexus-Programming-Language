@@ -352,12 +352,45 @@ ExprPtr Parser::parseBlock()
 
 ExprPtr Parser::parseExpression()
 {
+	// Dump variable
 	ExprPtr expr;
-	if (this->check(TokenKind::AND) || this->check(TokenKind::IDENTIFIER))
-		this->parseVarDecl();
 
+	if (this->check(TokenKind::IF))
+		return nullptr;
+
+	if (this->check(TokenKind::AND) || this->check(TokenKind::IDENTIFIER))
+		return this->parseVarDecl();
+
+	// Case where we don't know the parser
+	this->consume();
 	return expr;
 }
+
+//---------------------------//
+//-- Parsing If expression --//
+//---------------------------//
+
+ExprPtr Parser::parseIf()
+{
+	// Let's define an if Expression
+	// If ( Expression ) Body
+	this->expect(TokenKind::IF, "Expected 'if' at the start of an if expression");
+	this->expect(TokenKind::LPAREN, "Exprected '(' for opening the equality");
+	ExprPtr equality = this->parseExpression();
+	this->expect(TokenKind::RPAREN, "Exprected ')' for closing the equality");
+	
+	// Body
+	ExprPtr ifBody = this->parseBlock();
+	// Else Body
+	if (this->check(TokenKind::ELSE))
+		ExprPtr elseBody = this->parseBlock();
+
+	return nullptr;
+}
+
+//---------------------------//
+//-- Parsing Variable Decl --//
+//---------------------------//
 
 DataType determineType(const Token& t)
 {
@@ -401,11 +434,11 @@ ExprPtr Parser::parseVarDecl()
 	}
 
 	// if we arrive at this point that means we have checked type;
-	Token type = this->consume(); // The type Token
+	Token type = this->expect(TokenKind::IDENTIFIER, "Expected 'Type' for var decl");
 	Token name = this->expect(TokenKind::IDENTIFIER, "Expected 'Name' after type");
 
 	// Determining what type is, I'm thinking [i32, i64, f32, char, bool]
-
+	desc.type = determineType(type); 
 	return nullptr;
 }
 

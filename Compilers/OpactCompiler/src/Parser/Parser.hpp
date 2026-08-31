@@ -48,6 +48,7 @@ class Parser {
 		ExprPtr parseFunction(std::optional<Token> visib);
 		ExprPtr parseBlock();
 		ExprPtr parseExpression();
+		ExprPtr parseIf();
 		ExprPtr parseVarDecl();
 		ExprPtr parseAssignement();
 		ExprPtr parseOr();
