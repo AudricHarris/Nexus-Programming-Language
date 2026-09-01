@@ -114,7 +114,7 @@ int main(int argc, char *argv[]) {
 
 	if (firstArg == "--version") {
 		std::cout << "opact "
-		             "[2026.08.27]\n";
+		             "[2026.09.01]\n";
 		return EXIT_SUCCESS;
 	}
 

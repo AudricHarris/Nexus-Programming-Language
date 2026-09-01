@@ -52,7 +52,10 @@ struct LiteralExpr : Expression {
 };
 
 struct IdentifierExpr : Expression {
-	Token name;
+	std::string name;
+	
+	explicit IdentifierExpr(std::string name) 
+		: name(std::move(name)) {}
 };
 
 // Operation
@@ -126,13 +129,13 @@ struct Block : Expression {
 
 struct IfExpr : Expression {
 	ExprPtr condition;
-	std::unique_ptr<Block> ifBranch;
-	std::optional<std::unique_ptr<Block>> elseBranch;
+	ExprPtr ifBranch;
+	std::optional<ExprPtr> elseBranch;
 };
 
 struct WhileExpr : Expression {
 	ExprPtr condition;
-	std::unique_ptr<Block> loopBranch;
+	ExprPtr loopBranch;
 };
 
 struct MemberAccessExpr : Expression {

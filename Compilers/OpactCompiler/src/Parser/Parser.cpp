@@ -2,6 +2,7 @@
 #include "Parser/Parser.hpp"
 #include "Parser/Ast.hpp"
 #include "Token/TokenType.hpp"
+#include <cmath>
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -286,7 +287,7 @@ ExprPtr Parser::parseFunction(std::optional<Token> visib)
 
 			fnDecl->params.push_back(std::move(p));
 		}
-		while (this->check(TokenKind::COMMA));
+		while (this->match(TokenKind::COMMA));
 	}
 
 	this->expect(TokenKind::RPAREN, "Expected a ')' for closing functions params");
@@ -303,7 +304,7 @@ ExprPtr Parser::parseFunction(std::optional<Token> visib)
 		<< fnDecl->isPublic << "\n return type : " << fnDecl->returnTypeName << "\n";
 
 	// Most important part the body
-	this->parseBlock();
+	ExprPtr block = this->parseBlock();
 
 	return fnDecl;
 }
@@ -320,12 +321,16 @@ ExprPtr Parser::parseBlock()
 	{
 		// Multiple expression
 		this->consume();
-		while (!this->check(TokenKind::RBRACE))
+		while (!this->check(TokenKind::RBRACE) && !this->isAtEnd())
 		{
 			std::cout << "Testing block\n";
 			// this is a block of stmt
 			try {
-				this->parseExpression();
+				ExprPtr expr = this->parseExpression();
+				if (expr != nullptr)
+					block->expressions.push_back(std::move(expr));
+				if (!this->check(TokenKind::RBRACE))
+					this->expect(TokenKind::SEMI, "Expected ';' after statement");
 			} catch (std::exception e) {
 				std::cerr << e.what() << "\n";
 				this->synchronize();
@@ -336,7 +341,10 @@ ExprPtr Parser::parseBlock()
 	{
 		// Single Expression
 		try {
-			this->parseExpression();
+			ExprPtr expr = this->parseExpression();
+			if (expr != nullptr)
+				block->expressions.push_back(std::move(expr));
+			this->expect(TokenKind::SEMI, "Expected ';' after statement");
 		} catch (std::exception e) {
 			std::cerr << e.what() << "\n";
 			this->synchronize();
@@ -356,14 +364,19 @@ ExprPtr Parser::parseExpression()
 	ExprPtr expr;
 
 	if (this->check(TokenKind::IF))
-		return nullptr;
+		return this->parseIf();
 
-	if (this->check(TokenKind::AND) || this->check(TokenKind::IDENTIFIER))
+	
+	if (this->check(TokenKind::WHILE))
+		return this->parseWhile();
+
+	if (this->check(TokenKind::AND) || 
+			(this->check(TokenKind::IDENTIFIER) && this->peekAt(1).getKind() == TokenKind::IDENTIFIER)) 
+	{
 		return this->parseVarDecl();
+	}
 
-	// Case where we don't know the parser
-	this->consume();
-	return expr;
+	return this->parsePrimary();
 }
 
 //---------------------------//
@@ -372,20 +385,76 @@ ExprPtr Parser::parseExpression()
 
 ExprPtr Parser::parseIf()
 {
+	std::cout << "Starting IfExpr\n";
 	// Let's define an if Expression
+	auto expr = std::make_unique<IfExpr>();
 	// If ( Expression ) Body
 	this->expect(TokenKind::IF, "Expected 'if' at the start of an if expression");
 	this->expect(TokenKind::LPAREN, "Exprected '(' for opening the equality");
-	ExprPtr equality = this->parseExpression();
+	expr->condition = this->parseExpression();
 	this->expect(TokenKind::RPAREN, "Exprected ')' for closing the equality");
-	
+
 	// Body
-	ExprPtr ifBody = this->parseBlock();
+	expr->ifBranch = std::move(this->parseBlock()); 
 	// Else Body
 	if (this->check(TokenKind::ELSE))
-		ExprPtr elseBody = this->parseBlock();
+		expr->elseBranch = std::move(this->parseBlock()); 
 
-	return nullptr;
+	return expr;
+}
+
+//------------------------------//
+//-- Parsing While expression --//
+//------------------------------//
+
+// The loop keyword will also go through this but condition is always true
+ExprPtr Parser::parseWhile()
+{
+	std::cout << "Starting WhileExpr\n";
+	// Let's define a while Expression
+	auto expr = std::make_unique<WhileExpr>();
+	// while ( Expression ) Body
+	this->expect(TokenKind::WHILE, "Expected 'while' at the start of a while expression");
+	this->expect(TokenKind::LPAREN, "Exprected '(' for opening the equality");
+	expr->condition = this->parseExpression();
+	this->expect(TokenKind::RPAREN, "Exprected ')' for closing the equality");
+
+	// Body
+	expr->loopBranch = std::move(this->parseBlock()); 
+
+	return expr;
+}
+
+//---------------------//
+//-- Parsing Fn Call --//
+//---------------------//
+
+ExprPtr Parser::parsePostfix(ExprPtr expr)
+{
+	while (this->check(TokenKind::LPAREN)) {
+		expr = this->parseCallExpr(std::move(expr));
+	}
+
+
+	return expr;
+}
+
+ExprPtr Parser::parseCallExpr(ExprPtr callee)
+{
+	auto callNode = std::make_unique<CallExpr>();
+	callNode->callee = std::move(callee);
+
+	this->expect(TokenKind::LPAREN, "Expected '(' for function call");
+
+	if (!this->check(TokenKind::RPAREN)) {
+		do {
+			callNode->arguments.push_back(this->parseExpression());
+		} while (this->match(TokenKind::COMMA));
+	}
+
+	this->expect(TokenKind::RPAREN, "Expected ')' after function arguments");
+
+	return callNode;
 }
 
 //---------------------------//
@@ -401,8 +470,8 @@ DataType determineType(const Token& t)
 	if (word == "bool") return DataType::Bool;
 
 	if (word == "int" || word == "uint" ||
-		word == "i8"  || word == "i16"	|| word == "i32" || word == "i64" ||
-		word == "u8"  || word == "u16"	|| word == "u32" || word == "u64") 
+			word == "i8"  || word == "i16"	|| word == "i32" || word == "i64" ||
+			word == "u8"  || word == "u16"	|| word == "u32" || word == "u64") 
 	{
 		return DataType::Int;
 	}
@@ -450,6 +519,13 @@ ExprPtr Parser::parseAssignement()
 
 ExprPtr Parser::parsePrimary()
 {
+	if (this->check(TokenKind::IDENTIFIER)) {
+		Token tok = this->consume();
+		ExprPtr expr = std::make_unique<IdentifierExpr>(tok.getWord());
+
+		return this->parsePostfix(std::move(expr));
+	}
+
 	Token tok = this->consume();
 	std::cout << "Test Primary\n";
 	switch (tok.getKind()) {
@@ -469,7 +545,7 @@ ExprPtr Parser::parsePrimary()
 					type = NumericBase::Binary;
 				if (number.rfind("0o",0))
 					type = NumericBase::Octal;
-				
+
 				return std::make_unique<LiteralExpr>(LiteralKind::Int, tok, type);
 			}
 

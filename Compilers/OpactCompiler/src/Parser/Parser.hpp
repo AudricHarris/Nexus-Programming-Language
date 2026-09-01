@@ -49,6 +49,9 @@ class Parser {
 		ExprPtr parseBlock();
 		ExprPtr parseExpression();
 		ExprPtr parseIf();
+		ExprPtr parseWhile();
+		ExprPtr parsePostfix(ExprPtr expr);
+		ExprPtr parseCallExpr(ExprPtr callee);
 		ExprPtr parseVarDecl();
 		ExprPtr parseAssignement();
 		ExprPtr parseOr();
