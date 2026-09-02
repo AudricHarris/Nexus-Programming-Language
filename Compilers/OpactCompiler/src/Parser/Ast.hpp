@@ -2,9 +2,11 @@
 #define AST_HPP
 
 #include "../Token/TokenType.hpp"
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Type representation :
@@ -82,6 +84,9 @@ struct BinaryExpr : Expression {
 	BinaryOp op;
 	ExprPtr left;
 	ExprPtr right;
+
+	BinaryExpr(BinaryOp o, ExprPtr l, ExprPtr r)
+		: op(o), left(std::move(l)), right(std::move(r)){}
 };
 
 struct UnaryExpr : Expression {

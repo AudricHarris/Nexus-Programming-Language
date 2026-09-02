@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 //----------------------//
@@ -539,6 +540,28 @@ ExprPtr Parser::parseAssignement()
 	return nullptr;
 }
 
+ExprPtr Parser::parseOr()
+{
+	auto expr = this->parseAnd();
+	while (this->match(TokenKind::OR))
+		expr = std::make_unique<BinaryExpr>(BinaryOp::Or, std::move(expr), this->parseAnd());
+
+	return expr;
+}
+
+ExprPtr Parser::parseAnd()
+{
+	auto expr = this->parseEquality();
+	while (this->match(TokenKind::AND))
+		expr = std::make_unique<BinaryExpr>(BinaryOp::And, std::move(expr), this->parseAnd());
+
+	return expr;
+}
+
+ExprPtr Parser::parseEquality()
+{
+	return nullptr;
+}
 
 ExprPtr Parser::parsePrimary()
 {

@@ -37,7 +37,6 @@ enum class TokenKind {
 	ASSIGN,
 	INCREMENT,
 	DECREMENT,
-	MOVE,
 	FAT_ARROW,
 	BORROW,
 	ADD,

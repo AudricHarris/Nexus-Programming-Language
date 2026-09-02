@@ -84,8 +84,6 @@ std::string Token::toString() {
 			return "INCREMENT  ";
 		case TokenKind::DECREMENT:
 			return "DECREMENT  ";
-		case TokenKind::MOVE:
-			return "MOVE  ";
 		case TokenKind::BORROW:
 			return "BORROW	";
 		case TokenKind::ADD:
