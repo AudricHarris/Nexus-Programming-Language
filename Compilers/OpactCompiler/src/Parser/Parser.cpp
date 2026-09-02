@@ -552,13 +552,63 @@ ExprPtr Parser::parseOr()
 ExprPtr Parser::parseAnd()
 {
 	auto expr = this->parseEquality();
-	while (this->match(TokenKind::AND))
-		expr = std::make_unique<BinaryExpr>(BinaryOp::And, std::move(expr), this->parseAnd());
+	BinaryOp op = BinaryOp::And;
+	while (this->match(TokenKind::AND) || this->check(TokenKind::DOUBLE_AND))
+	{
+		if (this->match(TokenKind::DOUBLE_AND)) op = BinaryOp::BitAnd;
+		expr = std::make_unique<BinaryExpr>(op, std::move(expr), this->parseEquality());
+	}
 
 	return expr;
 }
 
 ExprPtr Parser::parseEquality()
+{
+	auto expr = this->parseComparison();
+	BinaryOp op = BinaryOp::Eq;
+	while (this->match(TokenKind::EQ) || this->check(TokenKind::NE))
+	{
+		if (this->match(TokenKind::NE)) op = BinaryOp::Ne;
+		expr = std::make_unique<BinaryExpr>(op, std::move(expr), this->parseComparison());
+	}
+
+	return expr;
+}
+
+static bool peekRelOp(TokenKind k, BinaryOp &op) {
+	switch (k) {
+		case TokenKind::LT:
+			op = BinaryOp::Lt;
+			return true;
+		case TokenKind::GT:
+			op = BinaryOp::Gt;
+			return true;
+		case TokenKind::LE:
+			op = BinaryOp::Le;
+			return true;
+		case TokenKind::GE:
+			op = BinaryOp::Ge;
+			return true;
+		default:
+			return false;
+	}
+}
+
+ExprPtr Parser::parseComparison() {
+	auto expr = this->parseAdditive();
+
+	BinaryOp op;
+	while (peekRelOp(this->peek().getKind(), op)) {
+		this->consume(); // Consume the relational operator (<, >, <=, >=)
+
+		auto rhs = this->parseAdditive();
+		expr = std::make_unique<BinaryExpr>(op, std::move(expr), std::move(rhs));
+	}
+
+	return expr;
+}
+
+ExprPtr  Parser::parseAdditive()
 {
 	return nullptr;
 }
