@@ -366,6 +366,8 @@ ExprPtr Parser::parseExpression()
 	if (this->check(TokenKind::IF))
 		return this->parseIf();
 
+	if (this->check(TokenKind::RETURN))
+		return this->parseReturn();
 	
 	if (this->check(TokenKind::WHILE))
 		return this->parseWhile();
@@ -457,6 +459,24 @@ ExprPtr Parser::parseCallExpr(ExprPtr callee)
 	return callNode;
 }
 
+//-------------------------//
+//-- Parsing Return expr --//
+//-------------------------//
+
+ExprPtr Parser::parseReturn()
+{
+	auto r = std::make_unique<ReturnExpr>();
+
+	this->consume(); // Return keyword
+	
+	// If we don't observe a semi after a return it means expr
+	if (!this->check(TokenKind::SEMI))
+		r->value = this->parseExpression();
+
+
+	return r;
+}
+
 //---------------------------//
 //-- Parsing Variable Decl --//
 //---------------------------//
@@ -513,6 +533,9 @@ ExprPtr Parser::parseVarDecl()
 
 ExprPtr Parser::parseAssignement()
 {
+	auto left = this->parseOr();
+	// Different types of assignements
+
 	return nullptr;
 }
 

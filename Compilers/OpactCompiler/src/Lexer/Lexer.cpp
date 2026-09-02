@@ -43,7 +43,6 @@ enum class State : uint8_t {
 	S2_MINUS_MINUS, // "--"
 	S2_ARROW,       // "->"
 	S8_FAT_ARROW,   // "=>"
-	S9_MOVE,        // "<-"
 	S9_LE,          // "<="
 	S10_GE,         // ">="
 	S11_BORROW,     // "&="
@@ -132,7 +131,7 @@ static constexpr State T[NSTATES][NCATS] = {
 	{E, E, E, E, E, E, E, E, E, E, E, E, State::S8_EQ, E, State::S8_FAT_ARROW, E, E, E, E, E, E, E, E, E},
 
 	/*S9  after '<' */
-	{E, State::S9_MOVE, E, E, E, E, E, E, E, E, E, E, State::S9_LE, E, E, E, E, E, E, E, E, E, E, E},
+	{E, E, E, E, E, E, E, E, E, E, E, E, State::S9_LE, E, E, E, E, E, E, E, E, E, E, E},
 
 	/*S10 after '>' */
 	{E, E, E, E, E, E, E, E, E, E, E, E, State::S10_GE, E, E, E, E, E, E, E, E, E, E, E},
@@ -232,7 +231,6 @@ static constexpr TokenKind StateToToken[] = {
 	/* S2_MINUS_MINUS    */ TokenKind::DECREMENT,
 	/* S2_ARROW          */ TokenKind::RETURN_TYPE,
 	/* S8_FAT_ARROW      */ TokenKind::FAT_ARROW,
-	/* S9_MOVE           */ TokenKind::MOVE,
 	/* S9_LE             */ TokenKind::LE,
 	/* S10_GE            */ TokenKind::GE,
 	/* S11_BORROW        */ TokenKind::BORROW,
