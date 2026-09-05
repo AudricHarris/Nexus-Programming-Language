@@ -2,6 +2,7 @@
 #include "Parser/Parser.hpp"
 #include "Parser/Ast.hpp"
 #include "Token/TokenType.hpp"
+#include <algorithm>
 #include <cmath>
 #include <exception>
 #include <iostream>
@@ -108,6 +109,7 @@ void Parser::synchronize() {
 		}
 	}
 }
+
 //--------------------//
 //-- Parsing module --//
 //--------------------//
@@ -116,15 +118,9 @@ ExprPtr Parser::parseModule()
 {
 	auto moduleBlock = std::make_unique<Block>();
 
-	// while we aren't at the end Go through token list
 	while (!this->isAtEnd())
 	{
 		try {
-			// Top level is either one of the following :
-			// - Import
-			// - Global
-			// - Struct/class 
-			// - function, etc... 
 			ExprPtr item = this->parseTopLevel();
 			if (item != nullptr)
 				moduleBlock->expressions.push_back(std::move(item));
@@ -138,27 +134,21 @@ ExprPtr Parser::parseModule()
 	return moduleBlock;
 }
 
-
 ExprPtr Parser::parseTopLevel()
 {
 	std::optional<Token> visibility;
 	if (this->check(TokenKind::PUBLIC) || this->check(TokenKind::PRIVATE))
 		visibility = this->consume();
 
-	// Detect keyword Import
 	if (this->check(TokenKind::IMPORT))
 	{
-		this->parseImport();
-		return nullptr;
+		return this->parseImport();
 	}
-	// Detect keyword function
+
 	if (this->check(TokenKind::FN))
 	{
-		this->parseFunction(visibility); 
-		return nullptr;
+		return this->parseFunction(visibility); 
 	}
-	// Detect keyword Class/Struct
-	// Default To global
 
 	this->consume();
 	return nullptr;
@@ -171,13 +161,15 @@ ExprPtr Parser::parseTopLevel()
 void Parser::addModule(std::vector<std::string> path)
 {
 	std::string actualPath = "";
-	for (std::string word : path)
+	for (const auto& word : path)
 	{
 		actualPath.append(word);
 		actualPath.append("/");
 	}
 
-	actualPath.erase(actualPath.size() - 1 );
+	if (!actualPath.empty())
+		actualPath.erase(actualPath.size() - 1);
+
 	actualPath.append(".op");
 
 	this->pipeline->enqueueFile(actualPath, this->filePath);
@@ -185,302 +177,58 @@ void Parser::addModule(std::vector<std::string> path)
 
 ExprPtr Parser::parseImport()
 {
-	// Import keyword
-	this->consume();
+	this->consume(); // consume TokenKind::IMPORT
 
-	auto importDecl = std::make_unique<ImportExpr>();
+	ImportPath path;
+	std::vector<std::string> importedSymbols;
+	bool isSelective = false;
 
 	Token first = this->expect(TokenKind::IDENTIFIER, "Expected Module name");
-	importDecl->path.segments.push_back(first.getWord());
-	importDecl->path.isStdLib = (first.getWord() == "Opact" || first.getWord() == "Std");
+	path.segments.push_back(first.getWord());
+	path.isStdLib = (first.getWord() == "Opact" || first.getWord() == "Std");
 
-	// While we Have more colons meaning extra path or symbols
-	while ( this->check(TokenKind::COLON_COLON))
+	while (this->check(TokenKind::COLON_COLON))
 	{
 		this->consume();
-		// Either Symbol if brace or segment of path
 		if (this->check(TokenKind::LBRACE))
 		{
 			this->consume();
-			importDecl->isSelectiveImport = true;
+			isSelective = true;
 			if (!this->check(TokenKind::RBRACE))
 			{
 				do {
 					Token sym = this->expect(TokenKind::IDENTIFIER, "Expected symbol name");
-					importDecl->importedSymbols.push_back(sym.getWord());
+					importedSymbols.push_back(sym.getWord());
 				} while (this->match(TokenKind::COMMA));
-
 			}
-			this->expect(TokenKind::RBRACE, "Expeced '}'");
+			this->expect(TokenKind::RBRACE, "Expected '}'");
 			break;
 		}
 
-		// Concluded this was part of the path not symbol
-
 		Token seg = this->expect(TokenKind::IDENTIFIER, "Expected module path segment");
-		importDecl->path.segments.push_back(seg.getWord());
+		path.segments.push_back(seg.getWord());
 	}
 
-	// This Will call a function that adds it to the module queue
-	this->addModule(importDecl->path.segments);
-
+	this->addModule(path.segments);
 	this->expect(TokenKind::SEMI, "Expected ';' after import");
-	return importDecl;
+
+	return std::make_unique<ImportExpr>(std::move(path), std::move(importedSymbols), isSelective);
 }
 
 //----------------------//
 //-- Parsing Function --//
 //----------------------//
-
-ExprPtr Parser::parseFunction(std::optional<Token> visib)
+bool Parser::parseIsVarDeclRef()
 {
-	// Process 
-	auto fnDecl = std::make_unique<FunctionDeclExpr>();
-	// 1st keyword fn 
-	this->consume();
-	if (visib.has_value())
-	{
-		Token t = visib.value();
-		if (t.getKind() == TokenKind::PUBLIC)
-			fnDecl->isPublic = true;
-	}
+	size_t offset = 1;
 
-	// 2nd name
-	Token name = this->expect(TokenKind::IDENTIFIER, "Expected identifier as name");
-	fnDecl->name = name.getWord();
+	if (this->peekAt(offset).getKind() == TokenKind::MUT) offset++;
 
-	// Then we do the params
-	this->expect(TokenKind::LPAREN, "Expected a '(' for opening functions params");
-	if (!this->check(TokenKind::RPAREN))
-	{
-		do
-		{
-			// Check for mutable and reference
-			bool isMut = false, isRef = false;
-			if (this->check(TokenKind::AND))
-			{
-				isRef = true;
-				this->consume();
-				if (this->check(TokenKind::MUT))
-				{
-					isMut = true;
-					this->consume();
-				}
-			}
-			// Type (for now we will consider a type as a identifier the typechecker will do heavy lifting)
-			// In the long run this won't be true bc of arguments like Array<T>
-			Token ptype = this->expect(TokenKind::IDENTIFIER, "Expected type for the param");
-			// IDENTIFIER
-			Token pname = this->expect(TokenKind::IDENTIFIER, "Expected name for the param");
-			//Default value
-			if (this->check(TokenKind::EQ))
-			{
-				this->consume();
+	bool hasType = (this->peekAt(offset).getKind() == TokenKind::IDENTIFIER);
+	bool hasName = (this->peekAt(offset + 1).getKind() == TokenKind::IDENTIFIER);
 
-			}
-			Parameter p;
-
-			p.name = pname.getWord();
-			p.typeName = ptype.getWord();
-			p.isMutable = isMut;
-			p.isReference = isRef;
-
-
-			fnDecl->params.push_back(std::move(p));
-		}
-		while (this->match(TokenKind::COMMA));
-	}
-
-	this->expect(TokenKind::RPAREN, "Expected a ')' for closing functions params");
-
-	// Finally return type (optional)
-	if (this->check(TokenKind::RETURN_TYPE))
-	{
-		this->consume();
-		Token returnType = this->expect(TokenKind::IDENTIFIER, "Expected a return type for the function");
-		fnDecl->returnTypeName = returnType.getWord();
-	}
-
-	std::cout << "Function [" << fnDecl->name << "], visibile = " 
-		<< fnDecl->isPublic << "\n return type : " << fnDecl->returnTypeName << "\n";
-
-	// Most important part the body
-	ExprPtr block = this->parseBlock();
-
-	return fnDecl;
+	return hasType && hasName;
 }
-
-//------------------//
-//-- Parsing body --//
-//------------------//
-
-ExprPtr Parser::parseBlock()
-{
-	auto block = std::make_unique<Block>();
-	// 2 cases either A it has braces so multiple expressions or b it doesn't
-	if ( this->check(TokenKind::LBRACE) )
-	{
-		// Multiple expression
-		this->consume();
-		while (!this->check(TokenKind::RBRACE) && !this->isAtEnd())
-		{
-			std::cout << "Testing block\n";
-			// this is a block of stmt
-			try {
-				ExprPtr expr = this->parseExpression();
-				if (expr != nullptr)
-					block->expressions.push_back(std::move(expr));
-				if (!this->check(TokenKind::RBRACE))
-					this->expect(TokenKind::SEMI, "Expected ';' after statement");
-			} catch (std::exception e) {
-				std::cerr << e.what() << "\n";
-				this->synchronize();
-			}
-		}
-	}
-	else
-	{
-		// Single Expression
-		try {
-			ExprPtr expr = this->parseExpression();
-			if (expr != nullptr)
-				block->expressions.push_back(std::move(expr));
-			this->expect(TokenKind::SEMI, "Expected ';' after statement");
-		} catch (std::exception e) {
-			std::cerr << e.what() << "\n";
-			this->synchronize();
-		}
-	}
-
-	return block;
-}
-
-//------------------------//
-//-- Parsing expression --//
-//------------------------//
-
-ExprPtr Parser::parseExpression()
-{
-	// Dump variable
-	ExprPtr expr;
-
-	if (this->check(TokenKind::IF))
-		return this->parseIf();
-
-	if (this->check(TokenKind::RETURN))
-		return this->parseReturn();
-	
-	if (this->check(TokenKind::WHILE))
-		return this->parseWhile();
-
-	if (this->check(TokenKind::AND) || 
-			(this->check(TokenKind::IDENTIFIER) && this->peekAt(1).getKind() == TokenKind::IDENTIFIER)) 
-	{
-		return this->parseVarDecl();
-	}
-
-	return this->parsePrimary();
-}
-
-//---------------------------//
-//-- Parsing If expression --//
-//---------------------------//
-
-ExprPtr Parser::parseIf()
-{
-	std::cout << "Starting IfExpr\n";
-	// Let's define an if Expression
-	auto expr = std::make_unique<IfExpr>();
-	// If ( Expression ) Body
-	this->expect(TokenKind::IF, "Expected 'if' at the start of an if expression");
-	this->expect(TokenKind::LPAREN, "Exprected '(' for opening the equality");
-	expr->condition = this->parseExpression();
-	this->expect(TokenKind::RPAREN, "Exprected ')' for closing the equality");
-
-	// Body
-	expr->ifBranch = std::move(this->parseBlock()); 
-	// Else Body
-	if (this->check(TokenKind::ELSE))
-		expr->elseBranch = std::move(this->parseBlock()); 
-
-	return expr;
-}
-
-//------------------------------//
-//-- Parsing While expression --//
-//------------------------------//
-
-// The loop keyword will also go through this but condition is always true
-ExprPtr Parser::parseWhile()
-{
-	std::cout << "Starting WhileExpr\n";
-	// Let's define a while Expression
-	auto expr = std::make_unique<WhileExpr>();
-	// while ( Expression ) Body
-	this->expect(TokenKind::WHILE, "Expected 'while' at the start of a while expression");
-	this->expect(TokenKind::LPAREN, "Exprected '(' for opening the equality");
-	expr->condition = this->parseExpression();
-	this->expect(TokenKind::RPAREN, "Exprected ')' for closing the equality");
-
-	// Body
-	expr->loopBranch = std::move(this->parseBlock()); 
-
-	return expr;
-}
-
-//---------------------//
-//-- Parsing Fn Call --//
-//---------------------//
-
-ExprPtr Parser::parsePostfix(ExprPtr expr)
-{
-	while (this->check(TokenKind::LPAREN)) {
-		expr = this->parseCallExpr(std::move(expr));
-	}
-
-
-	return expr;
-}
-
-ExprPtr Parser::parseCallExpr(ExprPtr callee)
-{
-	auto callNode = std::make_unique<CallExpr>();
-	callNode->callee = std::move(callee);
-
-	this->expect(TokenKind::LPAREN, "Expected '(' for function call");
-
-	if (!this->check(TokenKind::RPAREN)) {
-		do {
-			callNode->arguments.push_back(this->parseExpression());
-		} while (this->match(TokenKind::COMMA));
-	}
-
-	this->expect(TokenKind::RPAREN, "Expected ')' after function arguments");
-
-	return callNode;
-}
-
-//-------------------------//
-//-- Parsing Return expr --//
-//-------------------------//
-
-ExprPtr Parser::parseReturn()
-{
-	auto r = std::make_unique<ReturnExpr>();
-
-	this->consume(); // Return keyword
-	
-	// If we don't observe a semi after a return it means expr
-	if (!this->check(TokenKind::SEMI))
-		r->value = this->parseExpression();
-
-
-	return r;
-}
-
-//---------------------------//
-//-- Parsing Variable Decl --//
-//---------------------------//
 
 DataType determineType(const Token& t)
 {
@@ -507,37 +255,307 @@ DataType determineType(const Token& t)
 	return DataType::Custom;
 }
 
+ExprPtr Parser::parseFunction(std::optional<Token> visib)
+{
+	this->consume(); // consume TokenKind::FN
+
+	bool isPublic = false;
+	if (visib.has_value() && visib->getKind() == TokenKind::PUBLIC)
+	{
+		isPublic = true;
+	}
+
+	Token nameTok = this->expect(TokenKind::IDENTIFIER, "Expected identifier as name");
+	std::string name = nameTok.getWord();
+
+	std::vector<Parameter> params;
+	this->expect(TokenKind::LPAREN, "Expected a '(' for opening function params");
+
+	if (!this->check(TokenKind::RPAREN))
+	{
+		do
+		{
+			bool isMut = false, isRef = false;
+			if (this->check(TokenKind::AND))
+			{
+				isRef = true;
+				this->consume();
+				if (this->check(TokenKind::MUT))
+				{
+					isMut = true;
+					this->consume();
+				}
+			}
+
+			Token ptypeTok = this->expect(TokenKind::IDENTIFIER, "Expected type for the param");
+			Token pnameTok = this->expect(TokenKind::IDENTIFIER, "Expected name for the param");
+
+			std::optional<ExprPtr> defaultVal = std::nullopt;
+			if (this->match(TokenKind::ASSIGN))
+			{
+				defaultVal = this->parseExpression();
+			}
+
+			TypeDesc ptype;
+			ptype.type = determineType(ptypeTok);
+			ptype.customTypeName = ptypeTok.getWord();
+
+			params.emplace_back(pnameTok.getWord(), std::move(ptype), isMut, isRef, std::move(defaultVal));
+		}
+		while (this->match(TokenKind::COMMA));
+	}
+
+	this->expect(TokenKind::RPAREN, "Expected a ')' for closing function params");
+
+	TypeDesc returnType;
+	returnType.type = DataType::Void;
+
+	if (this->match(TokenKind::RETURN_TYPE))
+	{
+		Token retTypeTok = this->expect(TokenKind::IDENTIFIER, "Expected a return type for the function");
+		returnType.type = determineType(retTypeTok);
+		returnType.customTypeName = retTypeTok.getWord();
+	}
+
+	ExprPtr body = this->parseBlock();
+
+	return std::make_unique<FunctionDeclExpr>(
+			std::move(name),
+			std::move(params),
+			std::move(returnType),
+			std::move(body),
+			isPublic
+			);
+}
+
+//------------------//
+//-- Parsing body --//
+//------------------//
+
+ExprPtr Parser::parseBlock()
+{
+	std::vector<ExprPtr> expressions;
+
+	if (this->match(TokenKind::LBRACE))
+	{
+		while (!this->check(TokenKind::RBRACE) && !this->isAtEnd())
+		{
+			try {
+				// Parse statement/expression
+				ExprPtr expr = this->parseExpression();
+
+
+				if (expr != nullptr) {
+					bool isControlFlow = (dynamic_cast<IfExpr*>(expr.get()) != nullptr ||
+							dynamic_cast<WhileExpr*>(expr.get()) != nullptr ||
+							dynamic_cast<LoopExpr*>(expr.get()) != nullptr);
+
+					expressions.push_back(std::move(expr));
+
+					if (!isControlFlow && !this->check(TokenKind::RBRACE)) {
+						this->expect(TokenKind::SEMI, "Expected ';' after statement");
+					}
+				}
+			} catch (const std::exception& e) {
+				this->synchronize();
+			}
+		}
+		this->expect(TokenKind::RBRACE, "Expected '}' at end of block");
+	}
+	else
+	{
+		try {
+			ExprPtr expr = this->parseExpression();
+			if (expr != nullptr)
+				expressions.push_back(std::move(expr));
+
+			this->expect(TokenKind::SEMI, "Expected ';' after statement");
+		} catch (const std::exception& e) {
+			this->synchronize();
+		}
+	}
+
+	return std::make_unique<Block>(std::move(expressions));
+}
+
+//------------------------//
+//-- Parsing expression --//
+//------------------------//
+
+ExprPtr Parser::parseExpression()
+{
+	if (this->check(TokenKind::IF))
+		return this->parseIf();
+
+	if (this->check(TokenKind::RETURN))
+		return this->parseReturn();
+
+	if (this->check(TokenKind::WHILE))
+		return this->parseWhile();
+
+	if (this->check(TokenKind::LOOP))
+		return this->parseLoop();
+
+	if (this->check(TokenKind::BREAK)) {
+		this->consume();
+		return std::make_unique<BreakExpr>();
+	}
+
+	if (this->check(TokenKind::CONTINUE)) {
+		this->consume();
+		return std::make_unique<ContinueExpr>();
+	}
+
+	if (this->check(TokenKind::AND)) {
+		if (this->parseIsVarDeclRef())
+			return this->parseVarDecl();
+		return this->parseBorrow();
+	}
+
+	if (this->check(TokenKind::IDENTIFIER) && this->peekAt(1).getKind() == TokenKind::IDENTIFIER) {
+		return this->parseVarDecl();
+	}
+
+	return this->parseAssignement();
+}
+
+//---------------------------//
+//-- Parsing If expression --//
+//---------------------------//
+
+ExprPtr Parser::parseIf()
+{
+	this->expect(TokenKind::IF, "Expected 'if' at the start of an if expression");
+	this->expect(TokenKind::LPAREN, "Expected '(' for opening condition");
+	ExprPtr condition = this->parseExpression();
+	this->expect(TokenKind::RPAREN, "Expected ')' for closing condition");
+
+	ExprPtr ifBranch = this->parseBlock(); 
+	std::optional<ExprPtr> elseBranch = std::nullopt;
+
+	if (this->match(TokenKind::ELSE))
+		elseBranch = this->parseBlock(); 
+
+	return std::make_unique<IfExpr>(std::move(condition), std::move(ifBranch), std::move(elseBranch));
+}
+
+//------------------------------//
+//-- Parsing While expression --//
+//------------------------------//
+
+ExprPtr Parser::parseWhile()
+{
+	this->expect(TokenKind::WHILE, "Expected 'while' at the start of a while expression");
+	this->expect(TokenKind::LPAREN, "Expected '(' for opening condition");
+	ExprPtr condition = this->parseExpression();
+	this->expect(TokenKind::RPAREN, "Expected ')' for closing condition");
+
+	ExprPtr loopBranch = this->parseBlock(); 
+
+	return std::make_unique<WhileExpr>(std::move(condition), std::move(loopBranch));
+}
+
+
+ExprPtr Parser::parseLoop()
+{
+	this->expect(TokenKind::LOOP, "Expected 'loop' keyword");
+	ExprPtr body = this->parseBlock();
+	return std::make_unique<LoopExpr>(std::move(body));
+}
+
+//---------------------//
+//-- Parsing Fn Call --//
+//---------------------//
+
+ExprPtr Parser::parseCallExpr(ExprPtr callee)
+{
+	this->expect(TokenKind::LPAREN, "Expected '(' for function call");
+	std::vector<ExprPtr> args;
+
+	if (!this->check(TokenKind::RPAREN)) {
+		do {
+			args.push_back(this->parseExpression());
+		} while (this->match(TokenKind::COMMA));
+	}
+
+	this->expect(TokenKind::RPAREN, "Expected ')' after function arguments");
+
+	return std::make_unique<CallExpr>(std::move(callee), std::move(args));
+}
+
+//-------------------------//
+//-- Parsing Return expr --//
+//-------------------------//
+
+ExprPtr Parser::parseReturn()
+{
+	this->consume(); // consume TokenKind::RETURN
+	std::optional<ExprPtr> value = std::nullopt;
+
+	if (!this->check(TokenKind::SEMI))
+		value = this->parseExpression();
+
+	return std::make_unique<ReturnExpr>(std::move(value));
+}
+
+//---------------------------//
+//-- Parsing Variable Decl --//
+//---------------------------//
+
 ExprPtr Parser::parseVarDecl()
 {
 	TypeDesc desc;
 
-	// reference and mutability
-	if (this->check(TokenKind::AND))
+	// Handle reference types like &mut i32 t
+	if (this->match(TokenKind::AND))
 	{
 		desc.isReference = true;
-		this->consume();
-		if (this->check(TokenKind::MUT))
+		if (this->match(TokenKind::MUT))
 		{
 			desc.isMutable = true;
-			this->consume();
 		}
 	}
 
-	// if we arrive at this point that means we have checked type;
-	Token type = this->expect(TokenKind::IDENTIFIER, "Expected 'Type' for var decl");
-	Token name = this->expect(TokenKind::IDENTIFIER, "Expected 'Name' after type");
+	// Type is always an IDENTIFIER (e.g. i32, bool, MyClass)
+	Token typeTok = this->expect(TokenKind::IDENTIFIER, "Expected type name for variable declaration");
 
-	// Determining what type is, I'm thinking [i32, i64, f32, char, bool]
-	desc.type = determineType(type); 
-	return nullptr;
+	// Name is always the next IDENTIFIER (e.g. t, x, my_var)
+	Token nameTok = this->expect(TokenKind::IDENTIFIER, "Expected variable name after type");
+
+	desc.type = determineType(typeTok); 
+	desc.customTypeName = typeTok.getWord();
+
+	ExprPtr initExpr = nullptr;
+	if (this->match(TokenKind::ASSIGN))
+	{
+		initExpr = this->parseExpression();
+	}
+
+	return std::make_unique<VarDeclExpr>(nameTok, std::move(desc), std::move(initExpr));
+}
+
+ExprPtr Parser::parseBorrow()
+{
+	this->consume(); // Removal of &
+	bool isMut = this->match(TokenKind::MUT); 
+
+	auto expr = this->parseExpression();
+
+	return std::make_unique<BorrowExpr>(std::move(expr), isMut);
+
 }
 
 ExprPtr Parser::parseAssignement()
 {
-	auto left = this->parseOr();
-	// Different types of assignements
+	ExprPtr target = this->parseOr();
 
-	return nullptr;
+	if (this->match(TokenKind::ASSIGN))
+	{
+		ExprPtr val = this->parseExpression();
+		return std::make_unique<AssignExpr>(std::move(target), std::move(val), AssignKind::Assign);
+	}
+
+	return target;
 }
 
 ExprPtr Parser::parseOr()
@@ -552,10 +570,14 @@ ExprPtr Parser::parseOr()
 ExprPtr Parser::parseAnd()
 {
 	auto expr = this->parseEquality();
-	BinaryOp op = BinaryOp::And;
-	while (this->match(TokenKind::AND) || this->check(TokenKind::DOUBLE_AND))
+	while (this->check(TokenKind::AND) || this->check(TokenKind::DOUBLE_AND))
 	{
-		if (this->match(TokenKind::DOUBLE_AND)) op = BinaryOp::BitAnd;
+		BinaryOp op = BinaryOp::And;
+		if (this->match(TokenKind::DOUBLE_AND)) 
+			op = BinaryOp::BitAnd;
+		else 
+			this->consume();
+
 		expr = std::make_unique<BinaryExpr>(op, std::move(expr), this->parseEquality());
 	}
 
@@ -565,10 +587,14 @@ ExprPtr Parser::parseAnd()
 ExprPtr Parser::parseEquality()
 {
 	auto expr = this->parseComparison();
-	BinaryOp op = BinaryOp::Eq;
-	while (this->match(TokenKind::EQ) || this->check(TokenKind::NE))
+	while (this->check(TokenKind::EQ) || this->check(TokenKind::NE))
 	{
-		if (this->match(TokenKind::NE)) op = BinaryOp::Ne;
+		BinaryOp op = BinaryOp::Eq;
+		if (this->match(TokenKind::NE)) 
+			op = BinaryOp::Ne;
+		else 
+			this->consume();
+
 		expr = std::make_unique<BinaryExpr>(op, std::move(expr), this->parseComparison());
 	}
 
@@ -599,8 +625,7 @@ ExprPtr Parser::parseComparison() {
 
 	BinaryOp op;
 	while (peekRelOp(this->peek().getKind(), op)) {
-		this->consume(); // Consume the relational operator (<, >, <=, >=)
-
+		this->consume();
 		auto rhs = this->parseAdditive();
 		expr = std::make_unique<BinaryExpr>(op, std::move(expr), std::move(rhs));
 	}
@@ -608,38 +633,158 @@ ExprPtr Parser::parseComparison() {
 	return expr;
 }
 
-ExprPtr  Parser::parseAdditive()
+ExprPtr Parser::parseAdditive()
 {
-	return nullptr;
+	auto expr = this->parseMultiplicative();
+
+	while (this->check(TokenKind::ADD) || this->check(TokenKind::SUB))
+	{
+		BinaryOp op = BinaryOp::Add;
+		if (this->match(TokenKind::SUB)) 
+			op = BinaryOp::Sub;
+		else 
+			this->consume();
+
+		auto rhs = this->parseMultiplicative();
+		expr = std::make_unique<BinaryExpr>(op, std::move(expr), std::move(rhs));
+	}
+
+	return expr;
+}
+
+ExprPtr Parser::parseMultiplicative()
+{
+	auto expr = this->parseUnary();
+	while (true)
+	{
+		BinaryOp op;
+
+		if (this->match(TokenKind::PROD))
+			op = BinaryOp::Mul;
+		else if (this->match(TokenKind::DIV))
+			op = BinaryOp::Div;
+		else if (this->match(TokenKind::MOD))
+			op = BinaryOp::Mod;
+		else
+			break;
+
+		expr = std::make_unique<BinaryExpr>(op, std::move(expr), this->parseUnary());
+	}
+
+	return expr;
+}
+
+//----------------------------------//
+//-- Primary & Postfix Expression --//
+//----------------------------------//
+
+ExprPtr Parser::parseUnary()
+{
+	if (this->match(TokenKind::NOT))
+		return std::make_unique<UnaryExpr>(UnaryOp::Not, this->parseUnary());
+	if (this->match(TokenKind::SUB))
+		return std::make_unique<UnaryExpr>(UnaryOp::Negate, this->parseUnary());
+
+	if (this->match(TokenKind::AND)) {
+		bool isMut = this->match(TokenKind::MUT);
+		return std::make_unique<BorrowExpr>(this->parseUnary(), isMut);
+	}
+
+	ExprPtr expr = this->parsePrimary();
+	return this->parsePostfix(std::move(expr));
+}
+
+ExprPtr Parser::parsePostfix(ExprPtr expr)
+{
+	while (true) {
+		// 1. Array Indexing
+		if (this->check(TokenKind::LBRACKET)) {
+			std::vector<ExprPtr> indices;
+			do {
+				this->consume(); // Consume '['
+				indices.push_back(this->parseExpression());
+				this->expect(TokenKind::RBRACKET, "Expected ']' after array index");
+			} while (this->check(TokenKind::LBRACKET));
+
+			expr = std::make_unique<ArrayIndexExpr>(std::move(expr), std::move(indices));
+			continue;
+		}
+
+		// 2. Member Access
+		if (this->match(TokenKind::DOT)) {
+			Token prop = this->expect(TokenKind::IDENTIFIER, "Expected property or member name after '.'");
+			expr = std::make_unique<MemberAccessExpr>(std::move(expr), prop.getWord());
+			continue;
+		}
+
+		// 3. Function Call
+		if (this->match(TokenKind::LPAREN)) {
+			std::vector<ExprPtr> args;
+			if (!this->check(TokenKind::RPAREN)) {
+				do {
+					args.push_back(this->parseExpression());
+				} while (this->match(TokenKind::COMMA));
+			}
+			this->expect(TokenKind::RPAREN, "Expected ')' after function arguments");
+
+			expr = std::make_unique<CallExpr>(std::move(expr), std::move(args));
+			continue;
+		}
+
+		// 4. Postfix Increment
+		if (this->match(TokenKind::INCREMENT)) {
+			expr = std::make_unique<PostfixExpr>(PostfixOp::Increment, std::move(expr));
+			continue;
+		}
+
+		// 5. Postfix Decrement
+		if (this->match(TokenKind::DECREMENT)) {
+			expr = std::make_unique<PostfixExpr>(PostfixOp::Decrement, std::move(expr));
+			continue;
+		}
+
+		// 6. Type Casting
+		if (this->match(TokenKind::AS)) {
+			Token castTypeTok = this->expect(TokenKind::IDENTIFIER, "Expected target type after 'as'");
+
+			TypeDesc targetType;
+			targetType.type = determineType(castTypeTok);
+			targetType.customTypeName = castTypeTok.getWord();
+
+			expr = std::make_unique<CastExpr>(std::move(expr), std::move(targetType));
+			continue;
+		}
+
+		break;
+	}
+
+	return expr;
 }
 
 ExprPtr Parser::parsePrimary()
 {
+	if (this->match(TokenKind::LPAREN)) {
+		auto expr = this->parseExpression();
+		this->expect(TokenKind::RPAREN, "Expected ')' after parenthesized expression");
+		return expr;
+	}
+
 	if (this->check(TokenKind::IDENTIFIER)) {
 		Token tok = this->consume();
-		ExprPtr expr = std::make_unique<IdentifierExpr>(tok.getWord());
-
-		return this->parsePostfix(std::move(expr));
+		return std::make_unique<IdentifierExpr>(tok.getWord());
 	}
 
 	Token tok = this->consume();
-	std::cout << "Test Primary\n";
 	switch (tok.getKind()) {
 		case TokenKind::LIT_INT:
 			{
-				// Important step identify the numeral type
-				// Word contains first 2 leters Ox, 0b or 0o do the check
 				std::string number = tok.getWord();
-				std::cout << number << "\n";
 				NumericBase type = NumericBase::Decimal;
-				if (number.rfind("0x",0))
-				{
-					std::cout << "Hexadecimal\n";
+				if (number.rfind("0x", 0) == 0)
 					type = NumericBase::Hexadecimal;
-				}
-				if (number.rfind("0b",0))
+				else if (number.rfind("0b", 0) == 0)
 					type = NumericBase::Binary;
-				if (number.rfind("0o",0))
+				else if (number.rfind("0o", 0) == 0)
 					type = NumericBase::Octal;
 
 				return std::make_unique<LiteralExpr>(LiteralKind::Int, tok, type);
@@ -656,7 +801,6 @@ ExprPtr Parser::parsePrimary()
 
 		case TokenKind::LIT_STRING:
 			{
-				// Allowing Concatenation for string so "Hello, " "World!" as an example
 				std::string merged = tok.getWord();
 				while (this->check(TokenKind::LIT_STRING))
 				{
@@ -664,8 +808,7 @@ ExprPtr Parser::parsePrimary()
 					merged += str.getWord();
 				}
 
-				Token res{TokenKind::LIT_STRING, tok.getWord(),tok.getLine(), tok.getColumn()};
-
+				Token res{TokenKind::LIT_STRING, merged, tok.getLine(), tok.getColumn()};
 				return std::make_unique<LiteralExpr>(LiteralKind::Str, res);
 			}
 

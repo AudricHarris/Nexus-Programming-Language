@@ -50,10 +50,13 @@ class Parser {
 		ExprPtr parseExpression();
 		ExprPtr parseIf();
 		ExprPtr parseWhile();
+		ExprPtr parseLoop();
 		ExprPtr parsePostfix(ExprPtr expr);
 		ExprPtr parseCallExpr(ExprPtr callee);
 		ExprPtr parseReturn();
+		bool parseIsVarDeclRef();
 		ExprPtr parseVarDecl();
+		ExprPtr parseBorrow();
 		ExprPtr parseAssignement();
 		ExprPtr parseOr();
 		ExprPtr parseAnd();
