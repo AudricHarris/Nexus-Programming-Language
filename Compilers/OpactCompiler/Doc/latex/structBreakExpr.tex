@@ -1,11 +1,21 @@
 \doxysection{Break\+Expr Struct Reference}
 \hypertarget{structBreakExpr}{}\label{structBreakExpr}\index{BreakExpr@{BreakExpr}}
-Inheritance diagram for Break\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Break\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structBreakExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structBreakExpr_a85882fc7d4ad668212cb1b2320205d4d}\label{structBreakExpr_a85882fc7d4ad668212cb1b2320205d4d} 
+{\bfseries Break\+Expr} (std::\+optional$<$ Expr\+Ptr $>$ value=std::\+nullopt)
+\item 
+void \doxymbox{\hyperlink{structBreakExpr_a97c8fce90cec17a4aa6aa9783cd3ddf4}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structBreakExpr_a0d347775dd2f9136ae7041c3fc740b57}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -14,6 +24,31 @@ std::\+optional$<$ Expr\+Ptr $>$ {\bfseries value}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structBreakExpr_doc-func-members}
+\Hypertarget{structBreakExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structBreakExpr_a97c8fce90cec17a4aa6aa9783cd3ddf4}\index{BreakExpr@{BreakExpr}!accept@{accept}}
+\index{accept@{accept}!BreakExpr@{BreakExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structBreakExpr_a97c8fce90cec17a4aa6aa9783cd3ddf4} 
+void Break\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structBreakExpr_a0d347775dd2f9136ae7041c3fc740b57}\index{BreakExpr@{BreakExpr}!clone@{clone}}
+\index{clone@{clone}!BreakExpr@{BreakExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structBreakExpr_a0d347775dd2f9136ae7041c3fc740b57} 
+Expr\+Ptr Break\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

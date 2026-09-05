@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 // -------------------- //
 
 /**
- * @brief get'sthe correct home directory depending on the OS
+ * @brief get's the correct home directory depending on the OS
  *
  * The actual function uses a check for win32 and returns the path of the home env
  * if it's linux we just get the home path directly with getenv
@@ -45,6 +45,13 @@ std::string getHomeDirectory() {
 	return home ? home : "";
 }
 
+/**
+ * @brief get's the config directory
+ *
+ * based on your os it gives you the correct path for your Operating system .config %appdata% 
+ * 
+ * @return fs::path : returns the path of config
+ * */
 fs::path getConfigDir() {
 	std::string home = getHomeDirectory();
 	if (home.empty()) {
@@ -68,6 +75,10 @@ fs::path getConfigDir() {
 // Utility functions  //
 // ------------------ //
 
+/**
+ * @brief determines if the file ends with a given extension
+ * @return bool : if it ends or not with the extension
+ * */
 bool endsWith(const std::string &str, const std::string &suffix) {
 	if (str.length() < suffix.length())
 		return false;
@@ -75,6 +86,10 @@ bool endsWith(const std::string &str, const std::string &suffix) {
 		0;
 }
 
+/**
+ * @brief Detrermines if the extension is part of the valid ones I chose
+ * @return bool : if it ends with .op
+ * */
 bool hasValidExt(const std::string &f) { return endsWith(f, ".op"); }
 
 std::string getOutputName(const std::string &file) {

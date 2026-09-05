@@ -1,11 +1,21 @@
 \doxysection{Assign\+Expr Struct Reference}
 \hypertarget{structAssignExpr}{}\label{structAssignExpr}\index{AssignExpr@{AssignExpr}}
-Inheritance diagram for Assign\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Assign\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structAssignExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structAssignExpr_a30dad79149ddfcb4d9454c005d00b3b8}\label{structAssignExpr_a30dad79149ddfcb4d9454c005d00b3b8} 
+{\bfseries Assign\+Expr} (Expr\+Ptr target, Expr\+Ptr value, Assign\+Kind kind=Assign\+Kind::\+\+Assign)
+\item 
+void \doxymbox{\hyperlink{structAssignExpr_aad254aa9478addcd38b792bc97abf1a1}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structAssignExpr_a4dcf9cd07b9f3ab5001a945a11057d87}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -20,6 +30,31 @@ Assign\+Kind {\bfseries kind}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structAssignExpr_doc-func-members}
+\Hypertarget{structAssignExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structAssignExpr_aad254aa9478addcd38b792bc97abf1a1}\index{AssignExpr@{AssignExpr}!accept@{accept}}
+\index{accept@{accept}!AssignExpr@{AssignExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structAssignExpr_aad254aa9478addcd38b792bc97abf1a1} 
+void Assign\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structAssignExpr_a4dcf9cd07b9f3ab5001a945a11057d87}\index{AssignExpr@{AssignExpr}!clone@{clone}}
+\index{clone@{clone}!AssignExpr@{AssignExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structAssignExpr_a4dcf9cd07b9f3ab5001a945a11057d87} 
+Expr\+Ptr Assign\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

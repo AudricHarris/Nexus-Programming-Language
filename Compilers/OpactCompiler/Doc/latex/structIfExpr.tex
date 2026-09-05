@@ -1,25 +1,60 @@
 \doxysection{If\+Expr Struct Reference}
 \hypertarget{structIfExpr}{}\label{structIfExpr}\index{IfExpr@{IfExpr}}
-Inheritance diagram for If\+Expr:\+\begin{figure}[H]
+Inheritance diagram for If\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structIfExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structIfExpr_acd51a0b793fddfaa87a86bed1da41517}\label{structIfExpr_acd51a0b793fddfaa87a86bed1da41517} 
+{\bfseries If\+Expr} (Expr\+Ptr condition=nullptr, Expr\+Ptr if\+Branch=nullptr, std::\+optional$<$ Expr\+Ptr $>$ else\+Branch=std::\+nullopt)
+\item 
+void \doxymbox{\hyperlink{structIfExpr_a3888591f731dd6389b687b6ca2f11d5c}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structIfExpr_a756ef00025dd3400035001576b9ff6e2}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
 \Hypertarget{structIfExpr_af7a2991eb61a345e94e74c8c9642fc86}\label{structIfExpr_af7a2991eb61a345e94e74c8c9642fc86} 
 Expr\+Ptr {\bfseries condition}
 \item 
-\Hypertarget{structIfExpr_a730f9d37a7b62df7e90c34125f49e5ac}\label{structIfExpr_a730f9d37a7b62df7e90c34125f49e5ac} 
-std::\+unique\+\_\+ptr$<$ \doxymbox{\hyperlink{structBlock}{Block}} $>$ {\bfseries if\+Branch}
+\Hypertarget{structIfExpr_a5a5ca64783cbf2064d5cf957e0903faa}\label{structIfExpr_a5a5ca64783cbf2064d5cf957e0903faa} 
+Expr\+Ptr {\bfseries if\+Branch}
 \item 
-\Hypertarget{structIfExpr_aba55c1a53b33c5c2cb7fe37a72be3063}\label{structIfExpr_aba55c1a53b33c5c2cb7fe37a72be3063} 
-std::\+optional$<$ std::\+unique\+\_\+ptr$<$ \doxymbox{\hyperlink{structBlock}{Block}} $>$ $>$ {\bfseries else\+Branch}
+\Hypertarget{structIfExpr_a8589a247258de82c820a5f5c2f859867}\label{structIfExpr_a8589a247258de82c820a5f5c2f859867} 
+std::\+optional$<$ Expr\+Ptr $>$ {\bfseries else\+Branch}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structIfExpr_doc-func-members}
+\Hypertarget{structIfExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structIfExpr_a3888591f731dd6389b687b6ca2f11d5c}\index{IfExpr@{IfExpr}!accept@{accept}}
+\index{accept@{accept}!IfExpr@{IfExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structIfExpr_a3888591f731dd6389b687b6ca2f11d5c} 
+void If\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structIfExpr_a756ef00025dd3400035001576b9ff6e2}\index{IfExpr@{IfExpr}!clone@{clone}}
+\index{clone@{clone}!IfExpr@{IfExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structIfExpr_a756ef00025dd3400035001576b9ff6e2} 
+Expr\+Ptr If\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

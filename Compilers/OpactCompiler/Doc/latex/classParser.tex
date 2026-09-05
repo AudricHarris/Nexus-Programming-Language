@@ -1,8 +1,92 @@
 \doxysection{Parser Class Reference}
 \hypertarget{classParser}{}\label{classParser}\index{Parser@{Parser}}
-
-
-The documentation for this class was generated from the following files:\+\begin{DoxyCompactItemize}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Parser.\+hpp\item 
-src/\+\+Parser/\+Parser.\+cpp\end{DoxyCompactItemize}
+\Hypertarget{classParser_a6d2ddbf15fbed84da063a214b02958ac}\label{classParser_a6d2ddbf15fbed84da063a214b02958ac} 
+{\bfseries Parser} (std::\+vector$<$ \doxymbox{\hyperlink{classToken}{Token}} $>$ tok, std::\+string path="{}"{}, \doxymbox{\hyperlink{classCompilerPipeline}{Compiler\+Pipeline}} \texorpdfstring{$\ast$}{*}pipe=nullptr)
+\item 
+\Hypertarget{classParser_a8726e43e2634b55e79f7bc88670b26cb}\label{classParser_a8726e43e2634b55e79f7bc88670b26cb} 
+Expr\+Ptr {\bfseries parse\+Module} ()
+\item 
+\Hypertarget{classParser_ad4fb144d148d8dbefdd6d731bc832686}\label{classParser_ad4fb144d148d8dbefdd6d731bc832686} 
+Expr\+Ptr {\bfseries parse\+Top\+Level} ()
+\item 
+\Hypertarget{classParser_a1efa7e01d9060ffdca5065a9f9cc6687}\label{classParser_a1efa7e01d9060ffdca5065a9f9cc6687} 
+Expr\+Ptr {\bfseries parse\+Import} ()
+\item 
+\Hypertarget{classParser_a8e9fd78258bb9117ac9c67ca35d32122}\label{classParser_a8e9fd78258bb9117ac9c67ca35d32122} 
+Expr\+Ptr {\bfseries parse\+Function} (std::\+optional$<$ \doxymbox{\hyperlink{classToken}{Token}} $>$ visib)
+\item 
+\Hypertarget{classParser_aa858d34e90cc3c656fa15ebaec9007ab}\label{classParser_aa858d34e90cc3c656fa15ebaec9007ab} 
+Expr\+Ptr {\bfseries parse\+Block} ()
+\item 
+\Hypertarget{classParser_abb824c4de7b70e13901f07de72c6c4ab}\label{classParser_abb824c4de7b70e13901f07de72c6c4ab} 
+Expr\+Ptr {\bfseries parse\+Expression} ()
+\item 
+\Hypertarget{classParser_a5dbb383062d5a78f5be7622c2b2cb7b6}\label{classParser_a5dbb383062d5a78f5be7622c2b2cb7b6} 
+Expr\+Ptr {\bfseries parse\+If} ()
+\item 
+\Hypertarget{classParser_a993b54d6b61d4d5beeeee34b11cc599e}\label{classParser_a993b54d6b61d4d5beeeee34b11cc599e} 
+Expr\+Ptr {\bfseries parse\+While} ()
+\item 
+\Hypertarget{classParser_a849c4da1cd30944c193007043bc54aa4}\label{classParser_a849c4da1cd30944c193007043bc54aa4} 
+Expr\+Ptr {\bfseries parse\+Loop} ()
+\item 
+\Hypertarget{classParser_a48b33acc02dd6093493988f1215ce802}\label{classParser_a48b33acc02dd6093493988f1215ce802} 
+Expr\+Ptr {\bfseries parse\+Postfix} (Expr\+Ptr expr)
+\item 
+\Hypertarget{classParser_a6eead88e01a3ae2933fe7be1dd8fec85}\label{classParser_a6eead88e01a3ae2933fe7be1dd8fec85} 
+Expr\+Ptr {\bfseries parse\+Call\+Expr} (Expr\+Ptr callee)
+\item 
+\Hypertarget{classParser_a92d880246687115dd5b029de006d09d5}\label{classParser_a92d880246687115dd5b029de006d09d5} 
+Expr\+Ptr {\bfseries parse\+Return} ()
+\item 
+\Hypertarget{classParser_adc1f7920af86aeb0c0fe75bdfc702791}\label{classParser_adc1f7920af86aeb0c0fe75bdfc702791} 
+bool {\bfseries parse\+Is\+Var\+Decl\+Ref} ()
+\item 
+\Hypertarget{classParser_a08c55ecfb3e462c4c7147dcdf19c7732}\label{classParser_a08c55ecfb3e462c4c7147dcdf19c7732} 
+Expr\+Ptr {\bfseries parse\+Var\+Decl} ()
+\item 
+\Hypertarget{classParser_a11c80ae4f6c32aa3f5e825c8ce9255c1}\label{classParser_a11c80ae4f6c32aa3f5e825c8ce9255c1} 
+Expr\+Ptr {\bfseries parse\+Borrow} ()
+\item 
+\Hypertarget{classParser_aea64d532721242ff7c2aeff03736a9b4}\label{classParser_aea64d532721242ff7c2aeff03736a9b4} 
+Expr\+Ptr {\bfseries parse\+Assignement} ()
+\item 
+\Hypertarget{classParser_a746d9622eda7738ce02f4c190f175514}\label{classParser_a746d9622eda7738ce02f4c190f175514} 
+Expr\+Ptr {\bfseries parse\+Or} ()
+\item 
+\Hypertarget{classParser_a95e3e3c82ac03499cf7671a9e7a03b07}\label{classParser_a95e3e3c82ac03499cf7671a9e7a03b07} 
+Expr\+Ptr {\bfseries parse\+And} ()
+\item 
+\Hypertarget{classParser_a23687bf9ddb67ae827e9e9d1d70445b7}\label{classParser_a23687bf9ddb67ae827e9e9d1d70445b7} 
+Expr\+Ptr {\bfseries parse\+Equality} ()
+\item 
+\Hypertarget{classParser_af232a413dd10e2cf9cadc374a9bfcd09}\label{classParser_af232a413dd10e2cf9cadc374a9bfcd09} 
+Expr\+Ptr {\bfseries parse\+Comparison} ()
+\item 
+\Hypertarget{classParser_afd23c370e48d2dfed8ce0d4d577f505c}\label{classParser_afd23c370e48d2dfed8ce0d4d577f505c} 
+Expr\+Ptr {\bfseries parse\+Additive} ()
+\item 
+\Hypertarget{classParser_a0653b594b3ddb73830a6b1dcec742814}\label{classParser_a0653b594b3ddb73830a6b1dcec742814} 
+Expr\+Ptr {\bfseries parse\+Multiplicative} ()
+\item 
+\Hypertarget{classParser_a5abd1b2a24b698f03c57197108a49963}\label{classParser_a5abd1b2a24b698f03c57197108a49963} 
+Expr\+Ptr {\bfseries parse\+Unary} ()
+\item 
+\Hypertarget{classParser_ac78805962e62e8a75ead857451ce76c0}\label{classParser_ac78805962e62e8a75ead857451ce76c0} 
+Expr\+Ptr {\bfseries parse\+Primary} ()
+\end{DoxyCompactItemize}
+\doxysubsubsection*{Protected Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{classParser_a0b291d69599c11db2077222ca385f298}\label{classParser_a0b291d69599c11db2077222ca385f298} 
+void {\bfseries synchronize} ()
+\end{DoxyCompactItemize}
+
+
+The documentation for this class was generated from the following files:\begin{DoxyCompactItemize}
+\item 
+src/\+\+Parser/Parser.\+hpp\item 
+src/\+\+Parser/Parser.\+cpp\end{DoxyCompactItemize}

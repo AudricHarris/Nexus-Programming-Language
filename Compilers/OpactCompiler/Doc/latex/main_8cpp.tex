@@ -14,18 +14,14 @@ Starting script and main manager for compiler.
 \doxysubsubsection*{Functions}
 \begin{DoxyCompactItemize}
 \item 
-\Hypertarget{main_8cpp_a7007c1e439369ac599ebe014de249392}\label{main_8cpp_a7007c1e439369ac599ebe014de249392} 
-std::\+string {\bfseries get\+Home\+Directory} ()
-\item 
-\Hypertarget{main_8cpp_a292ed4cafa60e6c29e81b435e518c957}\label{main_8cpp_a292ed4cafa60e6c29e81b435e518c957} 
-fs::\+path {\bfseries get\+Config\+Dir} ()
-\item 
-\Hypertarget{main_8cpp_a713373507ec8485d5466e3f4fcdaefa1}\label{main_8cpp_a713373507ec8485d5466e3f4fcdaefa1} 
-bool {\bfseries ends\+With} (const std::\+string \&str, const std::\+string \&suffix)
-\item 
-\Hypertarget{main_8cpp_a88d0087c615a374ea33e8f79645ea376}\label{main_8cpp_a88d0087c615a374ea33e8f79645ea376} 
-bool {\bfseries has\+Valid\+Ext} (const std::\+string \&f)
-\item 
+std::\+string \doxymbox{\hyperlink{main_8cpp_a7007c1e439369ac599ebe014de249392}{get\+Home\+Directory}} ()
+\begin{DoxyCompactList}\small\item\em get\textquotesingle{}s the correct home directory depending on the OS \end{DoxyCompactList}\item 
+fs::\+path \doxymbox{\hyperlink{main_8cpp_a292ed4cafa60e6c29e81b435e518c957}{get\+Config\+Dir}} ()
+\begin{DoxyCompactList}\small\item\em get\textquotesingle{}s the config directory \end{DoxyCompactList}\item 
+bool \doxymbox{\hyperlink{main_8cpp_a713373507ec8485d5466e3f4fcdaefa1}{ends\+With}} (const std::\+string \&str, const std::\+string \&suffix)
+\begin{DoxyCompactList}\small\item\em determines if the file ends with a given extension \end{DoxyCompactList}\item 
+bool \doxymbox{\hyperlink{main_8cpp_a88d0087c615a374ea33e8f79645ea376}{has\+Valid\+Ext}} (const std::\+string \&f)
+\begin{DoxyCompactList}\small\item\em Detrermines if the extension is part of the valid ones I chose. \end{DoxyCompactList}\item 
 \Hypertarget{main_8cpp_a7f9ffb726bac1fb201915cc04d8e5888}\label{main_8cpp_a7f9ffb726bac1fb201915cc04d8e5888} 
 std::\+string {\bfseries get\+Output\+Name} (const std::\+string \&file)
 \item 
@@ -38,20 +34,76 @@ Starting script and main manager for compiler.
 
 
 
-\label{doc-func-members}
+\label{main_8cpp_doc-func-members}
 \Hypertarget{main_8cpp_doc-func-members}
 \doxysubsection{Function Documentation}
+\Hypertarget{main_8cpp_a713373507ec8485d5466e3f4fcdaefa1}\index{main.cpp@{main.cpp}!endsWith@{endsWith}}
+\index{endsWith@{endsWith}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{endsWith()}{endsWith()}}
+{\footnotesize\ttfamily \label{main_8cpp_a713373507ec8485d5466e3f4fcdaefa1} 
+bool ends\+With (\begin{DoxyParamCaption}\item[{const std::\+string \&}]{str}{, }\item[{const std::\+string \&}]{suffix}{}\end{DoxyParamCaption})}
+
+
+
+determines if the file ends with a given extension 
+
+\begin{DoxyReturn}{Returns}
+bool : if it ends or not with the extension 
+\end{DoxyReturn}
+\Hypertarget{main_8cpp_a292ed4cafa60e6c29e81b435e518c957}\index{main.cpp@{main.cpp}!getConfigDir@{getConfigDir}}
+\index{getConfigDir@{getConfigDir}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{getConfigDir()}{getConfigDir()}}
+{\footnotesize\ttfamily \label{main_8cpp_a292ed4cafa60e6c29e81b435e518c957} 
+fs::\+path get\+Config\+Dir (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})}
+
+
+
+get\textquotesingle{}s the config directory 
+
+based on your os it gives you the correct path for your Operating system .config appdata\%
+
+\begin{DoxyReturn}{Returns}
+fs::\+path : returns the path of config 
+\end{DoxyReturn}
+\Hypertarget{main_8cpp_a7007c1e439369ac599ebe014de249392}\index{main.cpp@{main.cpp}!getHomeDirectory@{getHomeDirectory}}
+\index{getHomeDirectory@{getHomeDirectory}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{getHomeDirectory()}{getHomeDirectory()}}
+{\footnotesize\ttfamily \label{main_8cpp_a7007c1e439369ac599ebe014de249392} 
+std::\+string get\+Home\+Directory (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})}
+
+
+
+get\textquotesingle{}s the correct home directory depending on the OS 
+
+The actual function uses a check for win32 and returns the path of the home env if it\textquotesingle{}s linux we just get the home path directly with getenv
+
+\begin{DoxyReturn}{Returns}
+string :the path of home directory 
+\end{DoxyReturn}
+\Hypertarget{main_8cpp_a88d0087c615a374ea33e8f79645ea376}\index{main.cpp@{main.cpp}!hasValidExt@{hasValidExt}}
+\index{hasValidExt@{hasValidExt}!main.cpp@{main.cpp}}
+\doxysubsubsection{\texorpdfstring{hasValidExt()}{hasValidExt()}}
+{\footnotesize\ttfamily \label{main_8cpp_a88d0087c615a374ea33e8f79645ea376} 
+bool has\+Valid\+Ext (\begin{DoxyParamCaption}\item[{const std::\+string \&}]{f}{}\end{DoxyParamCaption})}
+
+
+
+Detrermines if the extension is part of the valid ones I chose. 
+
+\begin{DoxyReturn}{Returns}
+bool : if it ends with .op 
+\end{DoxyReturn}
 \Hypertarget{main_8cpp_a0ddf1224851353fc92bfbff6f499fa97}\index{main.cpp@{main.cpp}!main@{main}}
 \index{main@{main}!main.cpp@{main.cpp}}
 \doxysubsubsection{\texorpdfstring{main()}{main()}}
 {\footnotesize\ttfamily \label{main_8cpp_a0ddf1224851353fc92bfbff6f499fa97} 
-int main (\begin{DoxyParamCaption}\item[{int}]{argc}{, }\item[{char \texorpdfstring{$\ast$}{*}}]{argv}{\+[$\,$]\+}\end{DoxyParamCaption})}
+int main (\begin{DoxyParamCaption}\item[{int}]{argc}{, }\item[{char \texorpdfstring{$\ast$}{*}}]{argv}{\+[$\,$]}\end{DoxyParamCaption})}
 
 
 
 Start of the compiler. 
 
-This allows to do different commands and modes for the compiler. Example :\+ version, project file. This also does a check if the file is valid correct extension and exist.
+This allows to do different commands and modes for the compiler. Example : version, project file. This also does a check if the file is valid correct extension and exist.
 
 
 \begin{DoxyParams}{Parameters}

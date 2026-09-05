@@ -1,21 +1,27 @@
 var hierarchy =
 [
+    [ "ASTVisitor", "structASTVisitor.html", null ],
     [ "CompilerPipeline", "classCompilerPipeline.html", null ],
     [ "Expression", "structExpression.html", [
+      [ "ArrayIndexExpr", "structArrayIndexExpr.html", null ],
       [ "ArrayLiteralExpr", "structArrayLiteralExpr.html", null ],
       [ "AssignExpr", "structAssignExpr.html", null ],
       [ "BinaryExpr", "structBinaryExpr.html", null ],
       [ "Block", "structBlock.html", null ],
+      [ "BorrowExpr", "structBorrowExpr.html", null ],
       [ "BreakExpr", "structBreakExpr.html", null ],
       [ "CallExpr", "structCallExpr.html", null ],
       [ "CastExpr", "structCastExpr.html", null ],
       [ "ContinueExpr", "structContinueExpr.html", null ],
+      [ "FunctionDeclExpr", "structFunctionDeclExpr.html", null ],
       [ "GenericCallExpr", "structGenericCallExpr.html", null ],
       [ "IdentifierExpr", "structIdentifierExpr.html", null ],
       [ "IfExpr", "structIfExpr.html", null ],
-      [ "IndexExpr", "structIndexExpr.html", null ],
+      [ "ImportExpr", "structImportExpr.html", null ],
       [ "LiteralExpr", "structLiteralExpr.html", null ],
+      [ "LoopExpr", "structLoopExpr.html", null ],
       [ "MemberAccessExpr", "structMemberAccessExpr.html", null ],
+      [ "PostfixExpr", "structPostfixExpr.html", null ],
       [ "ReturnExpr", "structReturnExpr.html", null ],
       [ "TupleLiteralExpr", "structTupleLiteralExpr.html", null ],
       [ "UnaryExpr", "structUnaryExpr.html", null ],
@@ -23,11 +29,11 @@ var hierarchy =
       [ "WhileExpr", "structWhileExpr.html", null ],
       [ "YieldExpr", "structYieldExpr.html", null ]
     ] ],
+    [ "ImportPath", "structImportPath.html", null ],
     [ "Lexer", "classLexer.html", null ],
     [ "Module", "structModule.html", null ],
+    [ "Parameter", "structParameter.html", null ],
     [ "Parser", "classParser.html", null ],
     [ "Token", "classToken.html", null ],
-    [ "TokenInfo", "structTokenInfo.html", null ],
-    [ "TokenTable", "classTokenTable.html", null ],
     [ "TypeDesc", "structTypeDesc.html", null ]
 ];

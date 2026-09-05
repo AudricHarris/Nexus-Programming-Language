@@ -1,22 +1,57 @@
 \doxysection{Member\+Access\+Expr Struct Reference}
 \hypertarget{structMemberAccessExpr}{}\label{structMemberAccessExpr}\index{MemberAccessExpr@{MemberAccessExpr}}
-Inheritance diagram for Member\+Access\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Member\+Access\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structMemberAccessExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structMemberAccessExpr_a819bcb8623552719173a25e76d0d1540}\label{structMemberAccessExpr_a819bcb8623552719173a25e76d0d1540} 
+{\bfseries Member\+Access\+Expr} (Expr\+Ptr object, std::\+string member\+Name)
+\item 
+void \doxymbox{\hyperlink{structMemberAccessExpr_a7ce74bf59ac790906a9f32762456ae87}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structMemberAccessExpr_abb7cb6788ede99f6a6ae8e0d6093bba7}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
 \Hypertarget{structMemberAccessExpr_a8fbc6bc6b3f787698f9c276383f100eb}\label{structMemberAccessExpr_a8fbc6bc6b3f787698f9c276383f100eb} 
 Expr\+Ptr {\bfseries object}
 \item 
-\Hypertarget{structMemberAccessExpr_abc038fad83f914da93e352938a6d10c4}\label{structMemberAccessExpr_abc038fad83f914da93e352938a6d10c4} 
-\doxymbox{\hyperlink{classToken}{Token}} {\bfseries member\+Name}
+\Hypertarget{structMemberAccessExpr_a495c0a3896d8c4a23d5183b1079eb069}\label{structMemberAccessExpr_a495c0a3896d8c4a23d5183b1079eb069} 
+std::\+string {\bfseries member\+Name}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structMemberAccessExpr_doc-func-members}
+\Hypertarget{structMemberAccessExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structMemberAccessExpr_a7ce74bf59ac790906a9f32762456ae87}\index{MemberAccessExpr@{MemberAccessExpr}!accept@{accept}}
+\index{accept@{accept}!MemberAccessExpr@{MemberAccessExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structMemberAccessExpr_a7ce74bf59ac790906a9f32762456ae87} 
+void Member\+Access\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structMemberAccessExpr_abb7cb6788ede99f6a6ae8e0d6093bba7}\index{MemberAccessExpr@{MemberAccessExpr}!clone@{clone}}
+\index{clone@{clone}!MemberAccessExpr@{MemberAccessExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structMemberAccessExpr_abb7cb6788ede99f6a6ae8e0d6093bba7} 
+Expr\+Ptr Member\+Access\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

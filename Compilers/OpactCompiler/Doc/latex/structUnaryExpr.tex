@@ -1,11 +1,21 @@
 \doxysection{Unary\+Expr Struct Reference}
 \hypertarget{structUnaryExpr}{}\label{structUnaryExpr}\index{UnaryExpr@{UnaryExpr}}
-Inheritance diagram for Unary\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Unary\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structUnaryExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structUnaryExpr_ad9e366af9c3448cfda1f939e8130508d}\label{structUnaryExpr_ad9e366af9c3448cfda1f939e8130508d} 
+{\bfseries Unary\+Expr} (Unary\+Op op, Expr\+Ptr expr)
+\item 
+void \doxymbox{\hyperlink{structUnaryExpr_a3bf4f6c8e07a369b90c1b48bd628c484}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structUnaryExpr_a2f88af210474aee37c2414c8ec8ec908}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -17,6 +27,31 @@ Expr\+Ptr {\bfseries expr}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structUnaryExpr_doc-func-members}
+\Hypertarget{structUnaryExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structUnaryExpr_a3bf4f6c8e07a369b90c1b48bd628c484}\index{UnaryExpr@{UnaryExpr}!accept@{accept}}
+\index{accept@{accept}!UnaryExpr@{UnaryExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structUnaryExpr_a3bf4f6c8e07a369b90c1b48bd628c484} 
+void Unary\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structUnaryExpr_a2f88af210474aee37c2414c8ec8ec908}\index{UnaryExpr@{UnaryExpr}!clone@{clone}}
+\index{clone@{clone}!UnaryExpr@{UnaryExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structUnaryExpr_a2f88af210474aee37c2414c8ec8ec908} 
+Expr\+Ptr Unary\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

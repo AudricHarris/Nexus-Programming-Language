@@ -1,11 +1,21 @@
 \doxysection{Literal\+Expr Struct Reference}
 \hypertarget{structLiteralExpr}{}\label{structLiteralExpr}\index{LiteralExpr@{LiteralExpr}}
-Inheritance diagram for Literal\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Literal\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structLiteralExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structLiteralExpr_a5e3af7cbee924a5ba90b0f4e1f314936}\label{structLiteralExpr_a5e3af7cbee924a5ba90b0f4e1f314936} 
+{\bfseries Literal\+Expr} (Literal\+Kind kind, \doxymbox{\hyperlink{classToken}{Token}} lit, Numeric\+Base base=Numeric\+Base::\+\+Decimal)
+\item 
+void \doxymbox{\hyperlink{structLiteralExpr_aa8078182af39e4212c89f8d8365b080a}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structLiteralExpr_a30b364877da7728aba3c8a4cdfce8394}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -20,6 +30,31 @@ Numeric\+Base {\bfseries base} = Numeric\+Base::\+\+Decimal
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structLiteralExpr_doc-func-members}
+\Hypertarget{structLiteralExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structLiteralExpr_aa8078182af39e4212c89f8d8365b080a}\index{LiteralExpr@{LiteralExpr}!accept@{accept}}
+\index{accept@{accept}!LiteralExpr@{LiteralExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structLiteralExpr_aa8078182af39e4212c89f8d8365b080a} 
+void Literal\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structLiteralExpr_a30b364877da7728aba3c8a4cdfce8394}\index{LiteralExpr@{LiteralExpr}!clone@{clone}}
+\index{clone@{clone}!LiteralExpr@{LiteralExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structLiteralExpr_a30b364877da7728aba3c8a4cdfce8394} 
+Expr\+Ptr Literal\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

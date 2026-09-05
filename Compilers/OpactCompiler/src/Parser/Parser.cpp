@@ -69,7 +69,7 @@ std::string Parser::generateError(TokenKind kind, std::string errorMsg)
 	std::string formattedError = "\033[31m[Parse Error] Line " + 
 		std::to_string(peek().getLine()) + ":" + 
 		std::to_string(peek().getColumn()) + 
-		" - " + errorMsg + "\033[0m";
+		" - " + errorMsg + "\033[0m\n";
 
 	return formattedError;
 }

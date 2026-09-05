@@ -4,28 +4,6 @@
 #include <string_view>
 #include <unordered_map>
 
-class TokenTable {
-	private:
-		static TokenInfo table[];
-
-	public:
-		static const TokenInfo &getInfo(TokenKind k) {
-			return TokenTable::table[static_cast<int>(k)];
-		}
-
-		static std::optional<TokenKind> getKindFromSpelling(std::string_view s) {
-			static const std::unordered_map<std::string_view, TokenKind> keywordMap = {
-				{"i32", TokenKind::IDENTIFIER},
-				{"return", TokenKind::RETURN},
-			};
-
-			auto it = keywordMap.find(s);
-			if (it != keywordMap.end())
-				return it->second;
-
-			return std::nullopt;
-		}
-};
 
 // This only serves for debugging //
 std::string Token::toString() {

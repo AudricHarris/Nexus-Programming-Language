@@ -1,0 +1,60 @@
+\doxysection{Import\+Expr Struct Reference}
+\hypertarget{structImportExpr}{}\label{structImportExpr}\index{ImportExpr@{ImportExpr}}
+Inheritance diagram for Import\+Expr:\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=2.000000cm]{structImportExpr}
+\end{center}
+\end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structImportExpr_ac6013fbff692ffe6ec340b4bea880771}\label{structImportExpr_ac6013fbff692ffe6ec340b4bea880771} 
+{\bfseries Import\+Expr} (\doxymbox{\hyperlink{structImportPath}{Import\+Path}} path=\{\}, std::\+vector$<$ std::\+string $>$ imported\+Symbols=\{\}, bool is\+Selective\+Import=false)
+\item 
+void \doxymbox{\hyperlink{structImportExpr_ac44979d7a6b678bab573ccb6159f91bb}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structImportExpr_aed80a2425b619ea41c17646650449518}{clone}} () const override
+\end{DoxyCompactItemize}
+\doxysubsubsection*{Public Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structImportExpr_adda373b539116a981f8d234b844a2841}\label{structImportExpr_adda373b539116a981f8d234b844a2841} 
+\doxymbox{\hyperlink{structImportPath}{Import\+Path}} {\bfseries path}
+\item 
+\Hypertarget{structImportExpr_a78fd3e6b4f943112b053e072b8c1563f}\label{structImportExpr_a78fd3e6b4f943112b053e072b8c1563f} 
+std::\+vector$<$ std::\+string $>$ {\bfseries imported\+Symbols}
+\item 
+\Hypertarget{structImportExpr_a86e52db4140943815b5fada78a5d5ca3}\label{structImportExpr_a86e52db4140943815b5fada78a5d5ca3} 
+bool {\bfseries is\+Selective\+Import} = false
+\end{DoxyCompactItemize}
+
+
+\label{structImportExpr_doc-func-members}
+\Hypertarget{structImportExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structImportExpr_ac44979d7a6b678bab573ccb6159f91bb}\index{ImportExpr@{ImportExpr}!accept@{accept}}
+\index{accept@{accept}!ImportExpr@{ImportExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structImportExpr_ac44979d7a6b678bab573ccb6159f91bb} 
+void Import\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structImportExpr_aed80a2425b619ea41c17646650449518}\index{ImportExpr@{ImportExpr}!clone@{clone}}
+\index{clone@{clone}!ImportExpr@{ImportExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structImportExpr_aed80a2425b619ea41c17646650449518} 
+Expr\+Ptr Import\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
+\item 
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

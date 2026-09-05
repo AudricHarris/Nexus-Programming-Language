@@ -4,10 +4,10 @@
 \begin{DoxyCompactItemize}
 \item 
 \Hypertarget{classToken_a4ae118fd4c4b6184cc4470fe04e055cf}\label{classToken_a4ae118fd4c4b6184cc4470fe04e055cf} 
-{\bfseries Token} (Token\+Kind k, std::\+string\+\_\+view w, int l, int c)
+{\bfseries Token} (\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{Token\+Kind}} k, std::\+string\+\_\+view w, int l, int c)
 \item 
 \Hypertarget{classToken_afba4cee63a95d94c4a50d541ee77f1d0}\label{classToken_afba4cee63a95d94c4a50d541ee77f1d0} 
-Token\+Kind {\bfseries get\+Kind} () const
+\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{Token\+Kind}} {\bfseries get\+Kind} () const
 \item 
 \Hypertarget{classToken_a511f66ff8f632f4966e959c22e46762d}\label{classToken_a511f66ff8f632f4966e959c22e46762d} 
 std::\+string {\bfseries get\+Word} () const
@@ -23,7 +23,16 @@ std::\+string {\bfseries to\+String} ()
 \end{DoxyCompactItemize}
 
 
-The documentation for this class was generated from the following files:\+\begin{DoxyCompactItemize}
+\doxysubsection{Detailed Description}
+physical token
+
+It contains a few attributes to extract kind of token, word it contains, the line it is at. It also contains a method allowing to extract name from \doxylink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{Token\+Kind}
+
+@attributes kind : The token kind it is @attributes word : physical word that the token is @attributes line : the line the token is at (usefull for debugging) @attributes column : the column the token is at (usefull for debugging)
+
+@method get\+Kind : returns the token Kind @method get\+Word : returns the word @method get\+Line : returns the line @method get\+Column : returns the column @method to\+String : returns a string format of token Kind (mostly visual) 
+
+The documentation for this class was generated from the following files:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Token/\+Token\+Type.\+hpp\item 
-src/\+\+Token/\+Token\+Table.\+cpp\end{DoxyCompactItemize}
+src/\+\+Token/\doxymbox{\hyperlink{TokenType_8hpp}{Token\+Type.\+hpp}}\item 
+src/\+\+Token/Token\+Table.\+cpp\end{DoxyCompactItemize}

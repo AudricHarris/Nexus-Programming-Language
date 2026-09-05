@@ -1,11 +1,21 @@
 \doxysection{Cast\+Expr Struct Reference}
 \hypertarget{structCastExpr}{}\label{structCastExpr}\index{CastExpr@{CastExpr}}
-Inheritance diagram for Cast\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Cast\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structCastExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structCastExpr_afed1a6ab287c09a48671ae9f6618660b}\label{structCastExpr_afed1a6ab287c09a48671ae9f6618660b} 
+{\bfseries Cast\+Expr} (Expr\+Ptr expr, \doxymbox{\hyperlink{structTypeDesc}{Type\+Desc}} cast\+Type)
+\item 
+void \doxymbox{\hyperlink{structCastExpr_af406d64a582e555fbe1b2cf1d71687ff}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structCastExpr_a62c7989dbb4796c9e7dbfe357d1ea408}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -17,6 +27,31 @@ Expr\+Ptr {\bfseries expr}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structCastExpr_doc-func-members}
+\Hypertarget{structCastExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structCastExpr_af406d64a582e555fbe1b2cf1d71687ff}\index{CastExpr@{CastExpr}!accept@{accept}}
+\index{accept@{accept}!CastExpr@{CastExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structCastExpr_af406d64a582e555fbe1b2cf1d71687ff} 
+void Cast\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structCastExpr_a62c7989dbb4796c9e7dbfe357d1ea408}\index{CastExpr@{CastExpr}!clone@{clone}}
+\index{clone@{clone}!CastExpr@{CastExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structCastExpr_a62c7989dbb4796c9e7dbfe357d1ea408} 
+Expr\+Ptr Cast\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

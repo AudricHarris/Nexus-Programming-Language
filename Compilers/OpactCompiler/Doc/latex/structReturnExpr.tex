@@ -1,11 +1,21 @@
 \doxysection{Return\+Expr Struct Reference}
 \hypertarget{structReturnExpr}{}\label{structReturnExpr}\index{ReturnExpr@{ReturnExpr}}
-Inheritance diagram for Return\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Return\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structReturnExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structReturnExpr_a1cfc6ed425fab498c59695eff14f21eb}\label{structReturnExpr_a1cfc6ed425fab498c59695eff14f21eb} 
+{\bfseries Return\+Expr} (std::\+optional$<$ Expr\+Ptr $>$ value=std::\+nullopt)
+\item 
+void \doxymbox{\hyperlink{structReturnExpr_a39984e94c895119575dc556c5a9c536f}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structReturnExpr_aab182692f2c6601275daab86eda562f3}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -14,6 +24,31 @@ std::\+optional$<$ Expr\+Ptr $>$ {\bfseries value}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structReturnExpr_doc-func-members}
+\Hypertarget{structReturnExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structReturnExpr_a39984e94c895119575dc556c5a9c536f}\index{ReturnExpr@{ReturnExpr}!accept@{accept}}
+\index{accept@{accept}!ReturnExpr@{ReturnExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structReturnExpr_a39984e94c895119575dc556c5a9c536f} 
+void Return\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structReturnExpr_aab182692f2c6601275daab86eda562f3}\index{ReturnExpr@{ReturnExpr}!clone@{clone}}
+\index{clone@{clone}!ReturnExpr@{ReturnExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structReturnExpr_aab182692f2c6601275daab86eda562f3} 
+Expr\+Ptr Return\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

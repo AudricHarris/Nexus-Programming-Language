@@ -1,25 +1,60 @@
 \doxysection{Var\+Decl\+Expr Struct Reference}
 \hypertarget{structVarDeclExpr}{}\label{structVarDeclExpr}\index{VarDeclExpr@{VarDeclExpr}}
-Inheritance diagram for Var\+Decl\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Var\+Decl\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structVarDeclExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structVarDeclExpr_a359d70aca61199b16f26f292ef3d3a3d}\label{structVarDeclExpr_a359d70aca61199b16f26f292ef3d3a3d} 
+{\bfseries Var\+Decl\+Expr} (\doxymbox{\hyperlink{classToken}{Token}} name, \doxymbox{\hyperlink{structTypeDesc}{Type\+Desc}} type, Expr\+Ptr expr=nullptr)
+\item 
+void \doxymbox{\hyperlink{structVarDeclExpr_ab29c3b8d294073e9006fcfb40d4ea65f}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structVarDeclExpr_a0cfc1c502be38da25c064fe829b58a7f}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
 \Hypertarget{structVarDeclExpr_ac9e81f288fb4ec7f403c842334cb158e}\label{structVarDeclExpr_ac9e81f288fb4ec7f403c842334cb158e} 
 \doxymbox{\hyperlink{classToken}{Token}} {\bfseries name}
 \item 
-\Hypertarget{structVarDeclExpr_ab5b01e9f0c746fd26f07ae4b893d4027}\label{structVarDeclExpr_ab5b01e9f0c746fd26f07ae4b893d4027} 
-std::\+optional$<$ \doxymbox{\hyperlink{structTypeDesc}{Type\+Desc}} $>$ {\bfseries type}
+\Hypertarget{structVarDeclExpr_a3bf11ff983a1870fe2ee6f4598459f27}\label{structVarDeclExpr_a3bf11ff983a1870fe2ee6f4598459f27} 
+\doxymbox{\hyperlink{structTypeDesc}{Type\+Desc}} {\bfseries type}
 \item 
 \Hypertarget{structVarDeclExpr_a4ff85d83f3b6f3cab52b8b4276a6976b}\label{structVarDeclExpr_a4ff85d83f3b6f3cab52b8b4276a6976b} 
 Expr\+Ptr {\bfseries expr}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structVarDeclExpr_doc-func-members}
+\Hypertarget{structVarDeclExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structVarDeclExpr_ab29c3b8d294073e9006fcfb40d4ea65f}\index{VarDeclExpr@{VarDeclExpr}!accept@{accept}}
+\index{accept@{accept}!VarDeclExpr@{VarDeclExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structVarDeclExpr_ab29c3b8d294073e9006fcfb40d4ea65f} 
+void Var\+Decl\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structVarDeclExpr_a0cfc1c502be38da25c064fe829b58a7f}\index{VarDeclExpr@{VarDeclExpr}!clone@{clone}}
+\index{clone@{clone}!VarDeclExpr@{VarDeclExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structVarDeclExpr_a0cfc1c502be38da25c064fe829b58a7f} 
+Expr\+Ptr Var\+Decl\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

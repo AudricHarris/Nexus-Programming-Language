@@ -1,0 +1,57 @@
+\doxysection{Postfix\+Expr Struct Reference}
+\hypertarget{structPostfixExpr}{}\label{structPostfixExpr}\index{PostfixExpr@{PostfixExpr}}
+Inheritance diagram for Postfix\+Expr:\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=2.000000cm]{structPostfixExpr}
+\end{center}
+\end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structPostfixExpr_a84968cfc6ea8372a1e4ed2d06e1fe03f}\label{structPostfixExpr_a84968cfc6ea8372a1e4ed2d06e1fe03f} 
+{\bfseries Postfix\+Expr} (Postfix\+Op op, Expr\+Ptr expr)
+\item 
+void \doxymbox{\hyperlink{structPostfixExpr_ab6bb7211b6b6d2c960e80f33d44f94c6}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structPostfixExpr_a1bc636df6f8857aaef88666ea2ff9b5a}{clone}} () const override
+\end{DoxyCompactItemize}
+\doxysubsubsection*{Public Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structPostfixExpr_a1b38cab9464232508368320c4db9a958}\label{structPostfixExpr_a1b38cab9464232508368320c4db9a958} 
+Postfix\+Op {\bfseries op}
+\item 
+\Hypertarget{structPostfixExpr_ada30751c5c89e1af9b2e68a90bf7be70}\label{structPostfixExpr_ada30751c5c89e1af9b2e68a90bf7be70} 
+Expr\+Ptr {\bfseries expr}
+\end{DoxyCompactItemize}
+
+
+\label{structPostfixExpr_doc-func-members}
+\Hypertarget{structPostfixExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structPostfixExpr_ab6bb7211b6b6d2c960e80f33d44f94c6}\index{PostfixExpr@{PostfixExpr}!accept@{accept}}
+\index{accept@{accept}!PostfixExpr@{PostfixExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structPostfixExpr_ab6bb7211b6b6d2c960e80f33d44f94c6} 
+void Postfix\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structPostfixExpr_a1bc636df6f8857aaef88666ea2ff9b5a}\index{PostfixExpr@{PostfixExpr}!clone@{clone}}
+\index{clone@{clone}!PostfixExpr@{PostfixExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structPostfixExpr_a1bc636df6f8857aaef88666ea2ff9b5a} 
+Expr\+Ptr Postfix\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
+\item 
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

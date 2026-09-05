@@ -1,11 +1,21 @@
 \doxysection{Yield\+Expr Struct Reference}
 \hypertarget{structYieldExpr}{}\label{structYieldExpr}\index{YieldExpr@{YieldExpr}}
-Inheritance diagram for Yield\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Yield\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structYieldExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structYieldExpr_a1db25a4942ebda5bee70788efc00be02}\label{structYieldExpr_a1db25a4942ebda5bee70788efc00be02} 
+{\bfseries Yield\+Expr} (Expr\+Ptr expr)
+\item 
+void \doxymbox{\hyperlink{structYieldExpr_a02ca2aba1b0016e83908fd8e336bd641}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structYieldExpr_a6c7288bfda65e12ee5a756fa8be9fa23}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -14,6 +24,31 @@ Expr\+Ptr {\bfseries expr}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structYieldExpr_doc-func-members}
+\Hypertarget{structYieldExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structYieldExpr_a02ca2aba1b0016e83908fd8e336bd641}\index{YieldExpr@{YieldExpr}!accept@{accept}}
+\index{accept@{accept}!YieldExpr@{YieldExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structYieldExpr_a02ca2aba1b0016e83908fd8e336bd641} 
+void Yield\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structYieldExpr_a6c7288bfda65e12ee5a756fa8be9fa23}\index{YieldExpr@{YieldExpr}!clone@{clone}}
+\index{clone@{clone}!YieldExpr@{YieldExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structYieldExpr_a6c7288bfda65e12ee5a756fa8be9fa23} 
+Expr\+Ptr Yield\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

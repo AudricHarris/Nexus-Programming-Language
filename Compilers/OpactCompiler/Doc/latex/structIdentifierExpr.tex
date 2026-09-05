@@ -1,19 +1,54 @@
 \doxysection{Identifier\+Expr Struct Reference}
 \hypertarget{structIdentifierExpr}{}\label{structIdentifierExpr}\index{IdentifierExpr@{IdentifierExpr}}
-Inheritance diagram for Identifier\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Identifier\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structIdentifierExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structIdentifierExpr_a209ee26032a75a8097c4de2faf24fa8e}\label{structIdentifierExpr_a209ee26032a75a8097c4de2faf24fa8e} 
+{\bfseries Identifier\+Expr} (std::\+string name)
+\item 
+void \doxymbox{\hyperlink{structIdentifierExpr_ab55c09fec95f3159cba0ba64f9b73c37}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structIdentifierExpr_aec3a56fbd5f13adb8bbc33d54b295e4c}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
-\Hypertarget{structIdentifierExpr_a46c27463b73f8ebcba2224aa50598b0c}\label{structIdentifierExpr_a46c27463b73f8ebcba2224aa50598b0c} 
-\doxymbox{\hyperlink{classToken}{Token}} {\bfseries name}
+\Hypertarget{structIdentifierExpr_a9d84750a5848388995e037eac8011471}\label{structIdentifierExpr_a9d84750a5848388995e037eac8011471} 
+std::\+string {\bfseries name}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structIdentifierExpr_doc-func-members}
+\Hypertarget{structIdentifierExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structIdentifierExpr_ab55c09fec95f3159cba0ba64f9b73c37}\index{IdentifierExpr@{IdentifierExpr}!accept@{accept}}
+\index{accept@{accept}!IdentifierExpr@{IdentifierExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structIdentifierExpr_ab55c09fec95f3159cba0ba64f9b73c37} 
+void Identifier\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structIdentifierExpr_aec3a56fbd5f13adb8bbc33d54b295e4c}\index{IdentifierExpr@{IdentifierExpr}!clone@{clone}}
+\index{clone@{clone}!IdentifierExpr@{IdentifierExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structIdentifierExpr_aec3a56fbd5f13adb8bbc33d54b295e4c} 
+Expr\+Ptr Identifier\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

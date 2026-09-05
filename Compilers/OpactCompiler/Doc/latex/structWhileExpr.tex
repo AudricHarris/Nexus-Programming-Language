@@ -1,22 +1,57 @@
 \doxysection{While\+Expr Struct Reference}
 \hypertarget{structWhileExpr}{}\label{structWhileExpr}\index{WhileExpr@{WhileExpr}}
-Inheritance diagram for While\+Expr:\+\begin{figure}[H]
+Inheritance diagram for While\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structWhileExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structWhileExpr_a879b885ecd647fa2cb935baf8ff609aa}\label{structWhileExpr_a879b885ecd647fa2cb935baf8ff609aa} 
+{\bfseries While\+Expr} (Expr\+Ptr condition=nullptr, Expr\+Ptr loop\+Branch=nullptr)
+\item 
+void \doxymbox{\hyperlink{structWhileExpr_a6909f5eae19436ffd79707243474df84}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structWhileExpr_aac706b0595c9f1c69fb2e552642f95c2}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
 \Hypertarget{structWhileExpr_a47dcab2ef4501463ff2f2239b7c4be43}\label{structWhileExpr_a47dcab2ef4501463ff2f2239b7c4be43} 
 Expr\+Ptr {\bfseries condition}
 \item 
-\Hypertarget{structWhileExpr_adfd1d4c45e7ee91726fdff55ef1539b1}\label{structWhileExpr_adfd1d4c45e7ee91726fdff55ef1539b1} 
-std::\+unique\+\_\+ptr$<$ \doxymbox{\hyperlink{structBlock}{Block}} $>$ {\bfseries loop\+Branch}
+\Hypertarget{structWhileExpr_ab489171d1a6646c8ecbb4c3d8491606d}\label{structWhileExpr_ab489171d1a6646c8ecbb4c3d8491606d} 
+Expr\+Ptr {\bfseries loop\+Branch}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structWhileExpr_doc-func-members}
+\Hypertarget{structWhileExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structWhileExpr_a6909f5eae19436ffd79707243474df84}\index{WhileExpr@{WhileExpr}!accept@{accept}}
+\index{accept@{accept}!WhileExpr@{WhileExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structWhileExpr_a6909f5eae19436ffd79707243474df84} 
+void While\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structWhileExpr_aac706b0595c9f1c69fb2e552642f95c2}\index{WhileExpr@{WhileExpr}!clone@{clone}}
+\index{clone@{clone}!WhileExpr@{WhileExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structWhileExpr_aac706b0595c9f1c69fb2e552642f95c2} 
+Expr\+Ptr While\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

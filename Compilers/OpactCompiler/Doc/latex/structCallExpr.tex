@@ -1,11 +1,21 @@
 \doxysection{Call\+Expr Struct Reference}
 \hypertarget{structCallExpr}{}\label{structCallExpr}\index{CallExpr@{CallExpr}}
-Inheritance diagram for Call\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Call\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structCallExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structCallExpr_a83d5d83cbca0aaad7432337f44160d14}\label{structCallExpr_a83d5d83cbca0aaad7432337f44160d14} 
+{\bfseries Call\+Expr} (Expr\+Ptr callee=nullptr, std::\+vector$<$ Expr\+Ptr $>$ arguments=\{\})
+\item 
+void \doxymbox{\hyperlink{structCallExpr_ac319d41908344da1575600c5d273dc6c}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structCallExpr_a8a4d8ff378d75c46f7983d2763517d09}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -17,6 +27,31 @@ std::\+vector$<$ Expr\+Ptr $>$ {\bfseries arguments}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structCallExpr_doc-func-members}
+\Hypertarget{structCallExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structCallExpr_ac319d41908344da1575600c5d273dc6c}\index{CallExpr@{CallExpr}!accept@{accept}}
+\index{accept@{accept}!CallExpr@{CallExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structCallExpr_ac319d41908344da1575600c5d273dc6c} 
+void Call\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structCallExpr_a8a4d8ff378d75c46f7983d2763517d09}\index{CallExpr@{CallExpr}!clone@{clone}}
+\index{clone@{clone}!CallExpr@{CallExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structCallExpr_a8a4d8ff378d75c46f7983d2763517d09} 
+Expr\+Ptr Call\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

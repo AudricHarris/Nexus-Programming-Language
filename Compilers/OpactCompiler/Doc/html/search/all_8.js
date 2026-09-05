@@ -1,4 +1,6 @@
 var searchData=
 [
-  ['parser_0',['Parser',['../classParser.html',1,'']]]
+  ['lexer_0',['Lexer',['../classLexer.html',1,'']]],
+  ['literalexpr_1',['LiteralExpr',['../structLiteralExpr.html',1,'']]],
+  ['loopexpr_2',['LoopExpr',['../structLoopExpr.html',1,'']]]
 ];

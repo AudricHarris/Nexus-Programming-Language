@@ -1,9 +1,19 @@
+/**
+ * @file TokenType.hpp
+ * @brief Starting script and main manager for compiler.
+ */
 #ifndef TokenType
 #define TokenType
 
 #include <string>
 #include <string_view>
 
+/**
+ * @brief enum of all types in my language
+ *
+ * This contains all types from IDENTIFIER to FOR parsing by LIT_STRING,
+ * This will most likely be expanded with the expansion of the language
+ * */
 enum class TokenKind {
 	// KeyWords
 	IDENTIFIER,
@@ -83,11 +93,23 @@ enum class TokenKind {
 	NUM_TOKENS
 };
 
-struct TokenInfo {
-	const char *typing;
-	const char *spelling;
-};
-
+/**
+ * @class Token : Stores the physical token
+ * 
+ * It contains a few attributes to extract kind of token, word it contains, the line it is at.
+ * It also contains a method allowing to extract name from TokenKind
+ *
+ * @attributes kind : The token kind it is
+ * @attributes word : physical word that the token is
+ * @attributes line : the line the token is at (usefull for debugging)
+ * @attributes column : the column the token is at (usefull for debugging)
+ *
+ * @method getKind : returns the token Kind 
+ * @method getWord : returns the word
+ * @method getLine : returns the line 
+ * @method getColumn : returns the column
+ * @method toString : returns a string format of token Kind (mostly visual)
+ * */
 class Token {
 	private:
 		TokenKind kind;

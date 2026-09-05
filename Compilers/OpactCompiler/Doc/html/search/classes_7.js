@@ -1,5 +1,6 @@
 var searchData=
 [
-  ['memberaccessexpr_0',['MemberAccessExpr',['../structMemberAccessExpr.html',1,'']]],
-  ['module_1',['Module',['../structModule.html',1,'']]]
+  ['lexer_0',['Lexer',['../classLexer.html',1,'']]],
+  ['literalexpr_1',['LiteralExpr',['../structLiteralExpr.html',1,'']]],
+  ['loopexpr_2',['LoopExpr',['../structLoopExpr.html',1,'']]]
 ];

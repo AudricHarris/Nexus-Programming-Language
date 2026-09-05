@@ -1,11 +1,21 @@
 \doxysection{Tuple\+Literal\+Expr Struct Reference}
 \hypertarget{structTupleLiteralExpr}{}\label{structTupleLiteralExpr}\index{TupleLiteralExpr@{TupleLiteralExpr}}
-Inheritance diagram for Tuple\+Literal\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Tuple\+Literal\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structTupleLiteralExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structTupleLiteralExpr_a326b6201f0851aa7409ec7499c5cbe31}\label{structTupleLiteralExpr_a326b6201f0851aa7409ec7499c5cbe31} 
+{\bfseries Tuple\+Literal\+Expr} (std::\+vector$<$ Expr\+Ptr $>$ elements)
+\item 
+void \doxymbox{\hyperlink{structTupleLiteralExpr_a7ab73a626b8b14c00f33844758c7f47f}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structTupleLiteralExpr_a3ff2aee642505827af67ba3d69c3ccd0}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -14,6 +24,31 @@ std::\+vector$<$ Expr\+Ptr $>$ {\bfseries elements}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structTupleLiteralExpr_doc-func-members}
+\Hypertarget{structTupleLiteralExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structTupleLiteralExpr_a7ab73a626b8b14c00f33844758c7f47f}\index{TupleLiteralExpr@{TupleLiteralExpr}!accept@{accept}}
+\index{accept@{accept}!TupleLiteralExpr@{TupleLiteralExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structTupleLiteralExpr_a7ab73a626b8b14c00f33844758c7f47f} 
+void Tuple\+Literal\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structTupleLiteralExpr_a3ff2aee642505827af67ba3d69c3ccd0}\index{TupleLiteralExpr@{TupleLiteralExpr}!clone@{clone}}
+\index{clone@{clone}!TupleLiteralExpr@{TupleLiteralExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structTupleLiteralExpr_a3ff2aee642505827af67ba3d69c3ccd0} 
+Expr\+Ptr Tuple\+Literal\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

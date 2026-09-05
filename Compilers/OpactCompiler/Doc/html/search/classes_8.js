@@ -1,4 +1,5 @@
 var searchData=
 [
-  ['parser_0',['Parser',['../classParser.html',1,'']]]
+  ['memberaccessexpr_0',['MemberAccessExpr',['../structMemberAccessExpr.html',1,'']]],
+  ['module_1',['Module',['../structModule.html',1,'']]]
 ];

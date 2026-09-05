@@ -1,0 +1,69 @@
+\doxysection{Function\+Decl\+Expr Struct Reference}
+\hypertarget{structFunctionDeclExpr}{}\label{structFunctionDeclExpr}\index{FunctionDeclExpr@{FunctionDeclExpr}}
+Inheritance diagram for Function\+Decl\+Expr:\begin{figure}[H]
+\begin{center}
+\leavevmode
+\includegraphics[height=2.000000cm]{structFunctionDeclExpr}
+\end{center}
+\end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structFunctionDeclExpr_af75ee51d312302651133d86838c02dc0}\label{structFunctionDeclExpr_af75ee51d312302651133d86838c02dc0} 
+{\bfseries Function\+Decl\+Expr} (std::\+string name="{}"{}, std::\+vector$<$ \doxymbox{\hyperlink{structParameter}{Parameter}} $>$ params=\{\}, \doxymbox{\hyperlink{structTypeDesc}{Type\+Desc}} return\+Type=\{\}, Expr\+Ptr body=nullptr, bool is\+Public=false, bool is\+Static=false)
+\item 
+void \doxymbox{\hyperlink{structFunctionDeclExpr_a969ed290180865100be63c3979fcc8de}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structFunctionDeclExpr_a76cc7015e21321e35f687abce3d58292}{clone}} () const override
+\end{DoxyCompactItemize}
+\doxysubsubsection*{Public Attributes}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structFunctionDeclExpr_af82dd6b6cbc5dab3058a53c72750d5d2}\label{structFunctionDeclExpr_af82dd6b6cbc5dab3058a53c72750d5d2} 
+std::\+string {\bfseries name}
+\item 
+\Hypertarget{structFunctionDeclExpr_a051e094e4f915aa332815d12b99c61c6}\label{structFunctionDeclExpr_a051e094e4f915aa332815d12b99c61c6} 
+std::\+vector$<$ \doxymbox{\hyperlink{structParameter}{Parameter}} $>$ {\bfseries params}
+\item 
+\Hypertarget{structFunctionDeclExpr_ada1cd7fb9cd3070c548e61d03ac97e00}\label{structFunctionDeclExpr_ada1cd7fb9cd3070c548e61d03ac97e00} 
+\doxymbox{\hyperlink{structTypeDesc}{Type\+Desc}} {\bfseries return\+Type}
+\item 
+\Hypertarget{structFunctionDeclExpr_a68222e21b9225618f79c2887adc9e1b0}\label{structFunctionDeclExpr_a68222e21b9225618f79c2887adc9e1b0} 
+Expr\+Ptr {\bfseries body}
+\item 
+\Hypertarget{structFunctionDeclExpr_ad11384f7748f293fbaecb071033c8882}\label{structFunctionDeclExpr_ad11384f7748f293fbaecb071033c8882} 
+bool {\bfseries is\+Public} = false
+\item 
+\Hypertarget{structFunctionDeclExpr_a49f5739c9353db4b38c81f326b604b4a}\label{structFunctionDeclExpr_a49f5739c9353db4b38c81f326b604b4a} 
+bool {\bfseries is\+Static} = false
+\end{DoxyCompactItemize}
+
+
+\label{structFunctionDeclExpr_doc-func-members}
+\Hypertarget{structFunctionDeclExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structFunctionDeclExpr_a969ed290180865100be63c3979fcc8de}\index{FunctionDeclExpr@{FunctionDeclExpr}!accept@{accept}}
+\index{accept@{accept}!FunctionDeclExpr@{FunctionDeclExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structFunctionDeclExpr_a969ed290180865100be63c3979fcc8de} 
+void Function\+Decl\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structFunctionDeclExpr_a76cc7015e21321e35f687abce3d58292}\index{FunctionDeclExpr@{FunctionDeclExpr}!clone@{clone}}
+\index{clone@{clone}!FunctionDeclExpr@{FunctionDeclExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structFunctionDeclExpr_a76cc7015e21321e35f687abce3d58292} 
+Expr\+Ptr Function\+Decl\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
+\item 
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}

@@ -1,11 +1,21 @@
 \doxysection{Generic\+Call\+Expr Struct Reference}
 \hypertarget{structGenericCallExpr}{}\label{structGenericCallExpr}\index{GenericCallExpr@{GenericCallExpr}}
-Inheritance diagram for Generic\+Call\+Expr:\+\begin{figure}[H]
+Inheritance diagram for Generic\+Call\+Expr:\begin{figure}[H]
 \begin{center}
 \leavevmode
 \includegraphics[height=2.000000cm]{structGenericCallExpr}
 \end{center}
 \end{figure}
+\doxysubsubsection*{Public Member Functions}
+\begin{DoxyCompactItemize}
+\item 
+\Hypertarget{structGenericCallExpr_aea6e5028421707554a275ad0521ac048}\label{structGenericCallExpr_aea6e5028421707554a275ad0521ac048} 
+{\bfseries Generic\+Call\+Expr} (Expr\+Ptr callee, std::\+vector$<$ \doxymbox{\hyperlink{structTypeDesc}{Type\+Desc}} $>$ type\+Args, std::\+vector$<$ Expr\+Ptr $>$ arguments)
+\item 
+void \doxymbox{\hyperlink{structGenericCallExpr_a16f0120776406065a9b764dcc921ba27}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
+\item 
+Expr\+Ptr \doxymbox{\hyperlink{structGenericCallExpr_aa48ce066110946cf8af5960429b74207}{clone}} () const override
+\end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
 \item 
@@ -20,6 +30,31 @@ std::\+vector$<$ Expr\+Ptr $>$ {\bfseries arguments}
 \end{DoxyCompactItemize}
 
 
-The documentation for this struct was generated from the following file:\+\begin{DoxyCompactItemize}
+\label{structGenericCallExpr_doc-func-members}
+\Hypertarget{structGenericCallExpr_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{structGenericCallExpr_a16f0120776406065a9b764dcc921ba27}\index{GenericCallExpr@{GenericCallExpr}!accept@{accept}}
+\index{accept@{accept}!GenericCallExpr@{GenericCallExpr}}
+\doxysubsubsection{\texorpdfstring{accept()}{accept()}}
+{\footnotesize\ttfamily \label{structGenericCallExpr_a16f0120776406065a9b764dcc921ba27} 
+void Generic\+Call\+Expr::\+accept (\begin{DoxyParamCaption}\item[{\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&}]{visitor}{}\end{DoxyParamCaption})\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structGenericCallExpr_aa48ce066110946cf8af5960429b74207}\index{GenericCallExpr@{GenericCallExpr}!clone@{clone}}
+\index{clone@{clone}!GenericCallExpr@{GenericCallExpr}}
+\doxysubsubsection{\texorpdfstring{clone()}{clone()}}
+{\footnotesize\ttfamily \label{structGenericCallExpr_aa48ce066110946cf8af5960429b74207} 
+Expr\+Ptr Generic\+Call\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+
+
+The documentation for this struct was generated from the following file:\begin{DoxyCompactItemize}
 \item 
-src/\+\+Parser/\+Ast.\+hpp\end{DoxyCompactItemize}
+src/\+\+Parser/Ast.\+hpp\end{DoxyCompactItemize}
