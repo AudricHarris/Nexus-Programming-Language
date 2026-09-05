@@ -111,28 +111,87 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('classToken.htm
   <div class="headertitle"><div class="title">Token Class Reference</div></div>
 </div><!--header-->
 <div class="contents">
+
+<p>Represents a single source code token produced by the lexer.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="TokenType_8hpp_source.html">TokenType.hpp</a>&gt;</code></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:a4ae118fd4c4b6184cc4470fe04e055cf" id="r_a4ae118fd4c4b6184cc4470fe04e055cf"><td class="memItemLeft"><a id="a4ae118fd4c4b6184cc4470fe04e055cf" name="a4ae118fd4c4b6184cc4470fe04e055cf"></a>
-&#160;</td><td class="memItemRight"><b>Token</b> (<a class="el" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> k, std::string_view w, int l, int c)</td></tr>
+<tr class="memitem:a4ae118fd4c4b6184cc4470fe04e055cf" id="r_a4ae118fd4c4b6184cc4470fe04e055cf"><td class="memItemLeft">&#160;</td><td class="memItemRight"><a class="el" href="#a4ae118fd4c4b6184cc4470fe04e055cf">Token</a> (<a class="el" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> k, std::string_view w, int l, int c)</td></tr>
+<tr class="memdesc:a4ae118fd4c4b6184cc4470fe04e055cf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs a new <a class="el" href="classToken.html" title="Represents a single source code token produced by the lexer.">Token</a> instance.  <br /></td></tr>
 <tr class="memitem:afba4cee63a95d94c4a50d541ee77f1d0" id="r_afba4cee63a95d94c4a50d541ee77f1d0"><td class="memItemLeft"><a id="afba4cee63a95d94c4a50d541ee77f1d0" name="afba4cee63a95d94c4a50d541ee77f1d0"></a>
 <a class="el" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a>&#160;</td><td class="memItemRight"><b>getKind</b> () const</td></tr>
+<tr class="memdesc:afba4cee63a95d94c4a50d541ee77f1d0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the category of the token. <br /></td></tr>
 <tr class="memitem:a511f66ff8f632f4966e959c22e46762d" id="r_a511f66ff8f632f4966e959c22e46762d"><td class="memItemLeft"><a id="a511f66ff8f632f4966e959c22e46762d" name="a511f66ff8f632f4966e959c22e46762d"></a>
 std::string&#160;</td><td class="memItemRight"><b>getWord</b> () const</td></tr>
+<tr class="memdesc:a511f66ff8f632f4966e959c22e46762d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the raw string value of the token. <br /></td></tr>
 <tr class="memitem:aabfcea7b4d2df9591a87095440764993" id="r_aabfcea7b4d2df9591a87095440764993"><td class="memItemLeft"><a id="aabfcea7b4d2df9591a87095440764993" name="aabfcea7b4d2df9591a87095440764993"></a>
 int&#160;</td><td class="memItemRight"><b>getLine</b> () const</td></tr>
+<tr class="memdesc:aabfcea7b4d2df9591a87095440764993"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the source code line number. <br /></td></tr>
 <tr class="memitem:a41ebf8bc4f703199238058457162293e" id="r_a41ebf8bc4f703199238058457162293e"><td class="memItemLeft"><a id="a41ebf8bc4f703199238058457162293e" name="a41ebf8bc4f703199238058457162293e"></a>
 int&#160;</td><td class="memItemRight"><b>getColumn</b> () const</td></tr>
+<tr class="memdesc:a41ebf8bc4f703199238058457162293e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the source code column number. <br /></td></tr>
 <tr class="memitem:a8863381edabce7bc1e92473b445ba81f" id="r_a8863381edabce7bc1e92473b445ba81f"><td class="memItemLeft"><a id="a8863381edabce7bc1e92473b445ba81f" name="a8863381edabce7bc1e92473b445ba81f"></a>
 std::string&#160;</td><td class="memItemRight"><b>toString</b> ()</td></tr>
+<tr class="memdesc:a8863381edabce7bc1e92473b445ba81f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Returns a human-readable string representation of the token kind. <br /></td></tr>
 </table>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
-<div class="textblock"><p>physical token</p>
-<p>It contains a few attributes to extract kind of token, word it contains, the line it is at. It also contains a method allowing to extract name from <a class="el" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25" title="enum of all types in my language">TokenKind</a></p>
-<p>@attributes kind : The token kind it is @attributes word : physical word that the token is @attributes line : the line the token is at (usefull for debugging) @attributes column : the column the token is at (usefull for debugging)</p>
-<p>@method getKind : returns the token Kind @method getWord : returns the word @method getLine : returns the line @method getColumn : returns the column @method toString : returns a string format of token Kind (mostly visual) </p>
-</div><hr/>The documentation for this class was generated from the following files:<ul>
+<div class="textblock"><p>Represents a single source code token produced by the lexer. </p>
+<p>Stores the token type, raw string slice, and location metadata (line and column numbers) useful for debugging and error messaging. </p>
+</div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="a4ae118fd4c4b6184cc4470fe04e055cf" name="a4ae118fd4c4b6184cc4470fe04e055cf"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4ae118fd4c4b6184cc4470fe04e055cf">&#9670;&#160;</a></span>Token()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">Token::Token </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a></td>          <td class="paramname"><span class="paramname"><em>k</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::string_view</td>          <td class="paramname"><span class="paramname"><em>w</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>l</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructs a new <a class="el" href="classToken.html" title="Represents a single source code token produced by the lexer.">Token</a> instance. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">k</td><td>The category of the token. </td></tr>
+    <tr><td class="paramname">w</td><td>The raw string representation. </td></tr>
+    <tr><td class="paramname">l</td><td>Source code line number. </td></tr>
+    <tr><td class="paramname">c</td><td>Source code column number. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<hr/>The documentation for this class was generated from the following files:<ul>
 <li>src/Token/<a class="el" href="TokenType_8hpp_source.html">TokenType.hpp</a></li>
 <li>src/Token/<b>TokenTable.cpp</b></li>
 </ul>

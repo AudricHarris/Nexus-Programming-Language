@@ -3,110 +3,114 @@
 \doxymbox{\hyperlink{TokenType_8hpp}{Go to the documentation of this file.}}
 \begin{DoxyCode}{0}
 \DoxyCodeLine{00001\ }
-\DoxyCodeLine{00005\ \textcolor{preprocessor}{\#ifndef\ TokenType}}
-\DoxyCodeLine{00006\ \textcolor{preprocessor}{\#define\ TokenType}}
-\DoxyCodeLine{00007\ }
-\DoxyCodeLine{00008\ \textcolor{preprocessor}{\#include\ <string>}}
-\DoxyCodeLine{00009\ \textcolor{preprocessor}{\#include\ <string\_view>}}
-\DoxyCodeLine{00010\ }
-\DoxyCodeLine{00017\ \textcolor{keyword}{enum\ class}\ \doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ \{}
-\DoxyCodeLine{00018\ \ \ \ \ \textcolor{comment}{//\ KeyWords}}
-\DoxyCodeLine{00019\ \ \ \ \ IDENTIFIER,}
-\DoxyCodeLine{00020\ \ \ \ \ IF,}
-\DoxyCodeLine{00021\ \ \ \ \ ELSE,}
-\DoxyCodeLine{00022\ \ \ \ \ WHILE,}
-\DoxyCodeLine{00023\ \ \ \ \ LOOP,}
-\DoxyCodeLine{00024\ \ \ \ \ FOR,}
-\DoxyCodeLine{00025\ \ \ \ \ RETURN,}
-\DoxyCodeLine{00026\ \ \ \ \ AS,}
-\DoxyCodeLine{00027\ \ \ \ \ FN,}
-\DoxyCodeLine{00028\ \ \ \ \ MUT,}
-\DoxyCodeLine{00029\ \ \ \ \ CONST,}
-\DoxyCodeLine{00030\ \ \ \ \ IMPORT,}
-\DoxyCodeLine{00031\ \ \ \ \ PUBLIC,}
-\DoxyCodeLine{00032\ \ \ \ \ PRIVATE,}
-\DoxyCodeLine{00033\ \ \ \ \ PROTECTED,}
-\DoxyCodeLine{00034\ \ \ \ \ CONTINUE,}
-\DoxyCodeLine{00035\ \ \ \ \ BREAK,}
-\DoxyCodeLine{00036\ \ \ \ \ ENUM,}
-\DoxyCodeLine{00037\ \ \ \ \ MATCH,}
-\DoxyCodeLine{00038\ }
-\DoxyCodeLine{00039\ \ \ \ \ \textcolor{comment}{//\ Litterals}}
-\DoxyCodeLine{00040\ \ \ \ \ LIT\_INT,}
-\DoxyCodeLine{00041\ \ \ \ \ LIT\_FLOAT,}
-\DoxyCodeLine{00042\ \ \ \ \ LIT\_STRING,}
-\DoxyCodeLine{00043\ \ \ \ \ LIT\_CHAR,}
-\DoxyCodeLine{00044\ \ \ \ \ LIT\_BOOL,}
-\DoxyCodeLine{00045\ }
-\DoxyCodeLine{00046\ \ \ \ \ \textcolor{comment}{//\ Operations}}
-\DoxyCodeLine{00047\ \ \ \ \ ASSIGN,}
-\DoxyCodeLine{00048\ \ \ \ \ INCREMENT,}
-\DoxyCodeLine{00049\ \ \ \ \ DECREMENT,}
-\DoxyCodeLine{00050\ \ \ \ \ FAT\_ARROW,}
-\DoxyCodeLine{00051\ \ \ \ \ BORROW,}
-\DoxyCodeLine{00052\ \ \ \ \ ADD,}
-\DoxyCodeLine{00053\ \ \ \ \ SUB,}
-\DoxyCodeLine{00054\ \ \ \ \ PROD,}
-\DoxyCodeLine{00055\ \ \ \ \ DIV,}
-\DoxyCodeLine{00056\ \ \ \ \ MOD,}
-\DoxyCodeLine{00057\ \ \ \ \ LT,\ \textcolor{comment}{//<}}
-\DoxyCodeLine{00058\ \ \ \ \ GT,}
-\DoxyCodeLine{00059\ \ \ \ \ LE,\ \textcolor{comment}{//\ <=}}
-\DoxyCodeLine{00060\ \ \ \ \ GE,}
-\DoxyCodeLine{00061\ \ \ \ \ EQ,}
-\DoxyCodeLine{00062\ \ \ \ \ NE,}
-\DoxyCodeLine{00063\ \ \ \ \ AND,}
-\DoxyCodeLine{00064\ \ \ \ \ DOUBLE\_AND,}
-\DoxyCodeLine{00065\ \ \ \ \ OR,}
-\DoxyCodeLine{00066\ \ \ \ \ NOT,}
-\DoxyCodeLine{00067\ \ \ \ \ ADD\_ASSIGN,}
-\DoxyCodeLine{00068\ \ \ \ \ SUB\_ASSIGN,}
-\DoxyCodeLine{00069\ \ \ \ \ MUL\_ASSIGN,}
-\DoxyCodeLine{00070\ \ \ \ \ DIV\_ASSIGN,}
-\DoxyCodeLine{00071\ \ \ \ \ DIVF\_ASSIGN,}
-\DoxyCodeLine{00072\ }
-\DoxyCodeLine{00073\ \ \ \ \ \textcolor{comment}{//\ Punctuation\ /\ Delimiters}}
-\DoxyCodeLine{00074\ \ \ \ \ LPAREN,}
-\DoxyCodeLine{00075\ \ \ \ \ RPAREN,}
-\DoxyCodeLine{00076\ \ \ \ \ LBRACKET,}
-\DoxyCodeLine{00077\ \ \ \ \ RBRACKET,}
-\DoxyCodeLine{00078\ \ \ \ \ LBRACE,}
-\DoxyCodeLine{00079\ \ \ \ \ RBRACE,}
-\DoxyCodeLine{00080\ \ \ \ \ COMMA,}
-\DoxyCodeLine{00081\ \ \ \ \ SEMI,}
-\DoxyCodeLine{00082\ \ \ \ \ DOT,}
-\DoxyCodeLine{00083\ \ \ \ \ COLON,}
-\DoxyCodeLine{00084\ \ \ \ \ COLON\_COLON,}
-\DoxyCodeLine{00085\ }
-\DoxyCodeLine{00086\ \ \ \ \ \textcolor{comment}{//\ SPECIAL}}
-\DoxyCodeLine{00087\ \ \ \ \ RETURN\_TYPE,}
-\DoxyCodeLine{00088\ \ \ \ \ NEW,}
-\DoxyCodeLine{00089\ \ \ \ \ END\_OF\_FILE,}
-\DoxyCodeLine{00090\ \ \ \ \ COMMENT,}
-\DoxyCodeLine{00091\ \ \ \ \ UNKNOWN,}
-\DoxyCodeLine{00092\ }
-\DoxyCodeLine{00093\ \ \ \ \ NUM\_TOKENS}
-\DoxyCodeLine{00094\ \};}
-\DoxyCodeLine{00095\ }
-\DoxyCodeLine{00113\ \textcolor{keyword}{class\ }Token\ \{}
-\DoxyCodeLine{00114\ \ \ \ \ \textcolor{keyword}{private}:}
-\DoxyCodeLine{00115\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ kind;}
-\DoxyCodeLine{00116\ \ \ \ \ \ \ \ \ std::string\ word;}
-\DoxyCodeLine{00117\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{int}\ line;}
-\DoxyCodeLine{00118\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{int}\ column;}
+\DoxyCodeLine{00005\ }
+\DoxyCodeLine{00006\ \textcolor{preprocessor}{\#ifndef\ TOKEN\_TYPE\_HPP}}
+\DoxyCodeLine{00007\ \textcolor{preprocessor}{\#define\ TOKEN\_TYPE\_HPP}}
+\DoxyCodeLine{00008\ }
+\DoxyCodeLine{00009\ \textcolor{preprocessor}{\#include\ <string>}}
+\DoxyCodeLine{00010\ \textcolor{preprocessor}{\#include\ <string\_view>}}
+\DoxyCodeLine{00011\ }
+\DoxyCodeLine{00016\ \textcolor{keyword}{enum\ class}\ \doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ \{}
+\DoxyCodeLine{00017\ \ \ \ \ \textcolor{comment}{//\ KeyWords}}
+\DoxyCodeLine{00018\ \ \ \ \ IDENTIFIER,}
+\DoxyCodeLine{00019\ \ \ \ \ IF,}
+\DoxyCodeLine{00020\ \ \ \ \ ELSE,}
+\DoxyCodeLine{00021\ \ \ \ \ WHILE,}
+\DoxyCodeLine{00022\ \ \ \ \ LOOP,}
+\DoxyCodeLine{00023\ \ \ \ \ FOR,}
+\DoxyCodeLine{00024\ \ \ \ \ RETURN,}
+\DoxyCodeLine{00025\ \ \ \ \ AS,}
+\DoxyCodeLine{00026\ \ \ \ \ FN,}
+\DoxyCodeLine{00027\ \ \ \ \ MUT,}
+\DoxyCodeLine{00028\ \ \ \ \ CONST,}
+\DoxyCodeLine{00029\ \ \ \ \ IMPORT,}
+\DoxyCodeLine{00030\ \ \ \ \ PUBLIC,}
+\DoxyCodeLine{00031\ \ \ \ \ PRIVATE,}
+\DoxyCodeLine{00032\ \ \ \ \ PROTECTED,}
+\DoxyCodeLine{00033\ \ \ \ \ CONTINUE,}
+\DoxyCodeLine{00034\ \ \ \ \ BREAK,}
+\DoxyCodeLine{00035\ \ \ \ \ ENUM,}
+\DoxyCodeLine{00036\ \ \ \ \ MATCH,}
+\DoxyCodeLine{00037\ }
+\DoxyCodeLine{00038\ \ \ \ \ \textcolor{comment}{//\ Literals}}
+\DoxyCodeLine{00039\ \ \ \ \ LIT\_INT,}
+\DoxyCodeLine{00040\ \ \ \ \ LIT\_FLOAT,}
+\DoxyCodeLine{00041\ \ \ \ \ LIT\_STRING,}
+\DoxyCodeLine{00042\ \ \ \ \ LIT\_CHAR,}
+\DoxyCodeLine{00043\ \ \ \ \ LIT\_BOOL,}
+\DoxyCodeLine{00044\ }
+\DoxyCodeLine{00045\ \ \ \ \ \textcolor{comment}{//\ Operations}}
+\DoxyCodeLine{00046\ \ \ \ \ ASSIGN,}
+\DoxyCodeLine{00047\ \ \ \ \ INCREMENT,}
+\DoxyCodeLine{00048\ \ \ \ \ DECREMENT,}
+\DoxyCodeLine{00049\ \ \ \ \ FAT\_ARROW,}
+\DoxyCodeLine{00050\ \ \ \ \ BORROW,}
+\DoxyCodeLine{00051\ \ \ \ \ ADD,}
+\DoxyCodeLine{00052\ \ \ \ \ SUB,}
+\DoxyCodeLine{00053\ \ \ \ \ PROD,}
+\DoxyCodeLine{00054\ \ \ \ \ DIV,}
+\DoxyCodeLine{00055\ \ \ \ \ MOD,}
+\DoxyCodeLine{00056\ \ \ \ \ LT,\ \ \textcolor{comment}{//\ <}}
+\DoxyCodeLine{00057\ \ \ \ \ GT,\ \ \textcolor{comment}{//\ >}}
+\DoxyCodeLine{00058\ \ \ \ \ LE,\ \ \textcolor{comment}{//\ <=}}
+\DoxyCodeLine{00059\ \ \ \ \ GE,\ \ \textcolor{comment}{//\ >=}}
+\DoxyCodeLine{00060\ \ \ \ \ EQ,\ \ \textcolor{comment}{//\ ==}}
+\DoxyCodeLine{00061\ \ \ \ \ NE,\ \ \textcolor{comment}{//\ !=}}
+\DoxyCodeLine{00062\ \ \ \ \ AND,}
+\DoxyCodeLine{00063\ \ \ \ \ DOUBLE\_AND,}
+\DoxyCodeLine{00064\ \ \ \ \ OR,}
+\DoxyCodeLine{00065\ \ \ \ \ NOT,}
+\DoxyCodeLine{00066\ \ \ \ \ ADD\_ASSIGN,}
+\DoxyCodeLine{00067\ \ \ \ \ SUB\_ASSIGN,}
+\DoxyCodeLine{00068\ \ \ \ \ MUL\_ASSIGN,}
+\DoxyCodeLine{00069\ \ \ \ \ DIV\_ASSIGN,}
+\DoxyCodeLine{00070\ \ \ \ \ DIVF\_ASSIGN,}
+\DoxyCodeLine{00071\ }
+\DoxyCodeLine{00072\ \ \ \ \ \textcolor{comment}{//\ Punctuation\ /\ Delimiters}}
+\DoxyCodeLine{00073\ \ \ \ \ LPAREN,}
+\DoxyCodeLine{00074\ \ \ \ \ RPAREN,}
+\DoxyCodeLine{00075\ \ \ \ \ LBRACKET,}
+\DoxyCodeLine{00076\ \ \ \ \ RBRACKET,}
+\DoxyCodeLine{00077\ \ \ \ \ LBRACE,}
+\DoxyCodeLine{00078\ \ \ \ \ RBRACE,}
+\DoxyCodeLine{00079\ \ \ \ \ COMMA,}
+\DoxyCodeLine{00080\ \ \ \ \ SEMI,}
+\DoxyCodeLine{00081\ \ \ \ \ DOT,}
+\DoxyCodeLine{00082\ \ \ \ \ COLON,}
+\DoxyCodeLine{00083\ \ \ \ \ COLON\_COLON,}
+\DoxyCodeLine{00084\ }
+\DoxyCodeLine{00085\ \ \ \ \ \textcolor{comment}{//\ Special}}
+\DoxyCodeLine{00086\ \ \ \ \ RETURN\_TYPE,}
+\DoxyCodeLine{00087\ \ \ \ \ NEW,}
+\DoxyCodeLine{00088\ \ \ \ \ END\_OF\_FILE,}
+\DoxyCodeLine{00089\ \ \ \ \ COMMENT,}
+\DoxyCodeLine{00090\ \ \ \ \ UNKNOWN,}
+\DoxyCodeLine{00091\ }
+\DoxyCodeLine{00092\ \ \ \ \ NUM\_TOKENS}
+\DoxyCodeLine{00093\ \};}
+\DoxyCodeLine{00094\ }
+\DoxyCodeLine{00102\ \textcolor{keyword}{class\ }\doxymbox{\hyperlink{classToken_a4ae118fd4c4b6184cc4470fe04e055cf}{Token}}\ \{}
+\DoxyCodeLine{00103\ \ \ \ \ \textcolor{keyword}{private}:}
+\DoxyCodeLine{00104\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ kind;\ \ }
+\DoxyCodeLine{00105\ \ \ \ \ \ \ \ \ std::string\ word;\ }
+\DoxyCodeLine{00106\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{int}\ line;\ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00107\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{int}\ column;\ \ \ \ \ \ \ }
+\DoxyCodeLine{00108\ }
+\DoxyCodeLine{00109\ \ \ \ \ \textcolor{keyword}{public}:}
+\DoxyCodeLine{00117\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{classToken_a4ae118fd4c4b6184cc4470fe04e055cf}{Token}}(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ k,\ std::string\_view\ w,\ \textcolor{keywordtype}{int}\ l,\ \textcolor{keywordtype}{int}\ c)}
+\DoxyCodeLine{00118\ \ \ \ \ \ \ \ \ \ \ \ \ :\ kind(k),\ word(w),\ line(l),\ column(c)\ \{\}}
 \DoxyCodeLine{00119\ }
-\DoxyCodeLine{00120\ \ \ \ \ \textcolor{keyword}{public}:}
-\DoxyCodeLine{00121\ \ \ \ \ \ \ \ \ Token(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ k,\ std::string\_view\ w,\ \textcolor{keywordtype}{int}\ l,\ \textcolor{keywordtype}{int}\ c)}
-\DoxyCodeLine{00122\ \ \ \ \ \ \ \ \ \ \ \ \ :\ kind(k),\ word(w),\ line(l),\ column(c)\ \{\}}
-\DoxyCodeLine{00123\ }
-\DoxyCodeLine{00124\ \ \ \ \ \ \ \ \ \textcolor{comment}{//\ getters}}
-\DoxyCodeLine{00125\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ getKind()\textcolor{keyword}{\ const\ }\{\ \textcolor{keywordflow}{return}\ this-\/>kind;\ \}}
-\DoxyCodeLine{00126\ \ \ \ \ \ \ \ \ std::string\ getWord()\textcolor{keyword}{\ const\ }\{\ \textcolor{keywordflow}{return}\ this-\/>word;\ \}}
-\DoxyCodeLine{00127\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{int}\ getLine()\textcolor{keyword}{\ const\ }\{\ \textcolor{keywordflow}{return}\ this-\/>line;\ \}}
-\DoxyCodeLine{00128\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{int}\ getColumn()\textcolor{keyword}{\ const\ }\{\ \textcolor{keywordflow}{return}\ this-\/>column;\ \}}
-\DoxyCodeLine{00129\ \ \ \ \ \ \ \ \ std::string\ toString();}
-\DoxyCodeLine{00130\ \};}
+\DoxyCodeLine{00121\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ \doxymbox{\hyperlink{classToken_afba4cee63a95d94c4a50d541ee77f1d0}{getKind}}()\textcolor{keyword}{\ const\ }\{\ \textcolor{keywordflow}{return}\ this-\/>kind;\ \}}
+\DoxyCodeLine{00122\ }
+\DoxyCodeLine{00124\ \ \ \ \ \ \ \ \ std::string\ \doxymbox{\hyperlink{classToken_a511f66ff8f632f4966e959c22e46762d}{getWord}}()\textcolor{keyword}{\ const\ }\{\ \textcolor{keywordflow}{return}\ this-\/>word;\ \}}
+\DoxyCodeLine{00125\ }
+\DoxyCodeLine{00127\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{int}\ \doxymbox{\hyperlink{classToken_aabfcea7b4d2df9591a87095440764993}{getLine}}()\textcolor{keyword}{\ const\ }\{\ \textcolor{keywordflow}{return}\ this-\/>line;\ \}}
+\DoxyCodeLine{00128\ }
+\DoxyCodeLine{00130\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{int}\ \doxymbox{\hyperlink{classToken_a41ebf8bc4f703199238058457162293e}{getColumn}}()\textcolor{keyword}{\ const\ }\{\ \textcolor{keywordflow}{return}\ this-\/>column;\ \}}
 \DoxyCodeLine{00131\ }
-\DoxyCodeLine{00132\ \textcolor{preprocessor}{\#endif}}
+\DoxyCodeLine{00133\ \ \ \ \ \ \ \ \ std::string\ \doxymbox{\hyperlink{classToken_a8863381edabce7bc1e92473b445ba81f}{toString}}();}
+\DoxyCodeLine{00134\ \};}
+\DoxyCodeLine{00135\ }
+\DoxyCodeLine{00136\ \textcolor{preprocessor}{\#endif\ }\textcolor{comment}{//\ TOKEN\_TYPE\_HPP}}
 
 \end{DoxyCode}

@@ -28,7 +28,7 @@ var annotated_dup =
     [ "Parser", "classParser.html", null ],
     [ "PostfixExpr", "structPostfixExpr.html", null ],
     [ "ReturnExpr", "structReturnExpr.html", null ],
-    [ "Token", "classToken.html", null ],
+    [ "Token", "classToken.html", "classToken" ],
     [ "TupleLiteralExpr", "structTupleLiteralExpr.html", null ],
     [ "TypeDesc", "structTypeDesc.html", null ],
     [ "UnaryExpr", "structUnaryExpr.html", null ],

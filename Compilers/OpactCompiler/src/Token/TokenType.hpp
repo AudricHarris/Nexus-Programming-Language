@@ -1,19 +1,18 @@
 /**
  * @file TokenType.hpp
- * @brief Starting script and main manager for compiler.
+ * @brief Token types and representation for the compiler lexer.
  */
-#ifndef TokenType
-#define TokenType
+
+#ifndef TOKEN_TYPE_HPP
+#define TOKEN_TYPE_HPP
 
 #include <string>
 #include <string_view>
 
 /**
- * @brief enum of all types in my language
- *
- * This contains all types from IDENTIFIER to FOR parsing by LIT_STRING,
- * This will most likely be expanded with the expansion of the language
- * */
+ * @enum TokenKind
+ * @brief Enumeration of all token categories in the language.
+ */
 enum class TokenKind {
 	// KeyWords
 	IDENTIFIER,
@@ -36,7 +35,7 @@ enum class TokenKind {
 	ENUM,
 	MATCH,
 
-	// Litterals
+	// Literals
 	LIT_INT,
 	LIT_FLOAT,
 	LIT_STRING,
@@ -54,12 +53,12 @@ enum class TokenKind {
 	PROD,
 	DIV,
 	MOD,
-	LT, //<
-	GT,
-	LE, // <=
-	GE,
-	EQ,
-	NE,
+	LT,  // <
+	GT,  // >
+	LE,  // <=
+	GE,  // >=
+	EQ,  // ==
+	NE,  // !=
 	AND,
 	DOUBLE_AND,
 	OR,
@@ -83,7 +82,7 @@ enum class TokenKind {
 	COLON,
 	COLON_COLON,
 
-	// SPECIAL
+	// Special
 	RETURN_TYPE,
 	NEW,
 	END_OF_FILE,
@@ -94,39 +93,44 @@ enum class TokenKind {
 };
 
 /**
- * @class Token : Stores the physical token
- * 
- * It contains a few attributes to extract kind of token, word it contains, the line it is at.
- * It also contains a method allowing to extract name from TokenKind
+ * @class Token
+ * @brief Represents a single source code token produced by the lexer.
  *
- * @attributes kind : The token kind it is
- * @attributes word : physical word that the token is
- * @attributes line : the line the token is at (usefull for debugging)
- * @attributes column : the column the token is at (usefull for debugging)
- *
- * @method getKind : returns the token Kind 
- * @method getWord : returns the word
- * @method getLine : returns the line 
- * @method getColumn : returns the column
- * @method toString : returns a string format of token Kind (mostly visual)
- * */
+ * Stores the token type, raw string slice, and location metadata
+ * (line and column numbers) useful for debugging and error messaging.
+ */
 class Token {
 	private:
-		TokenKind kind;
-		std::string word;
-		int line;
-		int column;
+		TokenKind kind;  ///< The category of the token.
+		std::string word; ///< The raw lexeme string.
+		int line;         ///< The 1-based line number in source code.
+		int column;       ///< The 1-based column number in source code.
 
 	public:
+		/**
+		 * @brief Constructs a new Token instance.
+		 * @param k The category of the token.
+		 * @param w The raw string representation.
+		 * @param l Source code line number.
+		 * @param c Source code column number.
+		 */
 		Token(TokenKind k, std::string_view w, int l, int c)
 			: kind(k), word(w), line(l), column(c) {}
 
-		// getters
+		/// @brief Gets the category of the token.
 		TokenKind getKind() const { return this->kind; }
+
+		/// @brief Gets the raw string value of the token.
 		std::string getWord() const { return this->word; }
+
+		/// @brief Gets the source code line number.
 		int getLine() const { return this->line; }
+
+		/// @brief Gets the source code column number.
 		int getColumn() const { return this->column; }
+
+		/// @brief Returns a human-readable string representation of the token kind.
 		std::string toString();
 };
 
-#endif
+#endif // TOKEN_TYPE_HPP

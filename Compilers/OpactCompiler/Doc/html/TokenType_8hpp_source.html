@@ -112,116 +112,128 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('TokenType_8hpp
 </div><!--header-->
 <div class="contents">
 <a href="TokenType_8hpp.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
-<div class="line"><a id="l00005" name="l00005"></a><span class="lineno">    5</span><span class="preprocessor">#ifndef TokenType</span></div>
-<div class="line"><a id="l00006" name="l00006"></a><span class="lineno">    6</span><span class="preprocessor">#define TokenType</span></div>
-<div class="line"><a id="l00007" name="l00007"></a><span class="lineno">    7</span> </div>
-<div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span><span class="preprocessor">#include &lt;string&gt;</span></div>
-<div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span><span class="preprocessor">#include &lt;string_view&gt;</span></div>
-<div class="line"><a id="l00010" name="l00010"></a><span class="lineno">   10</span></div>
-<div class="foldopen" id="foldopen00017" data-start="{" data-end="};">
-<div class="line"><a id="l00017" name="l00017"></a><span class="lineno"><a class="line" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">   17</a></span><span class="keyword">enum class</span> <a class="code hl_enumeration" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> {</div>
-<div class="line"><a id="l00018" name="l00018"></a><span class="lineno">   18</span>    <span class="comment">// KeyWords</span></div>
-<div class="line"><a id="l00019" name="l00019"></a><span class="lineno">   19</span>    IDENTIFIER,</div>
-<div class="line"><a id="l00020" name="l00020"></a><span class="lineno">   20</span>    IF,</div>
-<div class="line"><a id="l00021" name="l00021"></a><span class="lineno">   21</span>    ELSE,</div>
-<div class="line"><a id="l00022" name="l00022"></a><span class="lineno">   22</span>    WHILE,</div>
-<div class="line"><a id="l00023" name="l00023"></a><span class="lineno">   23</span>    LOOP,</div>
-<div class="line"><a id="l00024" name="l00024"></a><span class="lineno">   24</span>    FOR,</div>
-<div class="line"><a id="l00025" name="l00025"></a><span class="lineno">   25</span>    RETURN,</div>
-<div class="line"><a id="l00026" name="l00026"></a><span class="lineno">   26</span>    AS,</div>
-<div class="line"><a id="l00027" name="l00027"></a><span class="lineno">   27</span>    FN,</div>
-<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span>    MUT,</div>
-<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span>    CONST,</div>
-<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span>    IMPORT,</div>
-<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span>    PUBLIC,</div>
-<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span>    PRIVATE,</div>
-<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span>    PROTECTED,</div>
-<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span>    CONTINUE,</div>
-<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span>    BREAK,</div>
-<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span>    ENUM,</div>
-<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span>    MATCH,</div>
-<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span> </div>
-<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span>    <span class="comment">// Litterals</span></div>
-<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span>    LIT_INT,</div>
-<div class="line"><a id="l00041" name="l00041"></a><span class="lineno">   41</span>    LIT_FLOAT,</div>
-<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span>    LIT_STRING,</div>
-<div class="line"><a id="l00043" name="l00043"></a><span class="lineno">   43</span>    LIT_CHAR,</div>
-<div class="line"><a id="l00044" name="l00044"></a><span class="lineno">   44</span>    LIT_BOOL,</div>
-<div class="line"><a id="l00045" name="l00045"></a><span class="lineno">   45</span> </div>
-<div class="line"><a id="l00046" name="l00046"></a><span class="lineno">   46</span>    <span class="comment">// Operations</span></div>
-<div class="line"><a id="l00047" name="l00047"></a><span class="lineno">   47</span>    ASSIGN,</div>
-<div class="line"><a id="l00048" name="l00048"></a><span class="lineno">   48</span>    INCREMENT,</div>
-<div class="line"><a id="l00049" name="l00049"></a><span class="lineno">   49</span>    DECREMENT,</div>
-<div class="line"><a id="l00050" name="l00050"></a><span class="lineno">   50</span>    FAT_ARROW,</div>
-<div class="line"><a id="l00051" name="l00051"></a><span class="lineno">   51</span>    BORROW,</div>
-<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span>    ADD,</div>
-<div class="line"><a id="l00053" name="l00053"></a><span class="lineno">   53</span>    SUB,</div>
-<div class="line"><a id="l00054" name="l00054"></a><span class="lineno">   54</span>    PROD,</div>
-<div class="line"><a id="l00055" name="l00055"></a><span class="lineno">   55</span>    DIV,</div>
-<div class="line"><a id="l00056" name="l00056"></a><span class="lineno">   56</span>    MOD,</div>
-<div class="line"><a id="l00057" name="l00057"></a><span class="lineno">   57</span>    LT, <span class="comment">//&lt;</span></div>
-<div class="line"><a id="l00058" name="l00058"></a><span class="lineno">   58</span>    GT,</div>
-<div class="line"><a id="l00059" name="l00059"></a><span class="lineno">   59</span>    LE, <span class="comment">// &lt;=</span></div>
-<div class="line"><a id="l00060" name="l00060"></a><span class="lineno">   60</span>    GE,</div>
-<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span>    EQ,</div>
-<div class="line"><a id="l00062" name="l00062"></a><span class="lineno">   62</span>    NE,</div>
-<div class="line"><a id="l00063" name="l00063"></a><span class="lineno">   63</span>    AND,</div>
-<div class="line"><a id="l00064" name="l00064"></a><span class="lineno">   64</span>    DOUBLE_AND,</div>
-<div class="line"><a id="l00065" name="l00065"></a><span class="lineno">   65</span>    OR,</div>
-<div class="line"><a id="l00066" name="l00066"></a><span class="lineno">   66</span>    NOT,</div>
-<div class="line"><a id="l00067" name="l00067"></a><span class="lineno">   67</span>    ADD_ASSIGN,</div>
-<div class="line"><a id="l00068" name="l00068"></a><span class="lineno">   68</span>    SUB_ASSIGN,</div>
-<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span>    MUL_ASSIGN,</div>
-<div class="line"><a id="l00070" name="l00070"></a><span class="lineno">   70</span>    DIV_ASSIGN,</div>
-<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span>    DIVF_ASSIGN,</div>
-<div class="line"><a id="l00072" name="l00072"></a><span class="lineno">   72</span> </div>
-<div class="line"><a id="l00073" name="l00073"></a><span class="lineno">   73</span>    <span class="comment">// Punctuation / Delimiters</span></div>
-<div class="line"><a id="l00074" name="l00074"></a><span class="lineno">   74</span>    LPAREN,</div>
-<div class="line"><a id="l00075" name="l00075"></a><span class="lineno">   75</span>    RPAREN,</div>
-<div class="line"><a id="l00076" name="l00076"></a><span class="lineno">   76</span>    LBRACKET,</div>
-<div class="line"><a id="l00077" name="l00077"></a><span class="lineno">   77</span>    RBRACKET,</div>
-<div class="line"><a id="l00078" name="l00078"></a><span class="lineno">   78</span>    LBRACE,</div>
-<div class="line"><a id="l00079" name="l00079"></a><span class="lineno">   79</span>    RBRACE,</div>
-<div class="line"><a id="l00080" name="l00080"></a><span class="lineno">   80</span>    COMMA,</div>
-<div class="line"><a id="l00081" name="l00081"></a><span class="lineno">   81</span>    SEMI,</div>
-<div class="line"><a id="l00082" name="l00082"></a><span class="lineno">   82</span>    DOT,</div>
-<div class="line"><a id="l00083" name="l00083"></a><span class="lineno">   83</span>    COLON,</div>
-<div class="line"><a id="l00084" name="l00084"></a><span class="lineno">   84</span>    COLON_COLON,</div>
-<div class="line"><a id="l00085" name="l00085"></a><span class="lineno">   85</span> </div>
-<div class="line"><a id="l00086" name="l00086"></a><span class="lineno">   86</span>    <span class="comment">// SPECIAL</span></div>
-<div class="line"><a id="l00087" name="l00087"></a><span class="lineno">   87</span>    RETURN_TYPE,</div>
-<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>    NEW,</div>
-<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span>    END_OF_FILE,</div>
-<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>    COMMENT,</div>
-<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span>    UNKNOWN,</div>
-<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span> </div>
-<div class="line"><a id="l00093" name="l00093"></a><span class="lineno">   93</span>    NUM_TOKENS</div>
-<div class="line"><a id="l00094" name="l00094"></a><span class="lineno">   94</span>};</div>
+<div class="line"><a id="l00005" name="l00005"></a><span class="lineno">    5</span> </div>
+<div class="line"><a id="l00006" name="l00006"></a><span class="lineno">    6</span><span class="preprocessor">#ifndef TOKEN_TYPE_HPP</span></div>
+<div class="line"><a id="l00007" name="l00007"></a><span class="lineno">    7</span><span class="preprocessor">#define TOKEN_TYPE_HPP</span></div>
+<div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span> </div>
+<div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span><span class="preprocessor">#include &lt;string&gt;</span></div>
+<div class="line"><a id="l00010" name="l00010"></a><span class="lineno">   10</span><span class="preprocessor">#include &lt;string_view&gt;</span></div>
+<div class="line"><a id="l00011" name="l00011"></a><span class="lineno">   11</span></div>
+<div class="foldopen" id="foldopen00016" data-start="{" data-end="};">
+<div class="line"><a id="l00016" name="l00016"></a><span class="lineno"><a class="line" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">   16</a></span><span class="keyword">enum class</span> <a class="code hl_enumeration" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> {</div>
+<div class="line"><a id="l00017" name="l00017"></a><span class="lineno">   17</span>    <span class="comment">// KeyWords</span></div>
+<div class="line"><a id="l00018" name="l00018"></a><span class="lineno">   18</span>    IDENTIFIER,</div>
+<div class="line"><a id="l00019" name="l00019"></a><span class="lineno">   19</span>    IF,</div>
+<div class="line"><a id="l00020" name="l00020"></a><span class="lineno">   20</span>    ELSE,</div>
+<div class="line"><a id="l00021" name="l00021"></a><span class="lineno">   21</span>    WHILE,</div>
+<div class="line"><a id="l00022" name="l00022"></a><span class="lineno">   22</span>    LOOP,</div>
+<div class="line"><a id="l00023" name="l00023"></a><span class="lineno">   23</span>    FOR,</div>
+<div class="line"><a id="l00024" name="l00024"></a><span class="lineno">   24</span>    RETURN,</div>
+<div class="line"><a id="l00025" name="l00025"></a><span class="lineno">   25</span>    AS,</div>
+<div class="line"><a id="l00026" name="l00026"></a><span class="lineno">   26</span>    FN,</div>
+<div class="line"><a id="l00027" name="l00027"></a><span class="lineno">   27</span>    MUT,</div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span>    CONST,</div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span>    IMPORT,</div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span>    PUBLIC,</div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span>    PRIVATE,</div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span>    PROTECTED,</div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span>    CONTINUE,</div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span>    BREAK,</div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span>    ENUM,</div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span>    MATCH,</div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span> </div>
+<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span>    <span class="comment">// Literals</span></div>
+<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span>    LIT_INT,</div>
+<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span>    LIT_FLOAT,</div>
+<div class="line"><a id="l00041" name="l00041"></a><span class="lineno">   41</span>    LIT_STRING,</div>
+<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span>    LIT_CHAR,</div>
+<div class="line"><a id="l00043" name="l00043"></a><span class="lineno">   43</span>    LIT_BOOL,</div>
+<div class="line"><a id="l00044" name="l00044"></a><span class="lineno">   44</span> </div>
+<div class="line"><a id="l00045" name="l00045"></a><span class="lineno">   45</span>    <span class="comment">// Operations</span></div>
+<div class="line"><a id="l00046" name="l00046"></a><span class="lineno">   46</span>    ASSIGN,</div>
+<div class="line"><a id="l00047" name="l00047"></a><span class="lineno">   47</span>    INCREMENT,</div>
+<div class="line"><a id="l00048" name="l00048"></a><span class="lineno">   48</span>    DECREMENT,</div>
+<div class="line"><a id="l00049" name="l00049"></a><span class="lineno">   49</span>    FAT_ARROW,</div>
+<div class="line"><a id="l00050" name="l00050"></a><span class="lineno">   50</span>    BORROW,</div>
+<div class="line"><a id="l00051" name="l00051"></a><span class="lineno">   51</span>    ADD,</div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span>    SUB,</div>
+<div class="line"><a id="l00053" name="l00053"></a><span class="lineno">   53</span>    PROD,</div>
+<div class="line"><a id="l00054" name="l00054"></a><span class="lineno">   54</span>    DIV,</div>
+<div class="line"><a id="l00055" name="l00055"></a><span class="lineno">   55</span>    MOD,</div>
+<div class="line"><a id="l00056" name="l00056"></a><span class="lineno">   56</span>    LT,  <span class="comment">// &lt;</span></div>
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno">   57</span>    GT,  <span class="comment">// &gt;</span></div>
+<div class="line"><a id="l00058" name="l00058"></a><span class="lineno">   58</span>    LE,  <span class="comment">// &lt;=</span></div>
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno">   59</span>    GE,  <span class="comment">// &gt;=</span></div>
+<div class="line"><a id="l00060" name="l00060"></a><span class="lineno">   60</span>    EQ,  <span class="comment">// ==</span></div>
+<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span>    NE,  <span class="comment">// !=</span></div>
+<div class="line"><a id="l00062" name="l00062"></a><span class="lineno">   62</span>    AND,</div>
+<div class="line"><a id="l00063" name="l00063"></a><span class="lineno">   63</span>    DOUBLE_AND,</div>
+<div class="line"><a id="l00064" name="l00064"></a><span class="lineno">   64</span>    OR,</div>
+<div class="line"><a id="l00065" name="l00065"></a><span class="lineno">   65</span>    NOT,</div>
+<div class="line"><a id="l00066" name="l00066"></a><span class="lineno">   66</span>    ADD_ASSIGN,</div>
+<div class="line"><a id="l00067" name="l00067"></a><span class="lineno">   67</span>    SUB_ASSIGN,</div>
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno">   68</span>    MUL_ASSIGN,</div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span>    DIV_ASSIGN,</div>
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno">   70</span>    DIVF_ASSIGN,</div>
+<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span> </div>
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno">   72</span>    <span class="comment">// Punctuation / Delimiters</span></div>
+<div class="line"><a id="l00073" name="l00073"></a><span class="lineno">   73</span>    LPAREN,</div>
+<div class="line"><a id="l00074" name="l00074"></a><span class="lineno">   74</span>    RPAREN,</div>
+<div class="line"><a id="l00075" name="l00075"></a><span class="lineno">   75</span>    LBRACKET,</div>
+<div class="line"><a id="l00076" name="l00076"></a><span class="lineno">   76</span>    RBRACKET,</div>
+<div class="line"><a id="l00077" name="l00077"></a><span class="lineno">   77</span>    LBRACE,</div>
+<div class="line"><a id="l00078" name="l00078"></a><span class="lineno">   78</span>    RBRACE,</div>
+<div class="line"><a id="l00079" name="l00079"></a><span class="lineno">   79</span>    COMMA,</div>
+<div class="line"><a id="l00080" name="l00080"></a><span class="lineno">   80</span>    SEMI,</div>
+<div class="line"><a id="l00081" name="l00081"></a><span class="lineno">   81</span>    DOT,</div>
+<div class="line"><a id="l00082" name="l00082"></a><span class="lineno">   82</span>    COLON,</div>
+<div class="line"><a id="l00083" name="l00083"></a><span class="lineno">   83</span>    COLON_COLON,</div>
+<div class="line"><a id="l00084" name="l00084"></a><span class="lineno">   84</span> </div>
+<div class="line"><a id="l00085" name="l00085"></a><span class="lineno">   85</span>    <span class="comment">// Special</span></div>
+<div class="line"><a id="l00086" name="l00086"></a><span class="lineno">   86</span>    RETURN_TYPE,</div>
+<div class="line"><a id="l00087" name="l00087"></a><span class="lineno">   87</span>    NEW,</div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>    END_OF_FILE,</div>
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span>    COMMENT,</div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>    UNKNOWN,</div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span> </div>
+<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span>    NUM_TOKENS</div>
+<div class="line"><a id="l00093" name="l00093"></a><span class="lineno">   93</span>};</div>
 </div>
-<div class="line"><a id="l00095" name="l00095"></a><span class="lineno">   95</span></div>
-<div class="foldopen" id="foldopen00113" data-start="{" data-end="};">
-<div class="line"><a id="l00113" name="l00113"></a><span class="lineno"><a class="line" href="classToken.html">  113</a></span><span class="keyword">class </span>Token {</div>
-<div class="line"><a id="l00114" name="l00114"></a><span class="lineno">  114</span>    <span class="keyword">private</span>:</div>
-<div class="line"><a id="l00115" name="l00115"></a><span class="lineno">  115</span>        <a class="code hl_enumeration" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> kind;</div>
-<div class="line"><a id="l00116" name="l00116"></a><span class="lineno">  116</span>        std::string word;</div>
-<div class="line"><a id="l00117" name="l00117"></a><span class="lineno">  117</span>        <span class="keywordtype">int</span> line;</div>
-<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span>        <span class="keywordtype">int</span> column;</div>
-<div class="line"><a id="l00119" name="l00119"></a><span class="lineno">  119</span> </div>
-<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span>    <span class="keyword">public</span>:</div>
-<div class="line"><a id="l00121" name="l00121"></a><span class="lineno">  121</span>        Token(<a class="code hl_enumeration" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> k, std::string_view w, <span class="keywordtype">int</span> l, <span class="keywordtype">int</span> c)</div>
-<div class="line"><a id="l00122" name="l00122"></a><span class="lineno">  122</span>            : kind(k), word(w), line(l), column(c) {}</div>
-<div class="line"><a id="l00123" name="l00123"></a><span class="lineno">  123</span> </div>
-<div class="line"><a id="l00124" name="l00124"></a><span class="lineno">  124</span>        <span class="comment">// getters</span></div>
-<div class="line"><a id="l00125" name="l00125"></a><span class="lineno">  125</span>        <a class="code hl_enumeration" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> getKind()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> this-&gt;kind; }</div>
-<div class="line"><a id="l00126" name="l00126"></a><span class="lineno">  126</span>        std::string getWord()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> this-&gt;word; }</div>
-<div class="line"><a id="l00127" name="l00127"></a><span class="lineno">  127</span>        <span class="keywordtype">int</span> getLine()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> this-&gt;line; }</div>
-<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span>        <span class="keywordtype">int</span> getColumn()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> this-&gt;column; }</div>
-<div class="line"><a id="l00129" name="l00129"></a><span class="lineno">  129</span>        std::string toString();</div>
-<div class="line"><a id="l00130" name="l00130"></a><span class="lineno">  130</span>};</div>
+<div class="line"><a id="l00094" name="l00094"></a><span class="lineno">   94</span></div>
+<div class="foldopen" id="foldopen00102" data-start="{" data-end="};">
+<div class="line"><a id="l00102" name="l00102"></a><span class="lineno"><a class="line" href="classToken.html">  102</a></span><span class="keyword">class </span><a class="code hl_function" href="classToken.html#a4ae118fd4c4b6184cc4470fe04e055cf">Token</a> {</div>
+<div class="line"><a id="l00103" name="l00103"></a><span class="lineno">  103</span>    <span class="keyword">private</span>:</div>
+<div class="line"><a id="l00104" name="l00104"></a><span class="lineno">  104</span>        <a class="code hl_enumeration" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> kind;  </div>
+<div class="line"><a id="l00105" name="l00105"></a><span class="lineno">  105</span>        std::string word; </div>
+<div class="line"><a id="l00106" name="l00106"></a><span class="lineno">  106</span>        <span class="keywordtype">int</span> line;         </div>
+<div class="line"><a id="l00107" name="l00107"></a><span class="lineno">  107</span>        <span class="keywordtype">int</span> column;       </div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span> </div>
+<div class="line"><a id="l00109" name="l00109"></a><span class="lineno">  109</span>    <span class="keyword">public</span>:</div>
+<div class="foldopen" id="foldopen00117" data-start="{" data-end="}">
+<div class="line"><a id="l00117" name="l00117"></a><span class="lineno"><a class="line" href="classToken.html#a4ae118fd4c4b6184cc4470fe04e055cf">  117</a></span>        <a class="code hl_function" href="classToken.html#a4ae118fd4c4b6184cc4470fe04e055cf">Token</a>(<a class="code hl_enumeration" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> k, std::string_view w, <span class="keywordtype">int</span> l, <span class="keywordtype">int</span> c)</div>
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span>            : kind(k), word(w), line(l), column(c) {}</div>
 </div>
-<div class="line"><a id="l00131" name="l00131"></a><span class="lineno">  131</span> </div>
-<div class="line"><a id="l00132" name="l00132"></a><span class="lineno">  132</span><span class="preprocessor">#endif</span></div>
-<div class="ttc" id="aTokenType_8hpp_html_a7a47dce04185ce6008048622cc792f25"><div class="ttname"><a href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a></div><div class="ttdeci">TokenKind</div><div class="ttdoc">enum of all types in my language</div><div class="ttdef"><b>Definition</b> TokenType.hpp:17</div></div>
+<div class="line"><a id="l00119" name="l00119"></a><span class="lineno">  119</span></div>
+<div class="line"><a id="l00121" name="l00121"></a><span class="lineno"><a class="line" href="classToken.html#afba4cee63a95d94c4a50d541ee77f1d0">  121</a></span>        <a class="code hl_enumeration" href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a> <a class="code hl_function" href="classToken.html#afba4cee63a95d94c4a50d541ee77f1d0">getKind</a>()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> this-&gt;kind; }</div>
+<div class="line"><a id="l00122" name="l00122"></a><span class="lineno">  122</span></div>
+<div class="line"><a id="l00124" name="l00124"></a><span class="lineno"><a class="line" href="classToken.html#a511f66ff8f632f4966e959c22e46762d">  124</a></span>        std::string <a class="code hl_function" href="classToken.html#a511f66ff8f632f4966e959c22e46762d">getWord</a>()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> this-&gt;word; }</div>
+<div class="line"><a id="l00125" name="l00125"></a><span class="lineno">  125</span></div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno"><a class="line" href="classToken.html#aabfcea7b4d2df9591a87095440764993">  127</a></span>        <span class="keywordtype">int</span> <a class="code hl_function" href="classToken.html#aabfcea7b4d2df9591a87095440764993">getLine</a>()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> this-&gt;line; }</div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span></div>
+<div class="line"><a id="l00130" name="l00130"></a><span class="lineno"><a class="line" href="classToken.html#a41ebf8bc4f703199238058457162293e">  130</a></span>        <span class="keywordtype">int</span> <a class="code hl_function" href="classToken.html#a41ebf8bc4f703199238058457162293e">getColumn</a>()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> this-&gt;column; }</div>
+<div class="line"><a id="l00131" name="l00131"></a><span class="lineno">  131</span></div>
+<div class="line"><a id="l00133" name="l00133"></a><span class="lineno">  133</span>        std::string <a class="code hl_function" href="classToken.html#a8863381edabce7bc1e92473b445ba81f">toString</a>();</div>
+<div class="line"><a id="l00134" name="l00134"></a><span class="lineno">  134</span>};</div>
+</div>
+<div class="line"><a id="l00135" name="l00135"></a><span class="lineno">  135</span> </div>
+<div class="line"><a id="l00136" name="l00136"></a><span class="lineno">  136</span><span class="preprocessor">#endif </span><span class="comment">// TOKEN_TYPE_HPP</span></div>
+<div class="ttc" id="aTokenType_8hpp_html_a7a47dce04185ce6008048622cc792f25"><div class="ttname"><a href="TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25">TokenKind</a></div><div class="ttdeci">TokenKind</div><div class="ttdoc">Enumeration of all token categories in the language.</div><div class="ttdef"><b>Definition</b> TokenType.hpp:16</div></div>
+<div class="ttc" id="aclassToken_html_a41ebf8bc4f703199238058457162293e"><div class="ttname"><a href="classToken.html#a41ebf8bc4f703199238058457162293e">Token::getColumn</a></div><div class="ttdeci">int getColumn() const</div><div class="ttdoc">Gets the source code column number.</div><div class="ttdef"><b>Definition</b> TokenType.hpp:130</div></div>
+<div class="ttc" id="aclassToken_html_a4ae118fd4c4b6184cc4470fe04e055cf"><div class="ttname"><a href="classToken.html#a4ae118fd4c4b6184cc4470fe04e055cf">Token::Token</a></div><div class="ttdeci">Token(TokenKind k, std::string_view w, int l, int c)</div><div class="ttdoc">Constructs a new Token instance.</div><div class="ttdef"><b>Definition</b> TokenType.hpp:117</div></div>
+<div class="ttc" id="aclassToken_html_a511f66ff8f632f4966e959c22e46762d"><div class="ttname"><a href="classToken.html#a511f66ff8f632f4966e959c22e46762d">Token::getWord</a></div><div class="ttdeci">std::string getWord() const</div><div class="ttdoc">Gets the raw string value of the token.</div><div class="ttdef"><b>Definition</b> TokenType.hpp:124</div></div>
+<div class="ttc" id="aclassToken_html_a8863381edabce7bc1e92473b445ba81f"><div class="ttname"><a href="classToken.html#a8863381edabce7bc1e92473b445ba81f">Token::toString</a></div><div class="ttdeci">std::string toString()</div><div class="ttdoc">Returns a human-readable string representation of the token kind.</div><div class="ttdef"><b>Definition</b> TokenTable.cpp:9</div></div>
+<div class="ttc" id="aclassToken_html_aabfcea7b4d2df9591a87095440764993"><div class="ttname"><a href="classToken.html#aabfcea7b4d2df9591a87095440764993">Token::getLine</a></div><div class="ttdeci">int getLine() const</div><div class="ttdoc">Gets the source code line number.</div><div class="ttdef"><b>Definition</b> TokenType.hpp:127</div></div>
+<div class="ttc" id="aclassToken_html_afba4cee63a95d94c4a50d541ee77f1d0"><div class="ttname"><a href="classToken.html#afba4cee63a95d94c4a50d541ee77f1d0">Token::getKind</a></div><div class="ttdeci">TokenKind getKind() const</div><div class="ttdoc">Gets the category of the token.</div><div class="ttdef"><b>Definition</b> TokenType.hpp:121</div></div>
 </div><!-- fragment --></div><!-- contents -->
 </div><!-- doc-content -->
 </div><!-- container -->
