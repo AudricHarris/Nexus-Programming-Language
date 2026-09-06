@@ -17,7 +17,7 @@ const documents = new TextDocuments(TextDocument);
 
 
 const KEYWORDS = [
-  'if', 'else', 'for', 'while', 'range', 'return', 'match', 'new',
+  'if', 'else', 'for', 'while', 'range', 'yield', 'return', 'match', 'new',
   'export', 'import', 'static', 'self', 'Sequential', 'as' ,
   'true', 'false', 'public', 'private', 'protected',
   'const', 'class', 'implement', 'impl', 'struct', 'extern',
