@@ -4,6 +4,7 @@ var NAVTREEINDEX0 =
 "CompilerPipeline_8hpp_source.html":[1,0,0,2,1],
 "FileReader_8hpp_source.html":[1,0,0,0,0],
 "Lexer_8hpp_source.html":[1,0,0,1,0],
+"Parser_8hpp.html":[1,0,0,2,2],
 "Parser_8hpp_source.html":[1,0,0,2,2],
 "TokenType_8hpp.html":[1,0,0,3,0],
 "TokenType_8hpp.html#a7a47dce04185ce6008048622cc792f25":[1,0,0,3,0,1],

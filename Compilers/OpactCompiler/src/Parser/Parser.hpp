@@ -1,3 +1,8 @@
+/**
+ * @file Parser.hpp
+ * @brief Le header qui definit la classe Parser
+ */
+
 #ifndef PARSER_H
 #define PARSER_H 
 
@@ -8,7 +13,10 @@
 #include <string_view>
 #include <vector>
 
-
+/**
+ * @class CompilerPipeline
+ * @brief ici on peut pas include CompilerPipeline sinon on a import circulaire donc voici ma solution fait avec du "scotch"
+ */
 class CompilerPipeline;
 
 class Parser {
