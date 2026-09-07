@@ -111,6 +111,11 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('classParser.ht
   <div class="headertitle"><div class="title">Parser Class Reference</div></div>
 </div><!--header-->
 <div class="contents">
+
+<p>The parser is the file that transform a list of tokens into a ast The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that) It uses <a class="el" href="classCompilerPipeline.html">CompilerPipeline</a> for adding modules and making treating multiple files in multiple threads speeding up the process.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="Parser_8hpp_source.html">Parser.hpp</a>&gt;</code></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
@@ -170,7 +175,9 @@ Protected Member Functions</h2></td></tr>
 <tr class="memitem:a0b291d69599c11db2077222ca385f298" id="r_a0b291d69599c11db2077222ca385f298"><td class="memItemLeft"><a id="a0b291d69599c11db2077222ca385f298" name="a0b291d69599c11db2077222ca385f298"></a>
 void&#160;</td><td class="memItemRight"><b>synchronize</b> ()</td></tr>
 </table>
-<hr/>The documentation for this class was generated from the following files:<ul>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>The parser is the file that transform a list of tokens into a ast The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that) It uses <a class="el" href="classCompilerPipeline.html">CompilerPipeline</a> for adding modules and making treating multiple files in multiple threads speeding up the process. </p>
+</div><hr/>The documentation for this class was generated from the following files:<ul>
 <li>src/Parser/<a class="el" href="Parser_8hpp_source.html">Parser.hpp</a></li>
 <li>src/Parser/<b>Parser.cpp</b></li>
 </ul>

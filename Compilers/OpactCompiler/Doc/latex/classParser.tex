@@ -1,5 +1,14 @@
 \doxysection{Parser Class Reference}
 \hypertarget{classParser}{}\label{classParser}\index{Parser@{Parser}}
+
+
+The parser is the file that transform a list of tokens into a ast The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that) It uses \doxylink{classCompilerPipeline}{Compiler\+Pipeline} for adding modules and making treating multiple files in multiple threads speeding up the process.  
+
+
+
+
+{\ttfamily \+\#include $<$Parser.\+hpp$>$}
+
 \doxysubsubsection*{Public Member Functions}
 \begin{DoxyCompactItemize}
 \item 
@@ -85,6 +94,9 @@ Expr\+Ptr {\bfseries parse\+Primary} ()
 void {\bfseries synchronize} ()
 \end{DoxyCompactItemize}
 
+
+\doxysubsection{Detailed Description}
+The parser is the file that transform a list of tokens into a ast The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that) It uses \doxylink{classCompilerPipeline}{Compiler\+Pipeline} for adding modules and making treating multiple files in multiple threads speeding up the process. 
 
 The documentation for this class was generated from the following files:\begin{DoxyCompactItemize}
 \item 
