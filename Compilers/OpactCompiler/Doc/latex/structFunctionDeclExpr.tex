@@ -15,6 +15,8 @@ Inheritance diagram for Function\+Decl\+Expr:\begin{figure}[H]
 void \doxymbox{\hyperlink{structFunctionDeclExpr_a969ed290180865100be63c3979fcc8de}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
 \item 
 Expr\+Ptr \doxymbox{\hyperlink{structFunctionDeclExpr_a76cc7015e21321e35f687abce3d58292}{clone}} () const override
+\item 
+virtual bool \doxymbox{\hyperlink{structFunctionDeclExpr_a2e184833ad5e468b383d1061b155372c}{requires\+Semicolon}} () const override
 \end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
@@ -61,6 +63,16 @@ Expr\+Ptr Function\+Decl\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyPa
 
 
 Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structFunctionDeclExpr_a2e184833ad5e468b383d1061b155372c}\index{FunctionDeclExpr@{FunctionDeclExpr}!requiresSemicolon@{requiresSemicolon}}
+\index{requiresSemicolon@{requiresSemicolon}!FunctionDeclExpr@{FunctionDeclExpr}}
+\doxysubsubsection{\texorpdfstring{requiresSemicolon()}{requiresSemicolon()}}
+{\footnotesize\ttfamily \label{structFunctionDeclExpr_a2e184833ad5e468b383d1061b155372c} 
+virtual bool Function\+Decl\+Expr::\+requires\+Semicolon (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Reimplemented from \doxymbox{\hyperlink{structExpression}{Expression}}.
 
 
 

@@ -15,6 +15,8 @@ Inheritance diagram for Loop\+Expr:\begin{figure}[H]
 void \doxymbox{\hyperlink{structLoopExpr_a99cdd7d660e527f32111d7349890d092}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
 \item 
 Expr\+Ptr \doxymbox{\hyperlink{structLoopExpr_a3fb0bc957f907129d333b8dcf4423d5f}{clone}} () const override
+\item 
+virtual bool \doxymbox{\hyperlink{structLoopExpr_a4ccd975f341100712cedf204323cf11f}{requires\+Semicolon}} () const override
 \end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
@@ -46,6 +48,16 @@ Expr\+Ptr Loop\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption
 
 
 Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structLoopExpr_a4ccd975f341100712cedf204323cf11f}\index{LoopExpr@{LoopExpr}!requiresSemicolon@{requiresSemicolon}}
+\index{requiresSemicolon@{requiresSemicolon}!LoopExpr@{LoopExpr}}
+\doxysubsubsection{\texorpdfstring{requiresSemicolon()}{requiresSemicolon()}}
+{\footnotesize\ttfamily \label{structLoopExpr_a4ccd975f341100712cedf204323cf11f} 
+virtual bool Loop\+Expr::\+requires\+Semicolon (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Reimplemented from \doxymbox{\hyperlink{structExpression}{Expression}}.
 
 
 

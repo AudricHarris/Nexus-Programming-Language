@@ -127,6 +127,7 @@ Public Member Functions</h2></td></tr>
 &#160;</td><td class="memItemRight"><b>FunctionDeclExpr</b> (std::string name=&quot;&quot;, std::vector&lt; <a class="el" href="structParameter.html">Parameter</a> &gt; params={}, <a class="el" href="structTypeDesc.html">TypeDesc</a> returnType={}, ExprPtr body=nullptr, bool isPublic=false, bool isStatic=false)</td></tr>
 <tr class="memitem:a969ed290180865100be63c3979fcc8de" id="r_a969ed290180865100be63c3979fcc8de"><td class="memItemLeft">void&#160;</td><td class="memItemRight"><a class="el" href="#a969ed290180865100be63c3979fcc8de">accept</a> (<a class="el" href="structASTVisitor.html">ASTVisitor</a> &amp;visitor) override</td></tr>
 <tr class="memitem:a76cc7015e21321e35f687abce3d58292" id="r_a76cc7015e21321e35f687abce3d58292"><td class="memItemLeft">ExprPtr&#160;</td><td class="memItemRight"><a class="el" href="#a76cc7015e21321e35f687abce3d58292">clone</a> () const override</td></tr>
+<tr class="memitem:a2e184833ad5e468b383d1061b155372c" id="r_a2e184833ad5e468b383d1061b155372c"><td class="memItemLeft">virtual bool&#160;</td><td class="memItemRight"><a class="el" href="#a2e184833ad5e468b383d1061b155372c">requiresSemicolon</a> () const override</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 id="header-pub-attribs" class="groupheader"><a id="pub-attribs" name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
@@ -195,6 +196,33 @@ bool&#160;</td><td class="memItemRight"><b>isStatic</b> = false</td></tr>
 </div><div class="memdoc">
 
 <p>Implements <a class="el" href="structExpression.html">Expression</a>.</p>
+
+</div>
+</div>
+<a id="a2e184833ad5e468b383d1061b155372c" name="a2e184833ad5e468b383d1061b155372c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2e184833ad5e468b383d1061b155372c">&#9670;&#160;</a></span>requiresSemicolon()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">virtual bool FunctionDeclExpr::requiresSemicolon </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel override">override</span><span class="mlabel virtual">virtual</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Reimplemented from <a class="el" href="structExpression.html">Expression</a>.</p>
 
 </div>
 </div>

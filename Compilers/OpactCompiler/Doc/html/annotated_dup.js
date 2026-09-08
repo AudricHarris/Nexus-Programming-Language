@@ -25,7 +25,7 @@ var annotated_dup =
     [ "MemberAccessExpr", "structMemberAccessExpr.html", null ],
     [ "Module", "structModule.html", null ],
     [ "Parameter", "structParameter.html", null ],
-    [ "Parser", "classParser.html", null ],
+    [ "Parser", "classParser.html", "classParser" ],
     [ "PostfixExpr", "structPostfixExpr.html", null ],
     [ "ReturnExpr", "structReturnExpr.html", null ],
     [ "Token", "classToken.html", "classToken" ],

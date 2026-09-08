@@ -121,32 +121,42 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('classParser.ht
 Public Member Functions</h2></td></tr>
 <tr class="memitem:a6d2ddbf15fbed84da063a214b02958ac" id="r_a6d2ddbf15fbed84da063a214b02958ac"><td class="memItemLeft"><a id="a6d2ddbf15fbed84da063a214b02958ac" name="a6d2ddbf15fbed84da063a214b02958ac"></a>
 &#160;</td><td class="memItemRight"><b>Parser</b> (std::vector&lt; <a class="el" href="classToken.html">Token</a> &gt; tok, std::string path=&quot;&quot;, <a class="el" href="classCompilerPipeline.html">CompilerPipeline</a> *pipe=nullptr)</td></tr>
+<tr class="memdesc:a6d2ddbf15fbed84da063a214b02958ac"><td class="mdescLeft">&#160;</td><td class="mdescRight">Creates The parser with 3 params : list of tokens, name of path, the compiler pipeline. <br /></td></tr>
 <tr class="memitem:a8726e43e2634b55e79f7bc88670b26cb" id="r_a8726e43e2634b55e79f7bc88670b26cb"><td class="memItemLeft"><a id="a8726e43e2634b55e79f7bc88670b26cb" name="a8726e43e2634b55e79f7bc88670b26cb"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseModule</b> ()</td></tr>
+<tr class="memdesc:a8726e43e2634b55e79f7bc88670b26cb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parse <a class="el" href="structModule.html">Module</a> is for the initial file this will call parse top level as long it is not at the end of a file. <br /></td></tr>
 <tr class="memitem:ad4fb144d148d8dbefdd6d731bc832686" id="r_ad4fb144d148d8dbefdd6d731bc832686"><td class="memItemLeft"><a id="ad4fb144d148d8dbefdd6d731bc832686" name="ad4fb144d148d8dbefdd6d731bc832686"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseTopLevel</b> ()</td></tr>
+<tr class="memdesc:ad4fb144d148d8dbefdd6d731bc832686"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parse TopLevel is the maximum level concept example Functions, Classes, Enums, etc... <br /></td></tr>
 <tr class="memitem:a1efa7e01d9060ffdca5065a9f9cc6687" id="r_a1efa7e01d9060ffdca5065a9f9cc6687"><td class="memItemLeft"><a id="a1efa7e01d9060ffdca5065a9f9cc6687" name="a1efa7e01d9060ffdca5065a9f9cc6687"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseImport</b> ()</td></tr>
+<tr class="memdesc:a1efa7e01d9060ffdca5065a9f9cc6687"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parse Import checks the keyword import and adds a expression. <br /></td></tr>
 <tr class="memitem:a8e9fd78258bb9117ac9c67ca35d32122" id="r_a8e9fd78258bb9117ac9c67ca35d32122"><td class="memItemLeft"><a id="a8e9fd78258bb9117ac9c67ca35d32122" name="a8e9fd78258bb9117ac9c67ca35d32122"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseFunction</b> (std::optional&lt; <a class="el" href="classToken.html">Token</a> &gt; visib)</td></tr>
+<tr class="memdesc:a8e9fd78258bb9117ac9c67ca35d32122"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parse function decl with params and returns things. <br /></td></tr>
 <tr class="memitem:aa858d34e90cc3c656fa15ebaec9007ab" id="r_aa858d34e90cc3c656fa15ebaec9007ab"><td class="memItemLeft"><a id="aa858d34e90cc3c656fa15ebaec9007ab" name="aa858d34e90cc3c656fa15ebaec9007ab"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseBlock</b> ()</td></tr>
+<tr class="memdesc:aa858d34e90cc3c656fa15ebaec9007ab"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parses block so this is {[expressions]} so just a list of expressions. <br /></td></tr>
 <tr class="memitem:abb824c4de7b70e13901f07de72c6c4ab" id="r_abb824c4de7b70e13901f07de72c6c4ab"><td class="memItemLeft"><a id="abb824c4de7b70e13901f07de72c6c4ab" name="abb824c4de7b70e13901f07de72c6c4ab"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseExpression</b> ()</td></tr>
+<tr class="memdesc:abb824c4de7b70e13901f07de72c6c4ab"><td class="mdescLeft">&#160;</td><td class="mdescRight">parses the expression which could be var decl, if expressions, while expression, etc... <br /></td></tr>
 <tr class="memitem:a5dbb383062d5a78f5be7622c2b2cb7b6" id="r_a5dbb383062d5a78f5be7622c2b2cb7b6"><td class="memItemLeft"><a id="a5dbb383062d5a78f5be7622c2b2cb7b6" name="a5dbb383062d5a78f5be7622c2b2cb7b6"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseIf</b> ()</td></tr>
+<tr class="memdesc:a5dbb383062d5a78f5be7622c2b2cb7b6"><td class="mdescLeft">&#160;</td><td class="mdescRight">parses if (expression) and then block and then after that an else if/else with another block <br /></td></tr>
 <tr class="memitem:a993b54d6b61d4d5beeeee34b11cc599e" id="r_a993b54d6b61d4d5beeeee34b11cc599e"><td class="memItemLeft"><a id="a993b54d6b61d4d5beeeee34b11cc599e" name="a993b54d6b61d4d5beeeee34b11cc599e"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseWhile</b> ()</td></tr>
+<tr class="memdesc:a993b54d6b61d4d5beeeee34b11cc599e"><td class="mdescLeft">&#160;</td><td class="mdescRight">parses while (expression) and then block <br /></td></tr>
 <tr class="memitem:a849c4da1cd30944c193007043bc54aa4" id="r_a849c4da1cd30944c193007043bc54aa4"><td class="memItemLeft"><a id="a849c4da1cd30944c193007043bc54aa4" name="a849c4da1cd30944c193007043bc54aa4"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseLoop</b> ()</td></tr>
-<tr class="memitem:a48b33acc02dd6093493988f1215ce802" id="r_a48b33acc02dd6093493988f1215ce802"><td class="memItemLeft"><a id="a48b33acc02dd6093493988f1215ce802" name="a48b33acc02dd6093493988f1215ce802"></a>
-ExprPtr&#160;</td><td class="memItemRight"><b>parsePostfix</b> (ExprPtr expr)</td></tr>
-<tr class="memitem:a6eead88e01a3ae2933fe7be1dd8fec85" id="r_a6eead88e01a3ae2933fe7be1dd8fec85"><td class="memItemLeft"><a id="a6eead88e01a3ae2933fe7be1dd8fec85" name="a6eead88e01a3ae2933fe7be1dd8fec85"></a>
-ExprPtr&#160;</td><td class="memItemRight"><b>parseCallExpr</b> (ExprPtr callee)</td></tr>
-<tr class="memitem:a92d880246687115dd5b029de006d09d5" id="r_a92d880246687115dd5b029de006d09d5"><td class="memItemLeft"><a id="a92d880246687115dd5b029de006d09d5" name="a92d880246687115dd5b029de006d09d5"></a>
-ExprPtr&#160;</td><td class="memItemRight"><b>parseReturn</b> ()</td></tr>
-<tr class="memitem:adc1f7920af86aeb0c0fe75bdfc702791" id="r_adc1f7920af86aeb0c0fe75bdfc702791"><td class="memItemLeft"><a id="adc1f7920af86aeb0c0fe75bdfc702791" name="adc1f7920af86aeb0c0fe75bdfc702791"></a>
-bool&#160;</td><td class="memItemRight"><b>parseIsVarDeclRef</b> ()</td></tr>
+<tr class="memdesc:a849c4da1cd30944c193007043bc54aa4"><td class="mdescLeft">&#160;</td><td class="mdescRight">parses loop (initially a while true might become a loop until) and then block <br /></td></tr>
+<tr class="memitem:a48b33acc02dd6093493988f1215ce802" id="r_a48b33acc02dd6093493988f1215ce802"><td class="memItemLeft">ExprPtr&#160;</td><td class="memItemRight"><a class="el" href="#a48b33acc02dd6093493988f1215ce802">parsePostfix</a> (ExprPtr expr)</td></tr>
+<tr class="memdesc:a48b33acc02dd6093493988f1215ce802"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parses postfix operators, indexing, member access, function calls, and type casts in a left-to-right chain.  <br /></td></tr>
+<tr class="memitem:a6eead88e01a3ae2933fe7be1dd8fec85" id="r_a6eead88e01a3ae2933fe7be1dd8fec85"><td class="memItemLeft">ExprPtr&#160;</td><td class="memItemRight"><a class="el" href="#a6eead88e01a3ae2933fe7be1dd8fec85">parseCallExpr</a> (ExprPtr callee)</td></tr>
+<tr class="memdesc:a6eead88e01a3ae2933fe7be1dd8fec85"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parses callee, meaning that the ExprPtr callee results into a function call.  <br /></td></tr>
+<tr class="memitem:a92d880246687115dd5b029de006d09d5" id="r_a92d880246687115dd5b029de006d09d5"><td class="memItemLeft">ExprPtr&#160;</td><td class="memItemRight"><a class="el" href="#a92d880246687115dd5b029de006d09d5">parseReturn</a> ()</td></tr>
+<tr class="memdesc:a92d880246687115dd5b029de006d09d5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parses the return keyword to create a return expr it also has an expression after.  <br /></td></tr>
+<tr class="memitem:adc1f7920af86aeb0c0fe75bdfc702791" id="r_adc1f7920af86aeb0c0fe75bdfc702791"><td class="memItemLeft">bool&#160;</td><td class="memItemRight"><a class="el" href="#adc1f7920af86aeb0c0fe75bdfc702791">parseIsVarDeclRef</a> ()</td></tr>
+<tr class="memdesc:adc1f7920af86aeb0c0fe75bdfc702791"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check if the parsed elements is a var decl it's for parse expression that it's used.  <br /></td></tr>
 <tr class="memitem:a08c55ecfb3e462c4c7147dcdf19c7732" id="r_a08c55ecfb3e462c4c7147dcdf19c7732"><td class="memItemLeft"><a id="a08c55ecfb3e462c4c7147dcdf19c7732" name="a08c55ecfb3e462c4c7147dcdf19c7732"></a>
 ExprPtr&#160;</td><td class="memItemRight"><b>parseVarDecl</b> ()</td></tr>
 <tr class="memitem:a11c80ae4f6c32aa3f5e825c8ce9255c1" id="r_a11c80ae4f6c32aa3f5e825c8ce9255c1"><td class="memItemLeft"><a id="a11c80ae4f6c32aa3f5e825c8ce9255c1" name="a11c80ae4f6c32aa3f5e825c8ce9255c1"></a>
@@ -174,10 +184,105 @@ ExprPtr&#160;</td><td class="memItemRight"><b>parsePrimary</b> ()</td></tr>
 Protected Member Functions</h2></td></tr>
 <tr class="memitem:a0b291d69599c11db2077222ca385f298" id="r_a0b291d69599c11db2077222ca385f298"><td class="memItemLeft"><a id="a0b291d69599c11db2077222ca385f298" name="a0b291d69599c11db2077222ca385f298"></a>
 void&#160;</td><td class="memItemRight"><b>synchronize</b> ()</td></tr>
+<tr class="memdesc:a0b291d69599c11db2077222ca385f298"><td class="mdescLeft">&#160;</td><td class="mdescRight">If there is an error with an expression this will allow to continue reading the file. Usually if this is called it means your code is invalid. <br /></td></tr>
 </table>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>The parser is the file that transform a list of tokens into a ast The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that) It uses <a class="el" href="classCompilerPipeline.html">CompilerPipeline</a> for adding modules and making treating multiple files in multiple threads speeding up the process. </p>
-</div><hr/>The documentation for this class was generated from the following files:<ul>
+<p>With time these concept and this parser will be expanded to contain more features and fixes. </p>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="a6eead88e01a3ae2933fe7be1dd8fec85" name="a6eead88e01a3ae2933fe7be1dd8fec85"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6eead88e01a3ae2933fe7be1dd8fec85">&#9670;&#160;</a></span>parseCallExpr()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">ExprPtr Parser::parseCallExpr </td>
+          <td>(</td>
+          <td class="paramtype">ExprPtr</td>          <td class="paramname"><span class="paramname"><em>callee</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Parses callee, meaning that the ExprPtr callee results into a function call. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">callee</td><td>The base expression that is a function that you call. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>ExprPtr The resulting AST node after creating a calleeExpr. </dd></dl>
+
+</div>
+</div>
+<a id="adc1f7920af86aeb0c0fe75bdfc702791" name="adc1f7920af86aeb0c0fe75bdfc702791"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#adc1f7920af86aeb0c0fe75bdfc702791">&#9670;&#160;</a></span>parseIsVarDeclRef()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool Parser::parseIsVarDeclRef </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Check if the parsed elements is a var decl it's for parse expression that it's used. </p>
+<dl class="section return"><dt>Returns</dt><dd>bool if that expr is a var decl or not </dd></dl>
+
+</div>
+</div>
+<a id="a48b33acc02dd6093493988f1215ce802" name="a48b33acc02dd6093493988f1215ce802"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a48b33acc02dd6093493988f1215ce802">&#9670;&#160;</a></span>parsePostfix()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">ExprPtr Parser::parsePostfix </td>
+          <td>(</td>
+          <td class="paramtype">ExprPtr</td>          <td class="paramname"><span class="paramname"><em>expr</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Parses postfix operators, indexing, member access, function calls, and type casts in a left-to-right chain. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">expr</td><td>The base expression node to wrap with postfix operations. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>ExprPtr The resulting AST node after applying all postfixes. </dd></dl>
+
+</div>
+</div>
+<a id="a92d880246687115dd5b029de006d09d5" name="a92d880246687115dd5b029de006d09d5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a92d880246687115dd5b029de006d09d5">&#9670;&#160;</a></span>parseReturn()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">ExprPtr Parser::parseReturn </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Parses the return keyword to create a return expr it also has an expression after. </p>
+<dl class="section return"><dt>Returns</dt><dd>ExprPtr which is the return expr </dd></dl>
+
+</div>
+</div>
+<hr/>The documentation for this class was generated from the following files:<ul>
 <li>src/Parser/<a class="el" href="Parser_8hpp_source.html">Parser.hpp</a></li>
 <li>src/Parser/<b>Parser.cpp</b></li>
 </ul>

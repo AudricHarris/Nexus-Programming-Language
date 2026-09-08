@@ -18,64 +18,73 @@
 \DoxyCodeLine{00017\ }
 \DoxyCodeLine{00018\ \textcolor{keyword}{class\ }\doxymbox{\hyperlink{classCompilerPipeline}{CompilerPipeline}};}
 \DoxyCodeLine{00019\ }
-\DoxyCodeLine{00026\ \textcolor{keyword}{class\ }Parser\ \{}
-\DoxyCodeLine{00027\ \ \ \ \ \textcolor{keyword}{private}:}
-\DoxyCodeLine{00028\ \ \ \ \ \ \ \ \ std::vector<Token>\ tokens;\ }
-\DoxyCodeLine{00029\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{size\_t}\ idx\ =\ 0;\ }
-\DoxyCodeLine{00030\ }
-\DoxyCodeLine{00031\ \ \ \ \ \ \ \ \ \textcolor{comment}{//\ Module\ Manager}}
-\DoxyCodeLine{00032\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{classCompilerPipeline}{CompilerPipeline}}*\ pipeline\ =\ \textcolor{keyword}{nullptr};}
-\DoxyCodeLine{00033\ \ \ \ \ \ \ \ \ std::string\ filePath;}
-\DoxyCodeLine{00034\ }
-\DoxyCodeLine{00035\ \ \ \ \ \ \ \ \ \textcolor{keyword}{const}\ \doxymbox{\hyperlink{classToken}{Token}}\ \&peek()\ \textcolor{keyword}{const};}
-\DoxyCodeLine{00036\ \ \ \ \ \ \ \ \ \textcolor{keyword}{const}\ \doxymbox{\hyperlink{classToken}{Token}}\ \&peekAt(\textcolor{keywordtype}{size\_t}\ offset)\ \textcolor{keyword}{const};}
-\DoxyCodeLine{00037\ \ \ \ \ \ \ \ \ \textcolor{keyword}{const}\ \doxymbox{\hyperlink{classToken}{Token}}\ consume();}
-\DoxyCodeLine{00038\ }
-\DoxyCodeLine{00039\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{bool}\ match(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ Kind);}
-\DoxyCodeLine{00040\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{bool}\ check(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ kind)\ \textcolor{keyword}{const};}
-\DoxyCodeLine{00041\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{bool}\ isAtEnd()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00028\ \textcolor{keyword}{class\ }\doxymbox{\hyperlink{classParser_a6d2ddbf15fbed84da063a214b02958ac}{Parser}}\ \{}
+\DoxyCodeLine{00029\ \ \ \ \ \textcolor{keyword}{private}:}
+\DoxyCodeLine{00030\ \ \ \ \ \ \ \ \ std::vector<Token>\ tokens;\ }
+\DoxyCodeLine{00031\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{size\_t}\ idx\ =\ 0;\ }
+\DoxyCodeLine{00032\ }
+\DoxyCodeLine{00033\ \ \ \ \ \ \ \ \ \textcolor{comment}{//\ Module\ Manager}}
+\DoxyCodeLine{00034\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{classCompilerPipeline}{CompilerPipeline}}*\ pipeline\ =\ \textcolor{keyword}{nullptr};\ }
+\DoxyCodeLine{00035\ \ \ \ \ \ \ \ \ std::string\ filePath;\ }
+\DoxyCodeLine{00036\ }
+\DoxyCodeLine{00038\ \ \ \ \ \ \ \ \ \textcolor{keyword}{const}\ \doxymbox{\hyperlink{classToken}{Token}}\ \&peek()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00039\ }
+\DoxyCodeLine{00041\ \ \ \ \ \ \ \ \ \textcolor{keyword}{const}\ \doxymbox{\hyperlink{classToken}{Token}}\ \&peekAt(\textcolor{keywordtype}{size\_t}\ offset)\ \textcolor{keyword}{const};}
 \DoxyCodeLine{00042\ \ \ \ \ \ \ \ \ }
-\DoxyCodeLine{00043\ \ \ \ \ \ \ \ \ std::string\ generateError(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ kind,\ std::string\ errorMsg);}
-\DoxyCodeLine{00044\ \ \ \ \ \ \ \ \ }
-\DoxyCodeLine{00045\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{classToken}{Token}}\ expect(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ kind,\ std::string\_view\ errorMsg);}
-\DoxyCodeLine{00046\ \ \ \ \ \ \ \ \ }
-\DoxyCodeLine{00047\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{void}\ addModule(std::vector<std::string>\ path);}
-\DoxyCodeLine{00048\ \ \ \ \ \textcolor{keyword}{protected}:}
-\DoxyCodeLine{00049\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{void}\ synchronize();}
-\DoxyCodeLine{00050\ }
-\DoxyCodeLine{00051\ \ \ \ \ \textcolor{keyword}{public}:}
-\DoxyCodeLine{00052\ \ \ \ \ \ \ \ \ \textcolor{comment}{//\ Creation\ Process}}
-\DoxyCodeLine{00053\ \ \ \ \ \ \ \ \ Parser(std::vector<Token>\ tok,\ std::string\ path\ =\ \textcolor{stringliteral}{"{}"{}},\ \doxymbox{\hyperlink{classCompilerPipeline}{CompilerPipeline}}*\ pipe\ =\ \textcolor{keyword}{nullptr})}
-\DoxyCodeLine{00054\ \ \ \ \ \ \ \ \ \ \ \ \ :\ tokens(std::move(tok)),\ idx(0),\ filePath(std::move(path)),\ pipeline(pipe)\ \{\}}
-\DoxyCodeLine{00055\ }
-\DoxyCodeLine{00056\ \ \ \ \ \ \ \ \ \textcolor{comment}{//\ Methods}}
-\DoxyCodeLine{00057\ \ \ \ \ \ \ \ \ ExprPtr\ parseModule();}
-\DoxyCodeLine{00058\ \ \ \ \ \ \ \ \ ExprPtr\ parseTopLevel();}
-\DoxyCodeLine{00059\ \ \ \ \ \ \ \ \ ExprPtr\ parseImport();}
-\DoxyCodeLine{00060\ \ \ \ \ \ \ \ \ ExprPtr\ parseFunction(std::optional<Token>\ visib);}
-\DoxyCodeLine{00061\ \ \ \ \ \ \ \ \ ExprPtr\ parseBlock();}
-\DoxyCodeLine{00062\ \ \ \ \ \ \ \ \ ExprPtr\ parseExpression();}
-\DoxyCodeLine{00063\ \ \ \ \ \ \ \ \ ExprPtr\ parseIf();}
-\DoxyCodeLine{00064\ \ \ \ \ \ \ \ \ ExprPtr\ parseWhile();}
-\DoxyCodeLine{00065\ \ \ \ \ \ \ \ \ ExprPtr\ parseLoop();}
-\DoxyCodeLine{00066\ \ \ \ \ \ \ \ \ ExprPtr\ parsePostfix(ExprPtr\ expr);}
-\DoxyCodeLine{00067\ \ \ \ \ \ \ \ \ ExprPtr\ parseCallExpr(ExprPtr\ callee);}
-\DoxyCodeLine{00068\ \ \ \ \ \ \ \ \ ExprPtr\ parseReturn();}
-\DoxyCodeLine{00069\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{bool}\ parseIsVarDeclRef();}
-\DoxyCodeLine{00070\ \ \ \ \ \ \ \ \ ExprPtr\ parseVarDecl();}
-\DoxyCodeLine{00071\ \ \ \ \ \ \ \ \ ExprPtr\ parseBorrow();}
-\DoxyCodeLine{00072\ \ \ \ \ \ \ \ \ ExprPtr\ parseAssignement();}
-\DoxyCodeLine{00073\ \ \ \ \ \ \ \ \ ExprPtr\ parseOr();}
-\DoxyCodeLine{00074\ \ \ \ \ \ \ \ \ ExprPtr\ parseAnd();}
-\DoxyCodeLine{00075\ \ \ \ \ \ \ \ \ ExprPtr\ parseEquality();}
-\DoxyCodeLine{00076\ \ \ \ \ \ \ \ \ ExprPtr\ parseComparison();}
-\DoxyCodeLine{00077\ \ \ \ \ \ \ \ \ ExprPtr\ parseAdditive();}
-\DoxyCodeLine{00078\ \ \ \ \ \ \ \ \ ExprPtr\ parseMultiplicative();}
-\DoxyCodeLine{00079\ \ \ \ \ \ \ \ \ ExprPtr\ parseUnary();}
-\DoxyCodeLine{00080\ \ \ \ \ \ \ \ \ ExprPtr\ parsePrimary();}
-\DoxyCodeLine{00081\ \};}
-\DoxyCodeLine{00082\ }
-\DoxyCodeLine{00083\ }
-\DoxyCodeLine{00084\ \textcolor{preprocessor}{\#endif\ }\textcolor{comment}{//\ !PARSER\_H}}
+\DoxyCodeLine{00044\ \ \ \ \ \ \ \ \ \textcolor{keyword}{const}\ \doxymbox{\hyperlink{classToken}{Token}}\ consume();}
+\DoxyCodeLine{00045\ }
+\DoxyCodeLine{00047\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{bool}\ match(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ Kind);}
+\DoxyCodeLine{00048\ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00050\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{bool}\ check(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ kind)\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00051\ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00053\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{bool}\ isAtEnd()\ \textcolor{keyword}{const};}
+\DoxyCodeLine{00054\ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00056\ \ \ \ \ \ \ \ \ std::string\ generateError(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ kind,\ std::string\ errorMsg);}
+\DoxyCodeLine{00057\ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00059\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{classToken}{Token}}\ expect(\doxymbox{\hyperlink{TokenType_8hpp_a7a47dce04185ce6008048622cc792f25}{TokenKind}}\ kind,\ std::string\_view\ errorMsg);}
+\DoxyCodeLine{00060\ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00062\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{void}\ addModule(std::vector<std::string>\ path);}
+\DoxyCodeLine{00063\ \ \ \ \ \textcolor{keyword}{protected}:}
+\DoxyCodeLine{00065\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{void}\ \doxymbox{\hyperlink{classParser_a0b291d69599c11db2077222ca385f298}{synchronize}}();}
+\DoxyCodeLine{00066\ }
+\DoxyCodeLine{00067\ \ \ \ \ \textcolor{keyword}{public}:}
+\DoxyCodeLine{00068\ \ \ \ \ \ \ \ \ \textcolor{comment}{//\ Creation\ Process}}
+\DoxyCodeLine{00070\ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{classParser_a6d2ddbf15fbed84da063a214b02958ac}{Parser}}(std::vector<Token>\ tok,\ std::string\ path\ =\ \textcolor{stringliteral}{"{}"{}},\ \doxymbox{\hyperlink{classCompilerPipeline}{CompilerPipeline}}*\ pipe\ =\ \textcolor{keyword}{nullptr})}
+\DoxyCodeLine{00071\ \ \ \ \ \ \ \ \ \ \ \ \ :\ tokens(std::move(tok)),\ idx(0),\ filePath(std::move(path)),\ pipeline(pipe)\ \{\}}
+\DoxyCodeLine{00072\ }
+\DoxyCodeLine{00073\ \ \ \ \ \ \ \ \ \textcolor{comment}{//\ Methods}}
+\DoxyCodeLine{00074\ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00076\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_a8726e43e2634b55e79f7bc88670b26cb}{parseModule}}();}
+\DoxyCodeLine{00078\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_ad4fb144d148d8dbefdd6d731bc832686}{parseTopLevel}}();}
+\DoxyCodeLine{00080\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_a1efa7e01d9060ffdca5065a9f9cc6687}{parseImport}}();}
+\DoxyCodeLine{00082\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_a8e9fd78258bb9117ac9c67ca35d32122}{parseFunction}}(std::optional<Token>\ visib);}
+\DoxyCodeLine{00084\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_aa858d34e90cc3c656fa15ebaec9007ab}{parseBlock}}();}
+\DoxyCodeLine{00086\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_abb824c4de7b70e13901f07de72c6c4ab}{parseExpression}}();}
+\DoxyCodeLine{00088\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_a5dbb383062d5a78f5be7622c2b2cb7b6}{parseIf}}();}
+\DoxyCodeLine{00090\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_a993b54d6b61d4d5beeeee34b11cc599e}{parseWhile}}();}
+\DoxyCodeLine{00092\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_a849c4da1cd30944c193007043bc54aa4}{parseLoop}}();}
+\DoxyCodeLine{00093\ \ \ \ \ \ \ \ \ }
+\DoxyCodeLine{00101\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_a48b33acc02dd6093493988f1215ce802}{parsePostfix}}(ExprPtr\ expr);}
+\DoxyCodeLine{00102\ }
+\DoxyCodeLine{00109\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_a6eead88e01a3ae2933fe7be1dd8fec85}{parseCallExpr}}(ExprPtr\ callee);}
+\DoxyCodeLine{00110\ }
+\DoxyCodeLine{00114\ \ \ \ \ \ \ \ \ ExprPtr\ \doxymbox{\hyperlink{classParser_a92d880246687115dd5b029de006d09d5}{parseReturn}}();}
+\DoxyCodeLine{00115\ }
+\DoxyCodeLine{00119\ \ \ \ \ \ \ \ \ \textcolor{keywordtype}{bool}\ \doxymbox{\hyperlink{classParser_adc1f7920af86aeb0c0fe75bdfc702791}{parseIsVarDeclRef}}();}
+\DoxyCodeLine{00120\ \ \ \ \ \ \ \ \ ExprPtr\ parseVarDecl();}
+\DoxyCodeLine{00121\ \ \ \ \ \ \ \ \ ExprPtr\ parseBorrow();}
+\DoxyCodeLine{00122\ \ \ \ \ \ \ \ \ ExprPtr\ parseAssignement();}
+\DoxyCodeLine{00123\ \ \ \ \ \ \ \ \ ExprPtr\ parseOr();}
+\DoxyCodeLine{00124\ \ \ \ \ \ \ \ \ ExprPtr\ parseAnd();}
+\DoxyCodeLine{00125\ \ \ \ \ \ \ \ \ ExprPtr\ parseEquality();}
+\DoxyCodeLine{00126\ \ \ \ \ \ \ \ \ ExprPtr\ parseComparison();}
+\DoxyCodeLine{00127\ \ \ \ \ \ \ \ \ ExprPtr\ parseAdditive();}
+\DoxyCodeLine{00128\ \ \ \ \ \ \ \ \ ExprPtr\ parseMultiplicative();}
+\DoxyCodeLine{00129\ \ \ \ \ \ \ \ \ ExprPtr\ parseUnary();}
+\DoxyCodeLine{00130\ \ \ \ \ \ \ \ \ ExprPtr\ parsePrimary();}
+\DoxyCodeLine{00131\ \};}
+\DoxyCodeLine{00132\ }
+\DoxyCodeLine{00133\ }
+\DoxyCodeLine{00134\ \textcolor{preprocessor}{\#endif\ }\textcolor{comment}{//\ !PARSER\_H}}
 
 \end{DoxyCode}

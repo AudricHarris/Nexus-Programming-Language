@@ -1,4 +1,4 @@
 var Parser_8hpp =
 [
-    [ "Parser", "classParser.html", null ]
+    [ "Parser", "classParser.html", "classParser" ]
 ];

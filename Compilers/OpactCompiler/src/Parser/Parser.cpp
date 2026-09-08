@@ -2,8 +2,6 @@
 #include "Parser/Parser.hpp"
 #include "Parser/Ast.hpp"
 #include "Token/TokenType.hpp"
-#include <algorithm>
-#include <cmath>
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -346,13 +344,11 @@ ExprPtr Parser::parseBlock()
 
 
 				if (expr != nullptr) {
-					bool isControlFlow = (dynamic_cast<IfExpr*>(expr.get()) != nullptr ||
-							dynamic_cast<WhileExpr*>(expr.get()) != nullptr ||
-							dynamic_cast<LoopExpr*>(expr.get()) != nullptr);
+					bool requiresSemi = expr->requiresSemicolon();
 
 					expressions.push_back(std::move(expr));
 
-					if (!isControlFlow && !this->check(TokenKind::RBRACE)) {
+					if (requiresSemi && !this->check(TokenKind::RBRACE)) {
 						this->expect(TokenKind::SEMI, "Expected ';' after statement");
 					}
 				}
@@ -433,8 +429,13 @@ ExprPtr Parser::parseIf()
 	ExprPtr ifBranch = this->parseBlock(); 
 	std::optional<ExprPtr> elseBranch = std::nullopt;
 
-	if (this->match(TokenKind::ELSE))
-		elseBranch = this->parseBlock(); 
+	if (this->match(TokenKind::ELSE)) {
+		if (this->check(TokenKind::IF)) {
+			elseBranch = this->parseIf();
+		} else {
+			elseBranch = this->parseBlock(); 
+		}
+	}
 
 	return std::make_unique<IfExpr>(std::move(condition), std::move(ifBranch), std::move(elseBranch));
 }

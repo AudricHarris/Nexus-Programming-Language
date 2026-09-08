@@ -14,46 +14,42 @@ The parser is the file that transform a list of tokens into a ast The parser is 
 \item 
 \Hypertarget{classParser_a6d2ddbf15fbed84da063a214b02958ac}\label{classParser_a6d2ddbf15fbed84da063a214b02958ac} 
 {\bfseries Parser} (std::\+vector$<$ \doxymbox{\hyperlink{classToken}{Token}} $>$ tok, std::\+string path="{}"{}, \doxymbox{\hyperlink{classCompilerPipeline}{Compiler\+Pipeline}} \texorpdfstring{$\ast$}{*}pipe=nullptr)
-\item 
+\begin{DoxyCompactList}\small\item\em Creates The parser with 3 params : list of tokens, name of path, the compiler pipeline. \end{DoxyCompactList}\item 
 \Hypertarget{classParser_a8726e43e2634b55e79f7bc88670b26cb}\label{classParser_a8726e43e2634b55e79f7bc88670b26cb} 
 Expr\+Ptr {\bfseries parse\+Module} ()
-\item 
+\begin{DoxyCompactList}\small\item\em Parse \doxylink{structModule}{Module} is for the initial file this will call parse top level as long it is not at the end of a file. \end{DoxyCompactList}\item 
 \Hypertarget{classParser_ad4fb144d148d8dbefdd6d731bc832686}\label{classParser_ad4fb144d148d8dbefdd6d731bc832686} 
 Expr\+Ptr {\bfseries parse\+Top\+Level} ()
-\item 
+\begin{DoxyCompactList}\small\item\em Parse Top\+Level is the maximum level concept example Functions, Classes, Enums, etc... \end{DoxyCompactList}\item 
 \Hypertarget{classParser_a1efa7e01d9060ffdca5065a9f9cc6687}\label{classParser_a1efa7e01d9060ffdca5065a9f9cc6687} 
 Expr\+Ptr {\bfseries parse\+Import} ()
-\item 
+\begin{DoxyCompactList}\small\item\em Parse Import checks the keyword import and adds a expression. \end{DoxyCompactList}\item 
 \Hypertarget{classParser_a8e9fd78258bb9117ac9c67ca35d32122}\label{classParser_a8e9fd78258bb9117ac9c67ca35d32122} 
 Expr\+Ptr {\bfseries parse\+Function} (std::\+optional$<$ \doxymbox{\hyperlink{classToken}{Token}} $>$ visib)
-\item 
+\begin{DoxyCompactList}\small\item\em Parse function decl with params and returns things. \end{DoxyCompactList}\item 
 \Hypertarget{classParser_aa858d34e90cc3c656fa15ebaec9007ab}\label{classParser_aa858d34e90cc3c656fa15ebaec9007ab} 
 Expr\+Ptr {\bfseries parse\+Block} ()
-\item 
+\begin{DoxyCompactList}\small\item\em Parses block so this is \{\+[expressions]\} so just a list of expressions. \end{DoxyCompactList}\item 
 \Hypertarget{classParser_abb824c4de7b70e13901f07de72c6c4ab}\label{classParser_abb824c4de7b70e13901f07de72c6c4ab} 
 Expr\+Ptr {\bfseries parse\+Expression} ()
-\item 
+\begin{DoxyCompactList}\small\item\em parses the expression which could be var decl, if expressions, while expression, etc... \end{DoxyCompactList}\item 
 \Hypertarget{classParser_a5dbb383062d5a78f5be7622c2b2cb7b6}\label{classParser_a5dbb383062d5a78f5be7622c2b2cb7b6} 
 Expr\+Ptr {\bfseries parse\+If} ()
-\item 
+\begin{DoxyCompactList}\small\item\em parses if (expression) and then block and then after that an else if/\+else with another block \end{DoxyCompactList}\item 
 \Hypertarget{classParser_a993b54d6b61d4d5beeeee34b11cc599e}\label{classParser_a993b54d6b61d4d5beeeee34b11cc599e} 
 Expr\+Ptr {\bfseries parse\+While} ()
-\item 
+\begin{DoxyCompactList}\small\item\em parses while (expression) and then block \end{DoxyCompactList}\item 
 \Hypertarget{classParser_a849c4da1cd30944c193007043bc54aa4}\label{classParser_a849c4da1cd30944c193007043bc54aa4} 
 Expr\+Ptr {\bfseries parse\+Loop} ()
-\item 
-\Hypertarget{classParser_a48b33acc02dd6093493988f1215ce802}\label{classParser_a48b33acc02dd6093493988f1215ce802} 
-Expr\+Ptr {\bfseries parse\+Postfix} (Expr\+Ptr expr)
-\item 
-\Hypertarget{classParser_a6eead88e01a3ae2933fe7be1dd8fec85}\label{classParser_a6eead88e01a3ae2933fe7be1dd8fec85} 
-Expr\+Ptr {\bfseries parse\+Call\+Expr} (Expr\+Ptr callee)
-\item 
-\Hypertarget{classParser_a92d880246687115dd5b029de006d09d5}\label{classParser_a92d880246687115dd5b029de006d09d5} 
-Expr\+Ptr {\bfseries parse\+Return} ()
-\item 
-\Hypertarget{classParser_adc1f7920af86aeb0c0fe75bdfc702791}\label{classParser_adc1f7920af86aeb0c0fe75bdfc702791} 
-bool {\bfseries parse\+Is\+Var\+Decl\+Ref} ()
-\item 
+\begin{DoxyCompactList}\small\item\em parses loop (initially a while true might become a loop until) and then block \end{DoxyCompactList}\item 
+Expr\+Ptr \doxymbox{\hyperlink{classParser_a48b33acc02dd6093493988f1215ce802}{parse\+Postfix}} (Expr\+Ptr expr)
+\begin{DoxyCompactList}\small\item\em Parses postfix operators, indexing, member access, function calls, and type casts in a left-\/to-\/right chain. \end{DoxyCompactList}\item 
+Expr\+Ptr \doxymbox{\hyperlink{classParser_a6eead88e01a3ae2933fe7be1dd8fec85}{parse\+Call\+Expr}} (Expr\+Ptr callee)
+\begin{DoxyCompactList}\small\item\em Parses callee, meaning that the Expr\+Ptr callee results into a function call. \end{DoxyCompactList}\item 
+Expr\+Ptr \doxymbox{\hyperlink{classParser_a92d880246687115dd5b029de006d09d5}{parse\+Return}} ()
+\begin{DoxyCompactList}\small\item\em Parses the return keyword to create a return expr it also has an expression after. \end{DoxyCompactList}\item 
+bool \doxymbox{\hyperlink{classParser_adc1f7920af86aeb0c0fe75bdfc702791}{parse\+Is\+Var\+Decl\+Ref}} ()
+\begin{DoxyCompactList}\small\item\em Check if the parsed elements is a var decl it\textquotesingle{}s for parse expression that it\textquotesingle{}s used. \end{DoxyCompactList}\item 
 \Hypertarget{classParser_a08c55ecfb3e462c4c7147dcdf19c7732}\label{classParser_a08c55ecfb3e462c4c7147dcdf19c7732} 
 Expr\+Ptr {\bfseries parse\+Var\+Decl} ()
 \item 
@@ -92,11 +88,80 @@ Expr\+Ptr {\bfseries parse\+Primary} ()
 \item 
 \Hypertarget{classParser_a0b291d69599c11db2077222ca385f298}\label{classParser_a0b291d69599c11db2077222ca385f298} 
 void {\bfseries synchronize} ()
-\end{DoxyCompactItemize}
+\begin{DoxyCompactList}\small\item\em If there is an error with an expression this will allow to continue reading the file. Usually if this is called it means your code is invalid. \end{DoxyCompactList}\end{DoxyCompactItemize}
 
 
 \doxysubsection{Detailed Description}
 The parser is the file that transform a list of tokens into a ast The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that) It uses \doxylink{classCompilerPipeline}{Compiler\+Pipeline} for adding modules and making treating multiple files in multiple threads speeding up the process. 
+
+With time these concept and this parser will be expanded to contain more features and fixes. 
+
+\label{classParser_doc-func-members}
+\Hypertarget{classParser_doc-func-members}
+\doxysubsection{Member Function Documentation}
+\Hypertarget{classParser_a6eead88e01a3ae2933fe7be1dd8fec85}\index{Parser@{Parser}!parseCallExpr@{parseCallExpr}}
+\index{parseCallExpr@{parseCallExpr}!Parser@{Parser}}
+\doxysubsubsection{\texorpdfstring{parseCallExpr()}{parseCallExpr()}}
+{\footnotesize\ttfamily \label{classParser_a6eead88e01a3ae2933fe7be1dd8fec85} 
+Expr\+Ptr Parser::\+parse\+Call\+Expr (\begin{DoxyParamCaption}\item[{Expr\+Ptr}]{callee}{}\end{DoxyParamCaption})}
+
+
+
+Parses callee, meaning that the Expr\+Ptr callee results into a function call. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em callee} & The base expression that is a function that you call. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Expr\+Ptr The resulting AST node after creating a callee\+Expr. 
+\end{DoxyReturn}
+\Hypertarget{classParser_adc1f7920af86aeb0c0fe75bdfc702791}\index{Parser@{Parser}!parseIsVarDeclRef@{parseIsVarDeclRef}}
+\index{parseIsVarDeclRef@{parseIsVarDeclRef}!Parser@{Parser}}
+\doxysubsubsection{\texorpdfstring{parseIsVarDeclRef()}{parseIsVarDeclRef()}}
+{\footnotesize\ttfamily \label{classParser_adc1f7920af86aeb0c0fe75bdfc702791} 
+bool Parser::\+parse\+Is\+Var\+Decl\+Ref (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})}
+
+
+
+Check if the parsed elements is a var decl it\textquotesingle{}s for parse expression that it\textquotesingle{}s used. 
+
+\begin{DoxyReturn}{Returns}
+bool if that expr is a var decl or not 
+\end{DoxyReturn}
+\Hypertarget{classParser_a48b33acc02dd6093493988f1215ce802}\index{Parser@{Parser}!parsePostfix@{parsePostfix}}
+\index{parsePostfix@{parsePostfix}!Parser@{Parser}}
+\doxysubsubsection{\texorpdfstring{parsePostfix()}{parsePostfix()}}
+{\footnotesize\ttfamily \label{classParser_a48b33acc02dd6093493988f1215ce802} 
+Expr\+Ptr Parser::\+parse\+Postfix (\begin{DoxyParamCaption}\item[{Expr\+Ptr}]{expr}{}\end{DoxyParamCaption})}
+
+
+
+Parses postfix operators, indexing, member access, function calls, and type casts in a left-\/to-\/right chain. 
+
+
+\begin{DoxyParams}{Parameters}
+{\em expr} & The base expression node to wrap with postfix operations. \\
+\hline
+\end{DoxyParams}
+\begin{DoxyReturn}{Returns}
+Expr\+Ptr The resulting AST node after applying all postfixes. 
+\end{DoxyReturn}
+\Hypertarget{classParser_a92d880246687115dd5b029de006d09d5}\index{Parser@{Parser}!parseReturn@{parseReturn}}
+\index{parseReturn@{parseReturn}!Parser@{Parser}}
+\doxysubsubsection{\texorpdfstring{parseReturn()}{parseReturn()}}
+{\footnotesize\ttfamily \label{classParser_a92d880246687115dd5b029de006d09d5} 
+Expr\+Ptr Parser::\+parse\+Return (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})}
+
+
+
+Parses the return keyword to create a return expr it also has an expression after. 
+
+\begin{DoxyReturn}{Returns}
+Expr\+Ptr which is the return expr 
+\end{DoxyReturn}
+
 
 The documentation for this class was generated from the following files:\begin{DoxyCompactItemize}
 \item 

@@ -15,6 +15,8 @@ Inheritance diagram for While\+Expr:\begin{figure}[H]
 void \doxymbox{\hyperlink{structWhileExpr_a6909f5eae19436ffd79707243474df84}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
 \item 
 Expr\+Ptr \doxymbox{\hyperlink{structWhileExpr_aac706b0595c9f1c69fb2e552642f95c2}{clone}} () const override
+\item 
+virtual bool \doxymbox{\hyperlink{structWhileExpr_aa42bcf2ef09fea78ce8afa34e6e57c76}{requires\+Semicolon}} () const override
 \end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
@@ -49,6 +51,16 @@ Expr\+Ptr While\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaptio
 
 
 Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structWhileExpr_aa42bcf2ef09fea78ce8afa34e6e57c76}\index{WhileExpr@{WhileExpr}!requiresSemicolon@{requiresSemicolon}}
+\index{requiresSemicolon@{requiresSemicolon}!WhileExpr@{WhileExpr}}
+\doxysubsubsection{\texorpdfstring{requiresSemicolon()}{requiresSemicolon()}}
+{\footnotesize\ttfamily \label{structWhileExpr_aa42bcf2ef09fea78ce8afa34e6e57c76} 
+virtual bool While\+Expr::\+requires\+Semicolon (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Reimplemented from \doxymbox{\hyperlink{structExpression}{Expression}}.
 
 
 

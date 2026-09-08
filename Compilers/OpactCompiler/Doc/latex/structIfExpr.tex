@@ -15,6 +15,8 @@ Inheritance diagram for If\+Expr:\begin{figure}[H]
 void \doxymbox{\hyperlink{structIfExpr_a3888591f731dd6389b687b6ca2f11d5c}{accept}} (\doxymbox{\hyperlink{structASTVisitor}{ASTVisitor}} \&visitor) override
 \item 
 Expr\+Ptr \doxymbox{\hyperlink{structIfExpr_a756ef00025dd3400035001576b9ff6e2}{clone}} () const override
+\item 
+virtual bool \doxymbox{\hyperlink{structIfExpr_af6cd246667c72007419fd804c92ca9c9}{requires\+Semicolon}} () const override
 \end{DoxyCompactItemize}
 \doxysubsubsection*{Public Attributes}
 \begin{DoxyCompactItemize}
@@ -52,6 +54,16 @@ Expr\+Ptr If\+Expr::\+clone (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption})
 
 
 Implements \doxymbox{\hyperlink{structExpression}{Expression}}.
+
+\Hypertarget{structIfExpr_af6cd246667c72007419fd804c92ca9c9}\index{IfExpr@{IfExpr}!requiresSemicolon@{requiresSemicolon}}
+\index{requiresSemicolon@{requiresSemicolon}!IfExpr@{IfExpr}}
+\doxysubsubsection{\texorpdfstring{requiresSemicolon()}{requiresSemicolon()}}
+{\footnotesize\ttfamily \label{structIfExpr_af6cd246667c72007419fd804c92ca9c9} 
+virtual bool If\+Expr::\+requires\+Semicolon (\begin{DoxyParamCaption}{}{}\end{DoxyParamCaption}) const\hspace{0.3cm}{\ttfamily [inline]}, {\ttfamily [nodiscard]}, {\ttfamily [override]}, {\ttfamily [virtual]}}
+
+
+
+Reimplemented from \doxymbox{\hyperlink{structExpression}{Expression}}.
 
 
 

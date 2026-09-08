@@ -24,8 +24,8 @@ struct TypeDesc {
 	std::vector<int> dim;
 
 	bool isReference = false;
-	bool isMutable   = false;
-	bool isDynamic   = false;
+	bool isMutable	 = false;
+	bool isDynamic	 = false;
 
 	[[nodiscard]] bool isArray() const { return !dim.empty(); }
 };
@@ -38,6 +38,7 @@ struct Expression {
 	virtual ~Expression() = default;
 	virtual void accept(ASTVisitor& visitor) = 0;
 	[[nodiscard]] virtual std::unique_ptr<Expression> clone() const = 0;
+	[[nodiscard]] virtual bool requiresSemicolon() const { return true; }
 };
 
 using ExprPtr = std::unique_ptr<Expression>;
@@ -264,6 +265,8 @@ struct IfExpr : Expression {
 			cloneOptional(elseBranch)
 		);
 	}
+	
+	[[nodiscard]] virtual bool requiresSemicolon() const override { return false; }
 };
 
 struct WhileExpr : Expression {
@@ -280,6 +283,8 @@ struct WhileExpr : Expression {
 			loopBranch ? loopBranch->clone() : nullptr
 		);
 	}
+	
+	[[nodiscard]] virtual bool requiresSemicolon() const override { return false; }
 };
 
 struct LoopExpr : Expression {
@@ -294,6 +299,8 @@ struct LoopExpr : Expression {
 			loopBranch ? loopBranch->clone() : nullptr
 		);
 	}
+	
+	[[nodiscard]] virtual bool requiresSemicolon() const override { return false; }
 };
 
 struct MemberAccessExpr : Expression {
@@ -459,6 +466,8 @@ struct FunctionDeclExpr : Expression {
 		}
 		return std::make_unique<FunctionDeclExpr>(name, std::move(clonedParams), returnType, body ? body->clone() : nullptr, isPublic, isStatic);
 	}
+	
+	[[nodiscard]] virtual bool requiresSemicolon() const override { return false; }
 };
 
 //-----------------------//

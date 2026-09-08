@@ -21,7 +21,9 @@ class CompilerPipeline;
  * @class Parser
  * @brief The parser is the file that transform a list of tokens into a ast
  * The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that)
- * It uses CompilerPipeline for adding modules and making treating multiple files in multiple threads speeding up the process
+ * It uses CompilerPipeline for adding modules and making treating multiple files in multiple threads speeding up the process.
+ *
+ * With time these concept and this parser will be expanded to contain more features and fixes.
  */
 class Parser {
 	private:
@@ -69,18 +71,51 @@ class Parser {
 			: tokens(std::move(tok)), idx(0), filePath(std::move(path)), pipeline(pipe) {}
 
 		// Methods
+		
+		/** @brief Parse Module is for the initial file this will call parse top level as long it is not at the end of a file*/
 		ExprPtr parseModule();
+		/** @brief Parse TopLevel is the maximum level concept example Functions, Classes, Enums, etc...*/
 		ExprPtr parseTopLevel();
+		/** @brief Parse Import checks the keyword import and adds a expression */
 		ExprPtr parseImport();
+		/** @brief Parse function decl with params and returns things */
 		ExprPtr parseFunction(std::optional<Token> visib);
+		/** @brief Parses block so this is {[expressions]} so just a list of expressions */
 		ExprPtr parseBlock();
+		/** @brief parses the expression which could be var decl, if expressions, while expression, etc... */
 		ExprPtr parseExpression();
+		/** @brief parses if (expression) and then block and then after that an else if/else with another block*/
 		ExprPtr parseIf();
+		/** @brief parses while (expression) and then block*/
 		ExprPtr parseWhile();
+		/** @brief parses loop (initially a while true might become a loop until) and then block*/
 		ExprPtr parseLoop();
+		
+		/**
+		 * @brief Parses postfix operators, indexing, member access, function calls, 
+		 *        and type casts in a left-to-right chain.
+		 *
+		 * @param expr The base expression node to wrap with postfix operations.
+		 * @return ExprPtr The resulting AST node after applying all postfixes.
+		 */
 		ExprPtr parsePostfix(ExprPtr expr);
+
+		/**
+		 * @brief Parses callee, meaning that the ExprPtr callee results into a function call.
+		 *
+		 * @param callee The base expression that is a function that you call.
+		 * @return ExprPtr The resulting AST node after creating a calleeExpr.
+		 */
 		ExprPtr parseCallExpr(ExprPtr callee);
+
+		/**@brief Parses the return keyword to create a return expr it also has an expression after
+		 * @return ExprPtr which is the return expr
+		 */
 		ExprPtr parseReturn();
+
+		/**@brief Check if the parsed elements is a var decl it's for parse expression that it's used
+		 * @return bool if that expr is a var decl or not
+		 */
 		bool parseIsVarDeclRef();
 		ExprPtr parseVarDecl();
 		ExprPtr parseBorrow();

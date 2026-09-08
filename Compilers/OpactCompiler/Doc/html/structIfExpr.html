@@ -127,6 +127,7 @@ Public Member Functions</h2></td></tr>
 &#160;</td><td class="memItemRight"><b>IfExpr</b> (ExprPtr condition=nullptr, ExprPtr ifBranch=nullptr, std::optional&lt; ExprPtr &gt; elseBranch=std::nullopt)</td></tr>
 <tr class="memitem:a3888591f731dd6389b687b6ca2f11d5c" id="r_a3888591f731dd6389b687b6ca2f11d5c"><td class="memItemLeft">void&#160;</td><td class="memItemRight"><a class="el" href="#a3888591f731dd6389b687b6ca2f11d5c">accept</a> (<a class="el" href="structASTVisitor.html">ASTVisitor</a> &amp;visitor) override</td></tr>
 <tr class="memitem:a756ef00025dd3400035001576b9ff6e2" id="r_a756ef00025dd3400035001576b9ff6e2"><td class="memItemLeft">ExprPtr&#160;</td><td class="memItemRight"><a class="el" href="#a756ef00025dd3400035001576b9ff6e2">clone</a> () const override</td></tr>
+<tr class="memitem:af6cd246667c72007419fd804c92ca9c9" id="r_af6cd246667c72007419fd804c92ca9c9"><td class="memItemLeft">virtual bool&#160;</td><td class="memItemRight"><a class="el" href="#af6cd246667c72007419fd804c92ca9c9">requiresSemicolon</a> () const override</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 id="header-pub-attribs" class="groupheader"><a id="pub-attribs" name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
@@ -189,6 +190,33 @@ std::optional&lt; ExprPtr &gt;&#160;</td><td class="memItemRight"><b>elseBranch<
 </div><div class="memdoc">
 
 <p>Implements <a class="el" href="structExpression.html">Expression</a>.</p>
+
+</div>
+</div>
+<a id="af6cd246667c72007419fd804c92ca9c9" name="af6cd246667c72007419fd804c92ca9c9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af6cd246667c72007419fd804c92ca9c9">&#9670;&#160;</a></span>requiresSemicolon()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">virtual bool IfExpr::requiresSemicolon </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel override">override</span><span class="mlabel virtual">virtual</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Reimplemented from <a class="el" href="structExpression.html">Expression</a>.</p>
 
 </div>
 </div>
