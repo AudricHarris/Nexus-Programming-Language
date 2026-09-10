@@ -93,40 +93,43 @@ class Parser {
 		
 		/**
 		 * @brief Parses postfix operators, indexing, member access, function calls, 
-		 *        and type casts in a left-to-right chain.
-		 *
+		 *		  and type casts in a left-to-right chain.
 		 * @param expr The base expression node to wrap with postfix operations.
-		 * @return ExprPtr The resulting AST node after applying all postfixes.
 		 */
 		ExprPtr parsePostfix(ExprPtr expr);
 
 		/**
 		 * @brief Parses callee, meaning that the ExprPtr callee results into a function call.
-		 *
 		 * @param callee The base expression that is a function that you call.
-		 * @return ExprPtr The resulting AST node after creating a calleeExpr.
-		 */
+		 * */
 		ExprPtr parseCallExpr(ExprPtr callee);
 
-		/**@brief Parses the return keyword to create a return expr it also has an expression after
-		 * @return ExprPtr which is the return expr
-		 */
+		/**@brief Parses the return keyword to create a return expr it also has an expression after*/
 		ExprPtr parseReturn();
 
-		/**@brief Check if the parsed elements is a var decl it's for parse expression that it's used
-		 * @return bool if that expr is a var decl or not
-		 */
+		/**@brief Check if the parsed elements is a var decl it's for parse expression that it's used*/
 		bool parseIsVarDeclRef();
+		/**@brief Parses a var decl either it's a borrow or assignement*/
 		ExprPtr parseVarDecl();
+		/**@brief Parses a borrow it can either be a mutable reference or just a classic reference*/
 		ExprPtr parseBorrow();
+		/**@brief Parses a assignement, so expression = expression (First expression can be var decl identifier)*/
 		ExprPtr parseAssignement();
+		/**@brief Parses a or expr (the priority is first compared to the and in the parser, so it will evaluate last between "or and "and")*/
 		ExprPtr parseOr();
+		/**@brief Parses the and expr (Expression and expression)*/
 		ExprPtr parseAnd();
+		/**@brief Parses the equality expr (Expression == Expression)*/
 		ExprPtr parseEquality();
+		/**@brief Parses a comparison expr (Expression > or >= or < or <= Expression)*/
 		ExprPtr parseComparison();
+		/**@brief Parses a addition or substraction so expr operator expr*/
 		ExprPtr parseAdditive();
+		/**@brief Parses a multiplication, division or modulo so expr operator expr*/
 		ExprPtr parseMultiplicative();
+		/**@brief Parses a unary so for example ! or - (Example !true == false )*/
 		ExprPtr parseUnary();
+		/**@brief Parses a primary ( which are usually litterals)*/
 		ExprPtr parsePrimary();
 };
 
