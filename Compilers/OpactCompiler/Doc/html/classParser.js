@@ -1,8 +1,14 @@
 var classParser =
 [
     [ "Parser", "classParser.html#a6d2ddbf15fbed84da063a214b02958ac", null ],
+    [ "parseAdditive", "classParser.html#afd23c370e48d2dfed8ce0d4d577f505c", null ],
+    [ "parseAnd", "classParser.html#a95e3e3c82ac03499cf7671a9e7a03b07", null ],
+    [ "parseAssignement", "classParser.html#aea64d532721242ff7c2aeff03736a9b4", null ],
     [ "parseBlock", "classParser.html#aa858d34e90cc3c656fa15ebaec9007ab", null ],
+    [ "parseBorrow", "classParser.html#a11c80ae4f6c32aa3f5e825c8ce9255c1", null ],
     [ "parseCallExpr", "classParser.html#a6eead88e01a3ae2933fe7be1dd8fec85", null ],
+    [ "parseComparison", "classParser.html#af232a413dd10e2cf9cadc374a9bfcd09", null ],
+    [ "parseEquality", "classParser.html#a23687bf9ddb67ae827e9e9d1d70445b7", null ],
     [ "parseExpression", "classParser.html#abb824c4de7b70e13901f07de72c6c4ab", null ],
     [ "parseFunction", "classParser.html#a8e9fd78258bb9117ac9c67ca35d32122", null ],
     [ "parseIf", "classParser.html#a5dbb383062d5a78f5be7622c2b2cb7b6", null ],
@@ -10,9 +16,14 @@ var classParser =
     [ "parseIsVarDeclRef", "classParser.html#adc1f7920af86aeb0c0fe75bdfc702791", null ],
     [ "parseLoop", "classParser.html#a849c4da1cd30944c193007043bc54aa4", null ],
     [ "parseModule", "classParser.html#a8726e43e2634b55e79f7bc88670b26cb", null ],
+    [ "parseMultiplicative", "classParser.html#a0653b594b3ddb73830a6b1dcec742814", null ],
+    [ "parseOr", "classParser.html#a746d9622eda7738ce02f4c190f175514", null ],
     [ "parsePostfix", "classParser.html#a48b33acc02dd6093493988f1215ce802", null ],
+    [ "parsePrimary", "classParser.html#ac78805962e62e8a75ead857451ce76c0", null ],
     [ "parseReturn", "classParser.html#a92d880246687115dd5b029de006d09d5", null ],
     [ "parseTopLevel", "classParser.html#ad4fb144d148d8dbefdd6d731bc832686", null ],
+    [ "parseUnary", "classParser.html#a5abd1b2a24b698f03c57197108a49963", null ],
+    [ "parseVarDecl", "classParser.html#a08c55ecfb3e462c4c7147dcdf19c7732", null ],
     [ "parseWhile", "classParser.html#a993b54d6b61d4d5beeeee34b11cc599e", null ],
     [ "synchronize", "classParser.html#a0b291d69599c11db2077222ca385f298", null ]
 ];
