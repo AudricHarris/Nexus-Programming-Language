@@ -6,8 +6,8 @@
 \DoxyCodeLine{00002\ \textcolor{preprocessor}{\#define\ COMPILER\_PIPELINE\_HPP}}
 \DoxyCodeLine{00003\ }
 \DoxyCodeLine{00004\ \textcolor{preprocessor}{\#include\ "{}Ast.hpp"{}}}
-\DoxyCodeLine{00005\ \textcolor{preprocessor}{\#include\ "{}FileReader/FileReader.hpp"{}}}
-\DoxyCodeLine{00006\ \textcolor{preprocessor}{\#include\ "{}Lexer/Lexer.hpp"{}}}
+\DoxyCodeLine{00005\ \textcolor{preprocessor}{\#include\ "{}\doxymbox{\hyperlink{FileReader_8hpp}{FileReader/FileReader.hpp}}"{}}}
+\DoxyCodeLine{00006\ \textcolor{preprocessor}{\#include\ "{}\doxymbox{\hyperlink{Lexer_8hpp}{Lexer/Lexer.hpp}}"{}}}
 \DoxyCodeLine{00007\ \textcolor{preprocessor}{\#include\ "{}\doxymbox{\hyperlink{Parser_8hpp}{Parser/Parser.hpp}}"{}}}
 \DoxyCodeLine{00008\ \textcolor{preprocessor}{\#include\ <iostream>}}
 \DoxyCodeLine{00009\ \textcolor{preprocessor}{\#include\ <string>}}
@@ -132,7 +132,7 @@
 \DoxyCodeLine{00128\ \ \ \ \ \ \ \ \ \ \ \ \ \textcolor{keyword}{const}\ std::string\ \&code\ =\ content.value();}
 \DoxyCodeLine{00129\ }
 \DoxyCodeLine{00130\ \ \ \ \ \ \ \ \ \ \ \ \ \doxymbox{\hyperlink{classLexer}{Lexer}}\ l(code);}
-\DoxyCodeLine{00131\ \ \ \ \ \ \ \ \ \ \ \ \ std::vector<Token>\ codeTokenized\ =\ l.Tokenize();}
+\DoxyCodeLine{00131\ \ \ \ \ \ \ \ \ \ \ \ \ std::vector<Token>\ codeTokenized\ =\ l.\doxymbox{\hyperlink{classLexer_aac4a5e7bbfdd227aaf999ad3f5429d62}{Tokenize}}();}
 \DoxyCodeLine{00132\ \ \ \ \ \ \ \ \ \ \ \ \ \textcolor{keywordflow}{for}\ (\doxymbox{\hyperlink{classToken}{Token}}\ t\ :\ codeTokenized)}
 \DoxyCodeLine{00133\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ std::cout\ <<\ t.toString();}
 \DoxyCodeLine{00134\ }

@@ -19,7 +19,7 @@ var annotated_dup =
     [ "IfExpr", "structIfExpr.html", null ],
     [ "ImportExpr", "structImportExpr.html", null ],
     [ "ImportPath", "structImportPath.html", null ],
-    [ "Lexer", "classLexer.html", null ],
+    [ "Lexer", "classLexer.html", "classLexer" ],
     [ "LiteralExpr", "structLiteralExpr.html", null ],
     [ "LoopExpr", "structLoopExpr.html", null ],
     [ "MemberAccessExpr", "structMemberAccessExpr.html", null ],

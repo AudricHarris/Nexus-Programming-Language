@@ -1,28 +1,4 @@
 var searchData=
 [
-  ['parseadditive_0',['parseAdditive',['../classParser.html#afd23c370e48d2dfed8ce0d4d577f505c',1,'Parser']]],
-  ['parseand_1',['parseAnd',['../classParser.html#a95e3e3c82ac03499cf7671a9e7a03b07',1,'Parser']]],
-  ['parseassignement_2',['parseAssignement',['../classParser.html#aea64d532721242ff7c2aeff03736a9b4',1,'Parser']]],
-  ['parseblock_3',['parseBlock',['../classParser.html#aa858d34e90cc3c656fa15ebaec9007ab',1,'Parser']]],
-  ['parseborrow_4',['parseBorrow',['../classParser.html#a11c80ae4f6c32aa3f5e825c8ce9255c1',1,'Parser']]],
-  ['parsecallexpr_5',['parseCallExpr',['../classParser.html#a6eead88e01a3ae2933fe7be1dd8fec85',1,'Parser']]],
-  ['parsecomparison_6',['parseComparison',['../classParser.html#af232a413dd10e2cf9cadc374a9bfcd09',1,'Parser']]],
-  ['parseequality_7',['parseEquality',['../classParser.html#a23687bf9ddb67ae827e9e9d1d70445b7',1,'Parser']]],
-  ['parseexpression_8',['parseExpression',['../classParser.html#abb824c4de7b70e13901f07de72c6c4ab',1,'Parser']]],
-  ['parsefunction_9',['parseFunction',['../classParser.html#a8e9fd78258bb9117ac9c67ca35d32122',1,'Parser']]],
-  ['parseif_10',['parseIf',['../classParser.html#a5dbb383062d5a78f5be7622c2b2cb7b6',1,'Parser']]],
-  ['parseimport_11',['parseImport',['../classParser.html#a1efa7e01d9060ffdca5065a9f9cc6687',1,'Parser']]],
-  ['parseisvardeclref_12',['parseIsVarDeclRef',['../classParser.html#adc1f7920af86aeb0c0fe75bdfc702791',1,'Parser']]],
-  ['parseloop_13',['parseLoop',['../classParser.html#a849c4da1cd30944c193007043bc54aa4',1,'Parser']]],
-  ['parsemodule_14',['parseModule',['../classParser.html#a8726e43e2634b55e79f7bc88670b26cb',1,'Parser']]],
-  ['parsemultiplicative_15',['parseMultiplicative',['../classParser.html#a0653b594b3ddb73830a6b1dcec742814',1,'Parser']]],
-  ['parseor_16',['parseOr',['../classParser.html#a746d9622eda7738ce02f4c190f175514',1,'Parser']]],
-  ['parsepostfix_17',['parsePostfix',['../classParser.html#a48b33acc02dd6093493988f1215ce802',1,'Parser']]],
-  ['parseprimary_18',['parsePrimary',['../classParser.html#ac78805962e62e8a75ead857451ce76c0',1,'Parser']]],
-  ['parser_19',['Parser',['../classParser.html#a6d2ddbf15fbed84da063a214b02958ac',1,'Parser']]],
-  ['parsereturn_20',['parseReturn',['../classParser.html#a92d880246687115dd5b029de006d09d5',1,'Parser']]],
-  ['parsetoplevel_21',['parseTopLevel',['../classParser.html#ad4fb144d148d8dbefdd6d731bc832686',1,'Parser']]],
-  ['parseunary_22',['parseUnary',['../classParser.html#a5abd1b2a24b698f03c57197108a49963',1,'Parser']]],
-  ['parsevardecl_23',['parseVarDecl',['../classParser.html#a08c55ecfb3e462c4c7147dcdf19c7732',1,'Parser']]],
-  ['parsewhile_24',['parseWhile',['../classParser.html#a993b54d6b61d4d5beeeee34b11cc599e',1,'Parser']]]
+  ['main_0',['main',['../main_8cpp.html#a0ddf1224851353fc92bfbff6f499fa97',1,'main.cpp']]]
 ];

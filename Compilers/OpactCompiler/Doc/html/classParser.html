@@ -112,10 +112,10 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('classParser.ht
 </div><!--header-->
 <div class="contents">
 
-<p>The parser is the file that transform a list of tokens into a ast The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that) It uses <a class="el" href="classCompilerPipeline.html">CompilerPipeline</a> for adding modules and making treating multiple files in multiple threads speeding up the process.  
+<p>The lexer has simple functions and variables to simplify the process of tokenization.  
  <a href="#details">More...</a></p>
 
-<p><code>#include &lt;<a class="el" href="Parser_8hpp_source.html">Parser.hpp</a>&gt;</code></p>
+<p><code>#include &lt;<a class="el" href="Lexer_8hpp_source.html">Lexer.hpp</a>&gt;</code></p>
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
@@ -200,7 +200,8 @@ void&#160;</td><td class="memItemRight"><b>synchronize</b> ()</td></tr>
 <tr class="memdesc:a0b291d69599c11db2077222ca385f298"><td class="mdescLeft">&#160;</td><td class="mdescRight">If there is an error with an expression this will allow to continue reading the file. Usually if this is called it means your code is invalid. <br /></td></tr>
 </table>
 <a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
-<div class="textblock"><p>The parser is the file that transform a list of tokens into a ast The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that) It uses <a class="el" href="classCompilerPipeline.html">CompilerPipeline</a> for adding modules and making treating multiple files in multiple threads speeding up the process. </p>
+<div class="textblock"><p>The lexer has simple functions and variables to simplify the process of tokenization. </p>
+<p>The parser is the file that transform a list of tokens into a ast The parser is based of the very common gradient descent iteration (It was the simplest and most common so I chose that) It uses <a class="el" href="classCompilerPipeline.html">CompilerPipeline</a> for adding modules and making treating multiple files in multiple threads speeding up the process.</p>
 <p>With time these concept and this parser will be expanded to contain more features and fixes. </p>
 </div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
 <a id="a6eead88e01a3ae2933fe7be1dd8fec85" name="a6eead88e01a3ae2933fe7be1dd8fec85"></a>

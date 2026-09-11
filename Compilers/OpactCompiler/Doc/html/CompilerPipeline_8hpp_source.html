@@ -115,8 +115,8 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('CompilerPipeli
 <div class="line"><a id="l00002" name="l00002"></a><span class="lineno">    2</span><span class="preprocessor">#define COMPILER_PIPELINE_HPP</span></div>
 <div class="line"><a id="l00003" name="l00003"></a><span class="lineno">    3</span> </div>
 <div class="line"><a id="l00004" name="l00004"></a><span class="lineno">    4</span><span class="preprocessor">#include &quot;Ast.hpp&quot;</span></div>
-<div class="line"><a id="l00005" name="l00005"></a><span class="lineno">    5</span><span class="preprocessor">#include &quot;FileReader/FileReader.hpp&quot;</span></div>
-<div class="line"><a id="l00006" name="l00006"></a><span class="lineno">    6</span><span class="preprocessor">#include &quot;Lexer/Lexer.hpp&quot;</span></div>
+<div class="line"><a id="l00005" name="l00005"></a><span class="lineno">    5</span><span class="preprocessor">#include &quot;<a class="code" href="FileReader_8hpp.html">FileReader/FileReader.hpp</a>&quot;</span></div>
+<div class="line"><a id="l00006" name="l00006"></a><span class="lineno">    6</span><span class="preprocessor">#include &quot;<a class="code" href="Lexer_8hpp.html">Lexer/Lexer.hpp</a>&quot;</span></div>
 <div class="line"><a id="l00007" name="l00007"></a><span class="lineno">    7</span><span class="preprocessor">#include &quot;<a class="code" href="Parser_8hpp.html">Parser/Parser.hpp</a>&quot;</span></div>
 <div class="line"><a id="l00008" name="l00008"></a><span class="lineno">    8</span><span class="preprocessor">#include &lt;iostream&gt;</span></div>
 <div class="line"><a id="l00009" name="l00009"></a><span class="lineno">    9</span><span class="preprocessor">#include &lt;string&gt;</span></div>
@@ -244,7 +244,7 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('CompilerPipeli
 <div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span>            <span class="keyword">const</span> std::string &amp;code = content.value();</div>
 <div class="line"><a id="l00129" name="l00129"></a><span class="lineno">  129</span> </div>
 <div class="line"><a id="l00130" name="l00130"></a><span class="lineno">  130</span>            <a class="code hl_class" href="classLexer.html">Lexer</a> l(code);</div>
-<div class="line"><a id="l00131" name="l00131"></a><span class="lineno">  131</span>            std::vector&lt;Token&gt; codeTokenized = l.Tokenize();</div>
+<div class="line"><a id="l00131" name="l00131"></a><span class="lineno">  131</span>            std::vector&lt;Token&gt; codeTokenized = l.<a class="code hl_function" href="classLexer.html#aac4a5e7bbfdd227aaf999ad3f5429d62">Tokenize</a>();</div>
 <div class="line"><a id="l00132" name="l00132"></a><span class="lineno">  132</span>            <span class="keywordflow">for</span> (<a class="code hl_class" href="classToken.html">Token</a> t : codeTokenized)</div>
 <div class="line"><a id="l00133" name="l00133"></a><span class="lineno">  133</span>                std::cout &lt;&lt; t.toString();</div>
 <div class="line"><a id="l00134" name="l00134"></a><span class="lineno">  134</span> </div>
@@ -259,10 +259,13 @@ document.addEventListener('DOMContentLoaded',() => { initNavTree('CompilerPipeli
 </div>
 <div class="line"><a id="l00143" name="l00143"></a><span class="lineno">  143</span> </div>
 <div class="line"><a id="l00144" name="l00144"></a><span class="lineno">  144</span><span class="preprocessor">#endif </span><span class="comment">// COMPILER_PIPELINE_HPP</span></div>
+<div class="ttc" id="aFileReader_8hpp_html"><div class="ttname"><a href="FileReader_8hpp.html">FileReader.hpp</a></div><div class="ttdoc">this Handles reading a file this used to have a bigger role. Now it only reads a file at given name</div></div>
+<div class="ttc" id="aLexer_8hpp_html"><div class="ttname"><a href="Lexer_8hpp.html">Lexer.hpp</a></div><div class="ttdoc">This is the header file for the lexer which is a class that transform source code into tokens.</div></div>
 <div class="ttc" id="aParser_8hpp_html"><div class="ttname"><a href="Parser_8hpp.html">Parser.hpp</a></div><div class="ttdoc">The header file that defines the Parser Class.</div></div>
 <div class="ttc" id="aclassCompilerPipeline_html"><div class="ttname"><a href="classCompilerPipeline.html">CompilerPipeline</a></div><div class="ttdef"><b>Definition</b> CompilerPipeline.hpp:28</div></div>
-<div class="ttc" id="aclassLexer_html"><div class="ttname"><a href="classLexer.html">Lexer</a></div><div class="ttdef"><b>Definition</b> Lexer.hpp:10</div></div>
-<div class="ttc" id="aclassParser_html"><div class="ttname"><a href="classParser.html">Parser</a></div><div class="ttdoc">The parser is the file that transform a list of tokens into a ast The parser is based of the very com...</div><div class="ttdef"><b>Definition</b> Parser.hpp:28</div></div>
+<div class="ttc" id="aclassLexer_html"><div class="ttname"><a href="classLexer.html">Lexer</a></div><div class="ttdef"><b>Definition</b> Lexer.hpp:18</div></div>
+<div class="ttc" id="aclassLexer_html_aac4a5e7bbfdd227aaf999ad3f5429d62"><div class="ttname"><a href="classLexer.html#aac4a5e7bbfdd227aaf999ad3f5429d62">Lexer::Tokenize</a></div><div class="ttdeci">std::vector&lt; Token &gt; Tokenize()</div><div class="ttdoc">Entry function so that it starts reading the string and making tokens.</div><div class="ttdef"><b>Definition</b> Lexer.cpp:575</div></div>
+<div class="ttc" id="aclassParser_html"><div class="ttname"><a href="classParser.html">Parser</a></div><div class="ttdoc">The lexer has simple functions and variables to simplify the process of tokenization.</div><div class="ttdef"><b>Definition</b> Parser.hpp:28</div></div>
 <div class="ttc" id="aclassParser_html_a8726e43e2634b55e79f7bc88670b26cb"><div class="ttname"><a href="classParser.html#a8726e43e2634b55e79f7bc88670b26cb">Parser::parseModule</a></div><div class="ttdeci">ExprPtr parseModule()</div><div class="ttdoc">Parse Module is for the initial file this will call parse top level as long it is not at the end of a...</div><div class="ttdef"><b>Definition</b> Parser.cpp:115</div></div>
 <div class="ttc" id="aclassToken_html"><div class="ttname"><a href="classToken.html">Token</a></div><div class="ttdoc">Represents a single source code token produced by the lexer.</div><div class="ttdef"><b>Definition</b> TokenType.hpp:102</div></div>
 <div class="ttc" id="astructModule_html"><div class="ttname"><a href="structModule.html">Module</a></div><div class="ttdef"><b>Definition</b> CompilerPipeline.hpp:23</div></div>
