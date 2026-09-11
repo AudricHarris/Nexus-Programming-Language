@@ -1,3 +1,7 @@
+/**
+ * @file Lexer.hpp
+ * @brief This is the header file for the lexer which is a class that transform source code into tokens
+ */
 #ifndef LEXER_H
 #define LEXER_H
 
@@ -7,11 +11,17 @@
 #include <string_view>
 #include <vector>
 
+/**
+ * @class Parser
+ * @brief The lexer has simple functions and variables to simplify the process of tokenization
+ */
 class Lexer {
 	public:
+		/**@brief constructor for the Lexer, it takes a source file in string format*/
 		explicit Lexer(const std::string &source)
 			: src(source.data()), srcLen(source.size()) {}
 
+		/**@brief Entry function so that it starts reading the string and making tokens*/
 		std::vector<Token> Tokenize();
 
 	private:
